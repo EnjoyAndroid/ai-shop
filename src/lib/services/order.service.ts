@@ -1,0 +1,445 @@
+import prisma from "@/lib/db";
+import { generateOrderNo, generatePassword } from "@/lib/encryption";
+import { allocateCardKeys, decryptCardKey } from "./product.service";
+import redis, { CACHE_KEYS } from "@/lib/redis";
+import type { Order, OrderItem, CardKey, PaymentMethod, OrderStatus } from "@prisma/client";
+
+export interface OrderWithItems extends Order {
+  items: (OrderItem & {
+    cardKeys: CardKey[];
+    product: {
+      id: string;
+      name: string;
+      slug: string;
+    };
+  })[];
+}
+
+export interface CreateOrderParams {
+  userId?: string;
+  email?: string;
+  phone?: string;
+  paymentMethod: PaymentMethod;
+  items: {
+    productId: string;
+    quantity: number;
+  }[];
+  ip?: string;
+  userAgent?: string;
+  fingerprint?: string;
+}
+
+/**
+ * 创建订单
+ */
+export async function createOrder(params: CreateOrderParams): Promise<Order> {
+  const { userId, email, phone, paymentMethod, items, ip, userAgent, fingerprint } = params;
+
+  // 获取商品信息和价格
+  const productIds = items.map((item) => item.productId);
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: productIds },
+      isActive: true,
+    },
+    include: {
+      _count: {
+        select: {
+          cardKeys: {
+            where: { status: "AVAILABLE" },
+          },
+        },
+      },
+    },
+  });
+
+  // 验证商品和库存
+  const productMap = new Map(products.map((p) => [p.id, p]));
+  let totalAmount = 0;
+
+  for (const item of items) {
+    const product = productMap.get(item.productId);
+    if (!product) {
+      throw new Error(`商品不存在: ${item.productId}`);
+    }
+    if (product._count.cardKeys < item.quantity) {
+      throw new Error(`${product.name} 库存不足`);
+    }
+    if (item.quantity < product.minQuantity || item.quantity > product.maxQuantity) {
+      throw new Error(`${product.name} 购买数量需在 ${product.minQuantity}-${product.maxQuantity} 之间`);
+    }
+    totalAmount += product.price * item.quantity;
+  }
+
+  // 计算折扣 (如果是会员)
+  let discountAmount = 0;
+  if (userId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { level: true },
+    });
+    if (user?.level) {
+      discountAmount = Math.floor(totalAmount * (100 - user.level.discount) / 100);
+    }
+  }
+
+  const payAmount = totalAmount - discountAmount;
+
+  // 生成订单号和查询密码
+  const orderNo = generateOrderNo();
+  const queryPassword = generatePassword();
+
+  // 设置订单过期时间 (30分钟)
+  const expiredAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  // 创建订单
+  const order = await prisma.order.create({
+    data: {
+      orderNo,
+      userId,
+      email,
+      phone,
+      queryPassword,
+      totalAmount,
+      discountAmount,
+      payAmount,
+      paymentMethod,
+      status: "PENDING",
+      ip,
+      userAgent,
+      fingerprint,
+      expiredAt,
+      items: {
+        create: items.map((item) => {
+          const product = productMap.get(item.productId)!;
+          return {
+            productId: item.productId,
+            productName: product.name,
+            price: product.price,
+            quantity: item.quantity,
+          };
+        }),
+      },
+    },
+    include: {
+      items: true,
+    },
+  });
+
+  return order;
+}
+
+/**
+ * 支付成功处理
+ */
+export async function handlePaymentSuccess(
+  orderNo: string,
+  paymentNo: string
+): Promise<OrderWithItems> {
+  // 使用分布式锁防止重复处理
+  const lockKey = CACHE_KEYS.ORDER_LOCK(orderNo);
+  const lockValue = Date.now().toString();
+
+  const acquired = await redis.set(lockKey, lockValue, "EX", 60, "NX");
+  if (!acquired) {
+    throw new Error("订单正在处理中");
+  }
+
+  try {
+    // 查询订单
+    const order = await prisma.order.findUnique({
+      where: { orderNo },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: { id: true, name: true, slug: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new Error("订单不存在");
+    }
+
+    if (order.status !== "PENDING") {
+      // 已处理过，直接返回
+      return order as OrderWithItems;
+    }
+
+    // 分配卡密
+    for (const item of order.items) {
+      await allocateCardKeys(item.productId, item.quantity, item.id);
+    }
+
+    // 更新订单状态
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: "DELIVERED",
+        paymentNo,
+        paidAt: new Date(),
+      },
+      include: {
+        items: {
+          include: {
+            cardKeys: true,
+            product: {
+              select: { id: true, name: true, slug: true },
+            },
+          },
+        },
+      },
+    });
+
+    // 更新用户消费累计和等级
+    if (order.userId) {
+      await updateUserSpent(order.userId, order.payAmount);
+    }
+
+    return updatedOrder as OrderWithItems;
+  } finally {
+    await redis.del(lockKey);
+  }
+}
+
+/**
+ * 更新用户累计消费并检查升级
+ */
+async function updateUserSpent(userId: string, amount: number): Promise<void> {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      totalSpent: { increment: amount },
+    },
+  });
+
+  // 检查是否需要升级
+  const newLevel = await prisma.userLevel.findFirst({
+    where: {
+      minSpent: { lte: user.totalSpent },
+    },
+    orderBy: { minSpent: "desc" },
+  });
+
+  if (newLevel && newLevel.id !== user.levelId) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { levelId: newLevel.id },
+    });
+  }
+}
+
+/**
+ * 查询订单
+ */
+export async function getOrderByNo(
+  orderNo: string,
+  queryPassword?: string
+): Promise<OrderWithItems | null> {
+  const order = await prisma.order.findUnique({
+    where: { orderNo },
+    include: {
+      items: {
+        include: {
+          cardKeys: true,
+          product: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    return null;
+  }
+
+  // 验证查询密码 (游客订单需要)
+  if (!order.userId && order.queryPassword !== queryPassword) {
+    throw new Error("查询密码错误");
+  }
+
+  return order as OrderWithItems;
+}
+
+/**
+ * 获取用户订单列表
+ */
+export async function getUserOrders(
+  userId: string,
+  options: { page?: number; limit?: number; status?: OrderStatus } = {}
+): Promise<{ orders: Order[]; total: number }> {
+  const { page = 1, limit = 10, status } = options;
+
+  const where = {
+    userId,
+    ...(status && { status }),
+  };
+
+  const [orders, total] = await Promise.all([
+    prisma.order.findMany({
+      where,
+      include: {
+        items: {
+          include: {
+            product: {
+              select: { id: true, name: true, slug: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.order.count({ where }),
+  ]);
+
+  return { orders, total };
+}
+
+/**
+ * 获取订单卡密 (解密后)
+ */
+export function getOrderCardKeys(order: OrderWithItems): {
+  productName: string;
+  cardKeys: string[];
+}[] {
+  return order.items.map((item) => ({
+    productName: item.productName,
+    cardKeys: item.cardKeys.map((ck) => decryptCardKey(ck)),
+  }));
+}
+
+/**
+ * 取消过期订单
+ */
+export async function cancelExpiredOrders(): Promise<number> {
+  const result = await prisma.order.updateMany({
+    where: {
+      status: "PENDING",
+      expiredAt: { lt: new Date() },
+    },
+    data: {
+      status: "CANCELLED",
+    },
+  });
+
+  return result.count;
+}
+
+/**
+ * 删除旧订单 (7天前的已完成订单)
+ */
+export async function deleteOldOrders(): Promise<number> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const result = await prisma.order.deleteMany({
+    where: {
+      status: { in: ["COMPLETED", "CANCELLED"] },
+      createdAt: { lt: sevenDaysAgo },
+    },
+  });
+
+  return result.count;
+}
+
+/**
+ * 管理员手动发货
+ */
+export async function manualDeliver(orderId: string): Promise<OrderWithItems> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      items: {
+        include: {
+          product: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    throw new Error("订单不存在");
+  }
+
+  if (order.status !== "PAID") {
+    throw new Error("订单状态不正确");
+  }
+
+  // 分配卡密
+  for (const item of order.items) {
+    await allocateCardKeys(item.productId, item.quantity, item.id);
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: { status: "DELIVERED" },
+    include: {
+      items: {
+        include: {
+          cardKeys: true,
+          product: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      },
+    },
+  });
+
+  return updatedOrder as OrderWithItems;
+}
+
+/**
+ * 订单退款
+ */
+export async function refundOrder(orderId: string, adminRemark?: string): Promise<Order> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  });
+
+  if (!order) {
+    throw new Error("订单不存在");
+  }
+
+  if (!["PAID", "DELIVERED"].includes(order.status)) {
+    throw new Error("订单状态不支持退款");
+  }
+
+  // 更新订单状态
+  const updatedOrder = await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: "REFUNDED",
+      adminRemark,
+    },
+  });
+
+  // 如果是余额支付，退回余额
+  if (order.paymentMethod === "BALANCE" && order.userId) {
+    await prisma.user.update({
+      where: { id: order.userId },
+      data: {
+        balance: { increment: order.payAmount },
+      },
+    });
+
+    await prisma.balanceLog.create({
+      data: {
+        userId: order.userId,
+        type: "REFUND",
+        amount: order.payAmount,
+        balance: 0, // 将在查询时更新
+        orderId: order.id,
+        remark: `订单 ${order.orderNo} 退款`,
+      },
+    });
+  }
+
+  return updatedOrder;
+}

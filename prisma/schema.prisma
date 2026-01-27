@@ -1,0 +1,421 @@
+// AI Shop - Database Schema
+// PostgreSQL with Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 用户系统 ====================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  phone         String?   @unique
+  password      String?
+  name          String?
+  avatar        String?
+
+  // 会员等级
+  levelId       String?
+  level         UserLevel? @relation(fields: [levelId], references: [id])
+
+  // 余额 (分为单位)
+  balance       Int       @default(0)
+
+  // 累计消费金额 (分)
+  totalSpent    Int       @default(0)
+
+  // 状态
+  status        UserStatus @default(ACTIVE)
+
+  // OAuth
+  emailVerified DateTime?
+  accounts      Account[]
+  sessions      Session[]
+
+  // 关联
+  orders        Order[]
+  balanceLogs   BalanceLog[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([levelId])
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  DELETED
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// 会员等级定义
+model UserLevel {
+  id          String   @id @default(cuid())
+  name        String   @unique  // 普通会员、银牌会员、金牌会员
+  minSpent    Int      @default(0)  // 升级所需最低消费 (分)
+  discount    Int      @default(100) // 折扣百分比 (95 = 95折)
+  sort        Int      @default(0)
+
+  users       User[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([minSpent])
+}
+
+// 余额变动日志
+model BalanceLog {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+
+  type        BalanceType
+  amount      Int         // 变动金额 (分), 正数增加, 负数减少
+  balance     Int         // 变动后余额
+
+  orderId     String?     // 关联订单
+  order       Order?      @relation(fields: [orderId], references: [id])
+
+  remark      String?
+
+  createdAt   DateTime    @default(now())
+
+  @@index([userId])
+  @@index([orderId])
+}
+
+enum BalanceType {
+  RECHARGE    // 充值
+  CONSUME     // 消费
+  REFUND      // 退款
+  ADJUST      // 管理员调整
+}
+
+// ==================== 商品系统 ====================
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  icon        String?   // 图标 URL 或 emoji
+  sort        Int       @default(0)
+  isActive    Boolean   @default(true)
+
+  products    Product[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([slug])
+  @@index([isActive, sort])
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  description String?       @db.Text
+  content     String?       @db.Text  // 详细说明 (Markdown)
+
+  // 分类
+  categoryId  String
+  category    Category      @relation(fields: [categoryId], references: [id])
+
+  // 价格 (分)
+  price       Int
+  originalPrice Int?        // 原价 (用于显示划线价)
+
+  // 库存
+  stock       Int           @default(0)  // 可用库存数量
+  salesCount  Int           @default(0)  // 销量
+
+  // 状态
+  isActive    Boolean       @default(true)
+  sort        Int           @default(0)
+
+  // 购买限制
+  minQuantity Int           @default(1)
+  maxQuantity Int           @default(10)
+
+  // 关联
+  cardKeys    CardKey[]
+  orderItems  OrderItem[]
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([isActive, sort])
+}
+
+// 卡密库存
+model CardKey {
+  id          String        @id @default(cuid())
+  productId   String
+  product     Product       @relation(fields: [productId], references: [id])
+
+  // 加密存储的卡密内容 (AES-256-GCM)
+  content     String        @db.Text
+  iv          String        // 初始化向量
+  tag         String        // 认证标签
+
+  // 状态
+  status      CardKeyStatus @default(AVAILABLE)
+
+  // 分配信息
+  orderId     String?
+  orderItem   OrderItem?    @relation(fields: [orderId], references: [id])
+  soldAt      DateTime?
+
+  // 批次管理
+  batchNo     String?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([productId, status])
+  @@index([batchNo])
+  @@index([orderId])
+}
+
+enum CardKeyStatus {
+  AVAILABLE   // 可用
+  SOLD        // 已售出
+  LOCKED      // 锁定中 (下单未付款)
+  INVALID     // 无效
+}
+
+// ==================== 订单系统 ====================
+
+model Order {
+  id            String        @id @default(cuid())
+  orderNo       String        @unique  // 订单号
+
+  // 用户信息 (可为游客)
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id])
+
+  // 联系方式 (用于发货通知)
+  email         String?
+  phone         String?
+
+  // 查询密码 (游客查询订单用)
+  queryPassword String?
+
+  // 金额 (分)
+  totalAmount   Int           // 商品总价
+  discountAmount Int          @default(0)  // 折扣金额
+  payAmount     Int           // 实付金额
+
+  // 支付信息
+  paymentMethod PaymentMethod?
+  paymentNo     String?       // 第三方支付流水号
+  paidAt        DateTime?
+
+  // 状态
+  status        OrderStatus   @default(PENDING)
+
+  // IP 和设备信息 (防刷)
+  ip            String?
+  userAgent     String?
+  fingerprint   String?       // 设备指纹
+
+  // 备注
+  remark        String?
+  adminRemark   String?
+
+  // 关联
+  items         OrderItem[]
+  paymentLogs   PaymentLog[]
+  balanceLogs   BalanceLog[]
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  expiredAt     DateTime?     // 订单过期时间 (未支付)
+
+  @@index([orderNo])
+  @@index([userId])
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum OrderStatus {
+  PENDING     // 待支付
+  PAID        // 已支付
+  DELIVERED   // 已发货
+  COMPLETED   // 已完成
+  CANCELLED   // 已取消
+  REFUNDED    // 已退款
+}
+
+enum PaymentMethod {
+  ALIPAY      // 支付宝
+  WECHAT      // 微信
+  USDT_TRC20  // USDT TRC20
+  USDT_ERC20  // USDT ERC20
+  BALANCE     // 余额支付
+}
+
+model OrderItem {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+
+  // 快照信息
+  productName String
+  price       Int       // 单价 (分)
+  quantity    Int
+
+  // 分配的卡密
+  cardKeys    CardKey[]
+
+  createdAt   DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// ==================== 支付系统 ====================
+
+model PaymentConfig {
+  id          String        @id @default(cuid())
+  method      PaymentMethod @unique
+  name        String
+
+  // 配置信息 (加密存储)
+  config      String        @db.Text  // JSON 加密
+
+  isActive    Boolean       @default(false)
+  sort        Int           @default(0)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model PaymentLog {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id])
+
+  method      PaymentMethod
+  action      String        // create, callback, query, refund
+
+  // 请求和响应
+  request     String?       @db.Text
+  response    String?       @db.Text
+
+  // 状态
+  success     Boolean       @default(false)
+  errorMsg    String?
+
+  createdAt   DateTime      @default(now())
+
+  @@index([orderId])
+}
+
+// ==================== 管理系统 ====================
+
+model Admin {
+  id          String      @id @default(cuid())
+  username    String      @unique
+  password    String
+  name        String?
+  role        AdminRole   @default(OPERATOR)
+
+  status      AdminStatus @default(ACTIVE)
+  lastLoginAt DateTime?
+  lastLoginIp String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([username])
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+}
+
+enum AdminStatus {
+  ACTIVE
+  BANNED
+}
+
+// 公告
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  content     String    @db.Text
+  type        String    @default("info")  // info, warning, success
+  isActive    Boolean   @default(true)
+  isPinned    Boolean   @default(false)
+  sort        Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive, sort])
+}
+
+// 系统设置
+model SystemSetting {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  value       String    @db.Text
+  description String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
