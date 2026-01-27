@@ -134,7 +134,7 @@ export default function AdminNewProductPage() {
 
               <div>
                 <label className="block text-sm text-gray-600 mb-1">
-                  Slug <span className="text-red-500">*</span>
+                  URL标识 <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -145,7 +145,7 @@ export default function AdminNewProductPage() {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  用于 URL，只能包含小写字母、数字和连字符
+                  用于商品链接，只能包含小写字母、数字和连字符，如：/product/<span className="text-primary">{formData.slug || 'xxx'}</span>
                 </p>
               </div>
 

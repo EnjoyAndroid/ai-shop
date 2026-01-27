@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getProductBySlug, getCategories } from "@/lib/services/product.service";
-import { AddToCartButton } from "@/components/shop/add-to-cart-button";
+import { BuyNowButton } from "@/components/shop/buy-now-button";
 
 interface ProductPageProps {
   params: { slug: string };
@@ -134,13 +134,14 @@ export default async function ProductPage({ params }: ProductPageProps) {
               单次购买: {product.minQuantity} - {product.maxQuantity} 件
             </div>
 
-            {/* 加入购物车 */}
-            <AddToCartButton
+            {/* 立即购买 */}
+            <BuyNowButton
               product={{
                 productId: product.id,
                 productName: product.name,
                 price: product.price,
                 maxQuantity: product.maxQuantity,
+                minQuantity: product.minQuantity,
               }}
               disabled={!hasStock}
             />
@@ -156,10 +157,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
         {product.content && (
           <div className="mt-8 bg-white rounded-2xl p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">商品详情</h2>
-            <div
-              className="prose max-w-none"
-              dangerouslySetInnerHTML={{ __html: product.content }}
-            />
+            <div className="prose max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
+              {product.content}
+            </div>
           </div>
         )}
       </main>

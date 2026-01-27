@@ -1,14 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AdminSidebar } from "@/components/admin/sidebar";
 
+interface Product {
+  id: string;
+  name: string;
+  stock: number;
+  _count?: {
+    cardKeys: number;
+  };
+}
+
 export default function AdminCardKeysPage() {
+  const [products, setProducts] = useState<Product[]>([]);
   const [productId, setProductId] = useState("");
   const [cardKeys, setCardKeys] = useState("");
   const [batchNo, setBatchNo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch("/api/admin/products");
+      const data = await res.json();
+      setProducts(data.products || []);
+    } catch (err) {
+      console.error("Failed to fetch products:", err);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,13 +112,22 @@ export default function AdminCardKeysPage() {
                   onChange={(e) => setProductId(e.target.value)}
                   className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   required
+                  disabled={loadingProducts}
                 >
-                  <option value="">请选择商品</option>
-                  {/* 商品列表需要从 API 获取 */}
+                  <option value="">
+                    {loadingProducts ? "加载中..." : "请选择商品"}
+                  </option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} (库存: {product._count?.cardKeys ?? product.stock})
+                    </option>
+                  ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  请先在商品管理中创建商品
-                </p>
+                {products.length === 0 && !loadingProducts && (
+                  <p className="text-xs text-orange-500 mt-1">
+                    暂无商品，请先在商品管理中创建商品
+                  </p>
+                )}
               </div>
 
               <div>

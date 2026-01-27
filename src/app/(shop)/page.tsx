@@ -4,6 +4,7 @@ import { getCategories, getProducts } from "@/lib/services/product.service";
 import { ProductCard } from "@/components/shop/product-card";
 import { CategoryNav } from "@/components/shop/category-nav";
 import { Announcement } from "@/components/shop/announcement";
+import { Header } from "@/components/shop/header";
 
 export const revalidate = 60; // 重新验证时间 60 秒
 
@@ -16,32 +17,7 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="text-xl font-bold text-primary">
-              AI Shop
-            </Link>
-            <nav className="hidden md:flex items-center space-x-6">
-              <Link href="/" className="text-gray-600 hover:text-primary">
-                首页
-              </Link>
-              <Link href="/order" className="text-gray-600 hover:text-primary">
-                订单查询
-              </Link>
-              <Link href="/login" className="text-gray-600 hover:text-primary">
-                登录
-              </Link>
-              <Link
-                href="/register"
-                className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90"
-              >
-                注册
-              </Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="container mx-auto px-4 py-8">
         {/* 公告 */}
