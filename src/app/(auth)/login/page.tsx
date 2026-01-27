@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const registered = searchParams.get("registered");
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,12 +26,13 @@ export default function LoginPage() {
         account,
         password,
         redirect: false,
+        callbackUrl,
       });
 
       if (result?.error) {
         setError(result.error);
-      } else {
-        router.push("/dashboard");
+      } else if (result?.ok) {
+        router.push(callbackUrl);
         router.refresh();
       }
     } catch (err) {
@@ -49,6 +54,12 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 shadow-sm">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">登录</h1>
+
+          {registered && (
+            <div className="mb-4 p-3 bg-green-50 text-green-600 rounded-lg text-sm">
+              注册成功！请登录您的账号
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
