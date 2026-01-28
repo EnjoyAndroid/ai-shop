@@ -1,0 +1,38 @@
+# 依赖
+node_modules
+npm-debug.log*
+
+# 构建输出
+.next
+out
+dist
+build
+
+# 环境文件
+.env
+.env.*
+!.env.example
+
+# 版本控制
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 测试
+coverage
+.nyc_output
+
+# 其他
+*.md
+LICENSE
+docker-compose*.yml
+Dockerfile*
