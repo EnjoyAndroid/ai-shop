@@ -16,7 +16,8 @@ COPY . .
 # 生成 Prisma Client
 RUN npx prisma generate
 
-# 构建应用
+# 构建应用 - 提供临时 DATABASE_URL 跳过构建时的数据库检查
+ENV DATABASE_URL="postgresql://temp:temp@localhost:5432/temp"
 RUN npm run build
 
 # 生产阶段
