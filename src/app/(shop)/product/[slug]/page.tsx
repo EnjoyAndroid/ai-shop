@@ -3,6 +3,9 @@ import Link from "next/link";
 import { getProductBySlug, getCategories } from "@/lib/services/product.service";
 import { BuyNowButton } from "@/components/shop/buy-now-button";
 
+// 强制动态渲染，避免构建时访问数据库
+export const dynamic = "force-dynamic";
+
 interface ProductPageProps {
   params: { slug: string };
 }

@@ -4,6 +4,9 @@ import { getCategoryBySlug, getCategories, getProducts } from "@/lib/services/pr
 import { ProductCard } from "@/components/shop/product-card";
 import { CategoryNav } from "@/components/shop/category-nav";
 
+// 强制动态渲染，避免构建时访问数据库
+export const dynamic = "force-dynamic";
+
 interface CategoryPageProps {
   params: { slug: string };
 }
