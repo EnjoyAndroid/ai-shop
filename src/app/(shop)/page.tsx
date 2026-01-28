@@ -135,7 +135,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="border-t border-gray-700 mt-8 pt-8 text-center text-sm">
-            © 2024 AI Shop. All rights reserved.
+            © 2026 AI Shop. All rights reserved.
           </div>
         </div>
       </footer>

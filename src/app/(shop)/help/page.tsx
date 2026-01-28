@@ -174,7 +174,7 @@ export default function HelpPage() {
       {/* 页脚 */}
       <footer className="bg-gray-800 text-gray-300 py-8 mt-12">
         <div className="container mx-auto px-4 text-center text-sm">
-          © 2024 AI Shop. All rights reserved.
+          © 2026 AI Shop. All rights reserved.
         </div>
       </footer>
     </div>
