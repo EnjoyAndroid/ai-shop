@@ -34,12 +34,14 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# 复制必要文件
-COPY --from=builder /app/public ./public
+# 复制必要文件（public 目录可能不存在，使用通配符）
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# 如果有 public 目录则复制
+RUN mkdir -p ./public
 
 USER nextjs
 
