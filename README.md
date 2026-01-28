@@ -65,7 +65,8 @@
 ai-shop/
 ├── prisma/
 │   ├── schema.prisma          # 数据库模型
-│   └── seed.ts                # 种子数据
+│   ├── seed.ts                # 种子数据 (TypeScript)
+│   └── seed.sql               # 种子数据 (SQL)
 ├── src/
 │   ├── app/
 │   │   ├── (shop)/            # 前台商城
@@ -104,6 +105,9 @@ ai-shop/
 │   │   └── validations/       # Zod 验证
 │   └── stores/
 │       └── cart.ts            # 购物车状态
+├── docker-compose.yml         # Docker 编排配置
+├── Dockerfile                 # Docker 构建文件
+├── nginx.conf                 # Nginx 配置
 ├── package.json
 ├── tailwind.config.ts
 └── .env.example
@@ -117,7 +121,7 @@ ai-shop/
 - PostgreSQL 14+
 - Redis 6+（可选，开发环境可不配置）
 
-### 安装步骤
+### 本地开发
 
 1. **克隆项目**
 ```bash
@@ -171,7 +175,7 @@ npm run dev
 
 6. **访问网站**
 - 前台商城: http://localhost:3000
-- 后台管理: http://localhost:3000/admin/dashboard
+- 后台管理: http://localhost:3000/admin/login
 
 ### 测试账号
 
@@ -179,11 +183,105 @@ npm run dev
 |------|------|------|
 | 管理员 | admin | admin123 |
 
+## 🐳 Docker 部署 (生产环境)
+
+### 1. 准备服务器
+
+- VPS（推荐 Rocky Linux 9 / Ubuntu 22.04）
+- 已安装 Docker 和 Docker Compose
+- 域名已解析到服务器 IP
+
+### 2. 上传代码
+
+```bash
+# 克隆项目到服务器
+git clone <repository-url> /home/ai-shop
+cd /home/ai-shop
+```
+
+### 3. 配置环境变量
+
+```bash
+cp .env.production .env
+nano .env
+```
+
+修改以下配置：
+
+```env
+# 数据库密码
+DB_PASSWORD=YourSecurePassword123
+
+# 站点配置
+NEXTAUTH_URL=https://your-domain.com
+NEXT_PUBLIC_SITE_URL=https://your-domain.com
+NEXTAUTH_SECRET=your-random-secret-key
+
+# 加密密钥
+ENCRYPTION_KEY=your-32-bytes-key
+
+# 信任域名（重要！）
+AUTH_TRUST_HOST=true
+```
+
+### 4. 配置 Cloudflare（推荐）
+
+1. 在 Cloudflare DNS 添加 A 记录指向服务器 IP
+2. SSL/TLS 设置选择 "Flexible"
+3. 开启代理（橙色云朵）
+
+### 5. 启动服务
+
+```bash
+# 开放端口
+firewall-cmd --permanent --add-port=80/tcp
+firewall-cmd --reload
+
+# 构建并启动
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f
+```
+
+### 6. 初始化数据库
+
+```bash
+# 推送数据库结构
+docker compose exec app node ./node_modules/prisma/build/index.js db push
+
+# 导入种子数据
+docker compose exec -T postgres psql -U aishop -d ai_shop < prisma/seed.sql
+```
+
+### 7. 验证部署
+
+```bash
+# 检查容器状态
+docker compose ps
+
+# 检查数据
+docker compose exec postgres psql -U aishop -d ai_shop -c "SELECT name FROM \"Category\";"
+```
+
+访问 https://your-domain.com 测试
+
+### 常用运维命令
+
+| 操作 | 命令 |
+|------|------|
+| 查看状态 | `docker compose ps` |
+| 查看日志 | `docker compose logs -f app` |
+| 重启应用 | `docker compose restart app` |
+| 停止所有 | `docker compose down` |
+| 更新部署 | `git pull && docker compose up -d --build` |
+| 备份数据库 | `docker compose exec postgres pg_dump -U aishop ai_shop > backup.sql` |
+
 ## 📖 使用指南
 
 ### 添加商品
 
-1. 登录后台管理 `/admin/dashboard`
+1. 登录后台管理 `/admin/login`
 2. 进入分类管理，创建商品分类
 3. 进入商品管理，点击"添加商品"
 4. 填写商品信息并保存
@@ -203,10 +301,8 @@ npm run dev
 
 ```env
 # 虎皮椒支付
-XUNHU_ALIPAY_APPID="your-appid"
-XUNHU_ALIPAY_APPSECRET="your-secret"
-XUNHU_WECHAT_APPID="your-appid"
-XUNHU_WECHAT_APPSECRET="your-secret"
+XUNHU_APPID="your-appid"
+XUNHU_APPSECRET="your-secret"
 
 # USDT 收款地址
 USDT_TRC20_ADDRESS="your-trc20-address"
@@ -263,41 +359,14 @@ const decrypted = decrypt({ content, iv, tag });
 - 使用分布式锁防止重复处理
 - 订单状态机保证流程正确
 
-## 📦 部署
-
-### Vercel 部署
-
-1. 将代码推送到 GitHub
-2. 在 Vercel 导入项目
-3. 配置环境变量
-4. 部署完成
-
-### Docker 部署
-
-```dockerfile
-# Dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-```bash
-docker build -t ai-shop .
-docker run -p 3000:3000 --env-file .env ai-shop
-```
-
 ## 📝 开发计划
 
 - [x] Phase 1: MVP（商品展示、订单系统、支付集成）
 - [x] Phase 2: 用户系统（注册/登录、会员等级）
-- [ ] Phase 3: 支付扩展（余额充值、更多支付方式）
-- [ ] Phase 4: 运营功能（公告系统、数据报表、邮件通知）
-- [ ] Phase 5: 安全优化（监控告警、性能优化）
+- [x] Phase 3: Docker 部署支持
+- [ ] Phase 4: 支付扩展（余额充值、更多支付方式）
+- [ ] Phase 5: 运营功能（公告系统、数据报表、邮件通知）
+- [ ] Phase 6: 安全优化（监控告警、性能优化）
 
 ## 🤝 贡献
 
