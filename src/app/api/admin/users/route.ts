@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 
+// 防止构建时预渲染
+export const dynamic = "force-dynamic";
+
 // 获取所有用户
 export async function GET() {
   try {
