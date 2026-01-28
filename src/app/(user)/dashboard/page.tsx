@@ -3,6 +3,9 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 
+// 强制动态渲染，避免构建时访问数据库
+export const dynamic = "force-dynamic";
+
 export default async function UserDashboardPage() {
   const session = await auth();
 

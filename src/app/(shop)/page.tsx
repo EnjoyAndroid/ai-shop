@@ -6,7 +6,8 @@ import { CategoryNav } from "@/components/shop/category-nav";
 import { Announcement } from "@/components/shop/announcement";
 import { Header } from "@/components/shop/header";
 
-export const revalidate = 60; // 重新验证时间 60 秒
+// 强制动态渲染，避免构建时访问数据库
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const [categories, { products }] = await Promise.all([

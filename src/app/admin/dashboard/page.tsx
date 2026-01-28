@@ -4,6 +4,9 @@ import prisma from "@/lib/db";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { getAdminSession } from "@/lib/admin-auth";
 
+// 强制动态渲染，避免构建时访问数据库
+export const dynamic = "force-dynamic";
+
 export default async function AdminDashboardPage() {
   // 验证管理员登录
   const session = await getAdminSession();
