@@ -1,5 +1,8 @@
-# 构建阶段
-FROM node:20-alpine AS builder
+# 构建阶段 - 使用 slim 代替 alpine（Prisma 兼容性更好）
+FROM node:20-slim AS builder
+
+# 安装 OpenSSL 和必要依赖
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -17,7 +20,10 @@ RUN npx prisma generate
 RUN npm run build
 
 # 生产阶段
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
+
+# 安装 OpenSSL
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
