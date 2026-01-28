@@ -1,4 +1,4 @@
-# 构建阶段 - 使用 slim 代替 alpine（Prisma 兼容性更好）
+# 构建阶段
 FROM node:20-slim AS builder
 
 # 安装 OpenSSL 和必要依赖
@@ -34,14 +34,21 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# 复制必要文件（public 目录可能不存在，使用通配符）
+# 复制必要文件
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
-# 如果有 public 目录则复制
+# 复制 prisma CLI 相关文件（用于数据库迁移）
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+# 创建空的 public 目录
 RUN mkdir -p ./public
+
+# 设置权限
+RUN chown -R nextjs:nodejs /app
 
 USER nextjs
 
