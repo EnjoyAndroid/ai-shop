@@ -12,9 +12,11 @@ export interface ProductWithCategory extends Product {
 
 /**
  * 检查是否在构建时（没有真实数据库连接）
+ * 只在构建阶段 DATABASE_URL 包含 temp@localhost 时返回 true
  */
 function isBuildTime(): boolean {
-  return !process.env.DATABASE_URL || process.env.DATABASE_URL.includes("temp@localhost");
+  const dbUrl = process.env.DATABASE_URL || "";
+  return dbUrl.includes("temp@localhost") || dbUrl.includes("temp:temp@");
 }
 
 /**
