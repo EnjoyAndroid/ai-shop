@@ -11,37 +11,62 @@ export interface ProductWithCategory extends Product {
 }
 
 /**
+ * 检查是否在构建时（没有真实数据库连接）
+ */
+function isBuildTime(): boolean {
+  return !process.env.DATABASE_URL || process.env.DATABASE_URL.includes("temp@localhost");
+}
+
+/**
  * 获取所有分类
  */
 export async function getCategories(includeInactive = false): Promise<Category[]> {
-  const cacheKey = CACHE_KEYS.CATEGORIES;
-
-  // 尝试从缓存获取
-  const cached = await redis.get(cacheKey);
-  if (cached && !includeInactive) {
-    return JSON.parse(cached);
+  if (isBuildTime()) {
+    return [];
   }
 
-  const categories = await prisma.category.findMany({
-    where: includeInactive ? {} : { isActive: true },
-    orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
-  });
+  try {
+    const cacheKey = CACHE_KEYS.CATEGORIES;
 
-  // 缓存5分钟
-  if (!includeInactive) {
-    await redis.set(cacheKey, JSON.stringify(categories), "EX", 300);
+    // 尝试从缓存获取
+    const cached = await redis.get(cacheKey);
+    if (cached && !includeInactive) {
+      return JSON.parse(cached);
+    }
+
+    const categories = await prisma.category.findMany({
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
+    });
+
+    // 缓存5分钟
+    if (!includeInactive) {
+      await redis.set(cacheKey, JSON.stringify(categories), "EX", 300);
+    }
+
+    return categories;
+  } catch (error) {
+    console.error("getCategories error:", error);
+    return [];
   }
-
-  return categories;
 }
 
 /**
  * 根据 slug 获取分类
  */
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {
-  return prisma.category.findUnique({
-    where: { slug },
-  });
+  if (isBuildTime()) {
+    return null;
+  }
+
+  try {
+    return prisma.category.findUnique({
+      where: { slug },
+    });
+  } catch (error) {
+    console.error("getCategoryBySlug error:", error);
+    return null;
+  }
 }
 
 /**
@@ -53,16 +78,64 @@ export async function getProducts(options: {
   page?: number;
   limit?: number;
 }): Promise<{ products: ProductWithCategory[]; total: number }> {
-  const { categoryId, isActive = true, page = 1, limit = 20 } = options;
+  if (isBuildTime()) {
+    return { products: [], total: 0 };
+  }
 
-  const where = {
-    ...(categoryId && { categoryId }),
-    ...(isActive !== undefined && { isActive }),
-  };
+  try {
+    const { categoryId, isActive = true, page = 1, limit = 20 } = options;
 
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
+    const where = {
+      ...(categoryId && { categoryId }),
+      ...(isActive !== undefined && { isActive }),
+    };
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          category: true,
+          _count: {
+            select: {
+              cardKeys: {
+                where: { status: "AVAILABLE" },
+              },
+            },
+          },
+        },
+        orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.product.count({ where }),
+    ]);
+
+    return { products: products as ProductWithCategory[], total };
+  } catch (error) {
+    console.error("getProducts error:", error);
+    return { products: [], total: 0 };
+  }
+}
+
+/**
+ * 根据 slug 获取商品详情
+ */
+export async function getProductBySlug(slug: string): Promise<ProductWithCategory | null> {
+  if (isBuildTime()) {
+    return null;
+  }
+
+  try {
+    const cacheKey = CACHE_KEYS.PRODUCT(slug);
+
+    // 尝试从缓存获取
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const product = await prisma.product.findUnique({
+      where: { slug },
       include: {
         category: true,
         _count: {
@@ -73,61 +146,40 @@ export async function getProducts(options: {
           },
         },
       },
-      orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.product.count({ where }),
-  ]);
+    });
 
-  return { products: products as ProductWithCategory[], total };
-}
+    if (product) {
+      // 缓存5分钟
+      await redis.set(cacheKey, JSON.stringify(product), "EX", 300);
+    }
 
-/**
- * 根据 slug 获取商品详情
- */
-export async function getProductBySlug(slug: string): Promise<ProductWithCategory | null> {
-  const cacheKey = CACHE_KEYS.PRODUCT(slug);
-
-  // 尝试从缓存获取
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return JSON.parse(cached);
+    return product as ProductWithCategory | null;
+  } catch (error) {
+    console.error("getProductBySlug error:", error);
+    return null;
   }
-
-  const product = await prisma.product.findUnique({
-    where: { slug },
-    include: {
-      category: true,
-      _count: {
-        select: {
-          cardKeys: {
-            where: { status: "AVAILABLE" },
-          },
-        },
-      },
-    },
-  });
-
-  if (product) {
-    // 缓存5分钟
-    await redis.set(cacheKey, JSON.stringify(product), "EX", 300);
-  }
-
-  return product as ProductWithCategory | null;
 }
 
 /**
  * 获取商品可用库存数量
  */
 export async function getProductStock(productId: string): Promise<number> {
-  const count = await prisma.cardKey.count({
-    where: {
-      productId,
-      status: "AVAILABLE",
-    },
-  });
-  return count;
+  if (isBuildTime()) {
+    return 0;
+  }
+
+  try {
+    const count = await prisma.cardKey.count({
+      where: {
+        productId,
+        status: "AVAILABLE",
+      },
+    });
+    return count;
+  } catch (error) {
+    console.error("getProductStock error:", error);
+    return 0;
+  }
 }
 
 /**
