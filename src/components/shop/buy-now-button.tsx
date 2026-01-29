@@ -89,7 +89,12 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       }
 
       // 跳转到支付页面或订单详情
-      if (data.payUrl) {
+      if (data.qrCode) {
+        // 跳转到我们自己的支付页面（带倒计时）
+        const payUrl = `/pay/${data.orderNo}?password=${data.queryPassword}&qrcode=${encodeURIComponent(data.qrCode)}&amount=${product.price * quantity}&method=${paymentMethod}`;
+        router.push(payUrl);
+      } else if (data.payUrl) {
+        // 没有二维码时直接跳转第三方
         window.location.href = data.payUrl;
       } else {
         router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);

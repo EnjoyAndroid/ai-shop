@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Header } from "@/components/shop/header";
+import { HeaderClient } from "@/components/shop/header-client";
 import { OrderDetail } from "@/components/shop/order-detail";
 
 export default function OrderQueryPage() {
@@ -44,7 +44,7 @@ export default function OrderQueryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <HeaderClient />
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-2xl mx-auto">

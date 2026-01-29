@@ -59,9 +59,8 @@ function OrdersContent() {
   const statusOptions = [
     { value: "", label: "全部" },
     { value: "PENDING", label: "待支付" },
-    { value: "PAID", label: "已支付" },
-    { value: "DELIVERED", label: "已发货" },
-    { value: "COMPLETED", label: "已完成" },
+    { value: "PAID", label: "待发货" },
+    { value: "DELIVERED", label: "已完成" },
     { value: "CANCELLED", label: "已取消" },
     { value: "REFUNDED", label: "已退款" },
   ];
@@ -69,9 +68,8 @@ function OrdersContent() {
   const getStatusLabel = (s: string) => {
     const labels: Record<string, string> = {
       PENDING: "待支付",
-      PAID: "已支付",
-      DELIVERED: "已发货",
-      COMPLETED: "已完成",
+      PAID: "待发货",
+      DELIVERED: "已完成",
       CANCELLED: "已取消",
       REFUNDED: "已退款",
     };
@@ -83,7 +81,7 @@ function OrdersContent() {
       DELIVERED: "bg-green-100 text-green-600",
       PENDING: "bg-yellow-100 text-yellow-600",
       PAID: "bg-blue-100 text-blue-600",
-      CANCELLED: "bg-red-100 text-red-600",
+      CANCELLED: "bg-gray-100 text-gray-600",
       REFUNDED: "bg-purple-100 text-purple-600",
     };
     return classes[s] || "bg-gray-100 text-gray-600";
