@@ -91,8 +91,8 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
   const orderNo = generateOrderNo();
   const queryPassword = generatePassword();
 
-  // 设置订单过期时间 (30分钟)
-  const expiredAt = new Date(Date.now() + 30 * 60 * 1000);
+  // 设置订单过期时间 (5分钟)
+  const expiredAt = new Date(Date.now() + 5 * 60 * 1000);
 
   // 创建订单
   const order = await prisma.order.create({

@@ -27,6 +27,7 @@ export default function AdminCategoriesPage() {
     slug: "",
     description: "",
     icon: "",
+    iconType: "emoji" as "emoji" | "image",
     sort: 0,
     isActive: true,
   });
@@ -52,11 +53,13 @@ export default function AdminCategoriesPage() {
   const openModal = (category?: Category) => {
     if (category) {
       setEditingCategory(category);
+      const isImageUrl = category.icon?.startsWith("http") || category.icon?.startsWith("/");
       setFormData({
         name: category.name,
         slug: category.slug,
         description: category.description || "",
         icon: category.icon || "",
+        iconType: isImageUrl ? "image" : "emoji",
         sort: category.sort,
         isActive: category.isActive,
       });
@@ -67,6 +70,7 @@ export default function AdminCategoriesPage() {
         slug: "",
         description: "",
         icon: "",
+        iconType: "emoji",
         sort: 0,
         isActive: true,
       });
@@ -176,8 +180,12 @@ export default function AdminCategoriesPage() {
               <tbody className="divide-y divide-gray-200">
                 {categories.map((category) => (
                   <tr key={category.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-2xl">
-                      {category.icon || "📁"}
+                    <td className="px-6 py-4">
+                      {category.icon?.startsWith("http") || category.icon?.startsWith("/") ? (
+                        <img src={category.icon} alt="" className="w-10 h-10 rounded object-cover" />
+                      ) : (
+                        <span className="text-2xl">{category.icon || "📁"}</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 font-medium text-gray-900">
                       {category.name}
@@ -273,17 +281,68 @@ export default function AdminCategoriesPage() {
 
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
-                    图标 (Emoji)
+                    图标类型
                   </label>
-                  <input
-                    type="text"
-                    value={formData.icon}
-                    onChange={(e) =>
-                      setFormData({ ...formData, icon: e.target.value })
-                    }
-                    placeholder="例如: 🤖"
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, iconType: "emoji", icon: "" })}
+                      className={`flex-1 py-2 rounded-lg text-sm ${
+                        formData.iconType === "emoji"
+                          ? "bg-primary text-white"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      Emoji
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, iconType: "image", icon: "" })}
+                      className={`flex-1 py-2 rounded-lg text-sm ${
+                        formData.iconType === "image"
+                          ? "bg-primary text-white"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      图片URL
+                    </button>
+                  </div>
+                  {formData.iconType === "emoji" ? (
+                    <input
+                      type="text"
+                      value={formData.icon}
+                      onChange={(e) =>
+                        setFormData({ ...formData, icon: e.target.value })
+                      }
+                      placeholder="例如: 🤖"
+                      className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                  ) : (
+                    <div>
+                      <input
+                        type="text"
+                        value={formData.icon}
+                        onChange={(e) =>
+                          setFormData({ ...formData, icon: e.target.value })
+                        }
+                        placeholder="https://example.com/image.png"
+                        className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      {formData.icon && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-sm text-gray-500">预览:</span>
+                          <img
+                            src={formData.icon}
+                            alt="预览"
+                            className="w-10 h-10 rounded object-cover border"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>

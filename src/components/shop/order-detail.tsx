@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
 interface OrderDetailProps {
   order: any;
   showQueryPassword?: boolean;
@@ -7,6 +9,46 @@ interface OrderDetailProps {
 }
 
 export function OrderDetail({ order, showQueryPassword = false, queryPassword }: OrderDetailProps) {
+  const [toast, setToast] = useState("");
+  const [countdown, setCountdown] = useState("");
+  const [expired, setExpired] = useState(false);
+
+  // 倒计时
+  useEffect(() => {
+    if (order.status !== "PENDING" || !order.expiredAt) return;
+
+    const updateCountdown = () => {
+      const now = Date.now();
+      const expireTime = new Date(order.expiredAt).getTime();
+      const diff = expireTime - now;
+
+      if (diff <= 0) {
+        setExpired(true);
+        setCountdown("已超时");
+        return;
+      }
+
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setCountdown(`${minutes}:${seconds.toString().padStart(2, "0")}`);
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(timer);
+  }, [order.status, order.expiredAt]);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 2000);
+  };
+
+  const copyToClipboard = (text: string, label: string = "已复制") => {
+    navigator.clipboard.writeText(text);
+    showToast(label);
+  };
+
   const getStatusText = (status: string) => {
     const statusMap: Record<string, { text: string; color: string }> = {
       PENDING: { text: "待支付", color: "bg-yellow-100 text-yellow-600" },
@@ -20,7 +62,15 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
   };
 
   return (
-    <div className="bg-white rounded-xl p-6">
+    <>
+      {/* Toast 提示 */}
+      {toast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-green-500 text-white rounded-lg shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl p-6">
       {/* 订单状态 */}
       <div className="flex items-center justify-between mb-6 pb-6 border-b">
         <div>
@@ -45,10 +95,7 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
               <p className="font-mono font-bold text-blue-900 text-lg">{queryPassword}</p>
             </div>
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(queryPassword);
-                alert("已复制查询密码");
-              }}
+              onClick={() => copyToClipboard(queryPassword, "已复制查询密码")}
               className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
             >
               复制
@@ -149,10 +196,7 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
                   >
                     <span>{cardKey.content}</span>
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(cardKey.content);
-                        alert("已复制卡密");
-                      }}
+                      onClick={() => copyToClipboard(cardKey.content, "已复制卡密")}
                       className="ml-2 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
                     >
                       复制
@@ -179,19 +223,32 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
 
       {/* 待支付提示 */}
       {order.status === "PENDING" && (
-        <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-          <p className="text-yellow-800">
-            ⏳ 订单待支付，请在{" "}
-            <span className="font-bold">
-              {new Date(order.expiredAt).toLocaleString("zh-CN")}
-            </span>{" "}
-            前完成支付
-          </p>
-          <button className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">
-            继续支付
-          </button>
+        <div className={`p-4 rounded-lg border ${expired ? "bg-red-50 border-red-200" : "bg-yellow-50 border-yellow-200"}`}>
+          {expired ? (
+            <p className="text-red-800">
+              ❌ 订单已超时，请重新下单
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-yellow-800">
+                  ⏳ 订单待支付
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-600 text-sm">剩余时间</span>
+                  <span className="px-3 py-1 bg-yellow-500 text-white font-mono font-bold rounded-lg text-lg">
+                    {countdown}
+                  </span>
+                </div>
+              </div>
+              <button className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">
+                继续支付
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
+    </>
   );
 }

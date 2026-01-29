@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Header } from "@/components/shop/header";
+import { HeaderClient } from "@/components/shop/header-client";
 import { OrderDetail } from "@/components/shop/order-detail";
 
-export default function OrderDetailPage() {
+function OrderDetailContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const orderNo = params.orderNo as string;
@@ -40,8 +40,45 @@ export default function OrderDetailPage() {
   }, [orderNo, password]);
 
   return (
+    <>
+      {/* 加载中 */}
+      {loading && (
+        <div className="bg-white rounded-xl p-12 text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-500">正在加载订单信息...</p>
+        </div>
+      )}
+
+      {/* 错误提示 */}
+      {error && (
+        <div className="bg-white rounded-xl p-6">
+          <div className="p-4 bg-red-50 text-red-600 rounded-lg text-center">
+            {error}
+          </div>
+          <div className="mt-4 text-center">
+            <Link href="/order" className="text-primary hover:underline">
+              返回订单查询
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* 订单详情 - 使用共用组件 */}
+      {order && (
+        <OrderDetail
+          order={order}
+          showQueryPassword={true}
+          queryPassword={password}
+        />
+      )}
+    </>
+  );
+}
+
+export default function OrderDetailPage() {
+  return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <HeaderClient />
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-2xl mx-auto">
@@ -49,36 +86,16 @@ export default function OrderDetailPage() {
             订单详情
           </h1>
 
-          {/* 加载中 */}
-          {loading && (
-            <div className="bg-white rounded-xl p-12 text-center">
-              <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-gray-500">正在加载订单信息...</p>
-            </div>
-          )}
-
-          {/* 错误提示 */}
-          {error && (
-            <div className="bg-white rounded-xl p-6">
-              <div className="p-4 bg-red-50 text-red-600 rounded-lg text-center">
-                {error}
+          <Suspense
+            fallback={
+              <div className="bg-white rounded-xl p-12 text-center">
+                <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-gray-500">正在加载订单信息...</p>
               </div>
-              <div className="mt-4 text-center">
-                <Link href="/order" className="text-primary hover:underline">
-                  返回订单查询
-                </Link>
-              </div>
-            </div>
-          )}
-
-          {/* 订单详情 - 使用共用组件 */}
-          {order && (
-            <OrderDetail
-              order={order}
-              showQueryPassword={true}
-              queryPassword={password}
-            />
-          )}
+            }
+          >
+            <OrderDetailContent />
+          </Suspense>
 
           {/* 提示信息 */}
           <div className="mt-8 text-center text-sm text-gray-500">
