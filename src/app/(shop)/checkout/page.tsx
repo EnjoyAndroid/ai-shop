@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Header } from "@/components/shop/header";
 import { useCartStore } from "@/stores/cart";
 
 export default function CheckoutPage() {
@@ -88,17 +89,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 顶部导航 */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="text-xl font-bold text-primary">
-              AI Shop
-            </Link>
-            <span className="text-gray-600">结算</span>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold text-gray-800 mb-8">确认订单</h1>

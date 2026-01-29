@@ -1,4 +1,56 @@
 import { hashMD5 } from "@/lib/encryption";
+import { spawn } from "child_process";
+
+/**
+ * 使用 curl 发送 POST 请求（通过 spawn 异步执行）
+ */
+function curlPost(url: string, data: Record<string, string>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const postData = new URLSearchParams(data).toString();
+
+    const curl = spawn("curl", [
+      "-s",
+      "-X", "POST",
+      url,
+      "-d", postData,
+      "--max-time", "30"
+    ]);
+
+    let stdout = "";
+    let stderr = "";
+
+    curl.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    curl.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    curl.on("close", (code) => {
+      console.log("Xunhu API response:", stdout);
+
+      if (stderr) {
+        console.error("curl stderr:", stderr);
+      }
+
+      if (!stdout.trim()) {
+        reject(new Error("空响应"));
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        reject(new Error(`JSON解析失败: ${stdout}`));
+      }
+    });
+
+    curl.on("error", (err) => {
+      reject(new Error(`curl执行失败: ${err.message}`));
+    });
+  });
+}
 
 export interface PaymentProvider {
   name: string;
@@ -73,6 +125,7 @@ export class XunhuPayProvider implements PaymentProvider {
       payment: this.channel,
       total_fee: (amount / 100).toFixed(2),
       title: subject,
+      time: Math.floor(Date.now() / 1000).toString(),
       notify_url: notifyUrl,
       return_url: returnUrl,
       nonce_str: Math.random().toString(36).slice(2),
@@ -82,15 +135,7 @@ export class XunhuPayProvider implements PaymentProvider {
     data.hash = this.generateSign(data);
 
     try {
-      const response = await fetch(this.gateway, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams(data),
-      });
-
-      const result = await response.json();
+      const result = await curlPost(this.gateway, data);
 
       if (result.errcode === 0) {
         return {
@@ -143,21 +188,14 @@ export class XunhuPayProvider implements PaymentProvider {
     const data: Record<string, string> = {
       appid: this.appId,
       out_trade_order: orderNo,
+      time: Math.floor(Date.now() / 1000).toString(),
       nonce_str: Math.random().toString(36).slice(2),
     };
 
     data.hash = this.generateSign(data);
 
     try {
-      const response = await fetch("https://api.xunhupay.com/payment/query.html", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams(data),
-      });
-
-      const result = await response.json();
+      const result = await curlPost("https://api.xunhupay.com/payment/query.html", data);
 
       if (result.errcode === 0 && result.status === "OD") {
         return {
