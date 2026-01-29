@@ -1,6 +1,8 @@
 import prisma from "@/lib/db";
 import { generateOrderNo, generatePassword } from "@/lib/encryption";
 import { allocateCardKeys, decryptCardKey } from "./product.service";
+import { sendPaymentSuccessEmail } from "@/lib/mail";
+import { sendPaymentSuccessTelegram } from "@/lib/telegram";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import type { Order, OrderItem, CardKey, PaymentMethod, OrderStatus } from "@prisma/client";
 
@@ -198,6 +200,40 @@ export async function handlePaymentSuccess(
     if (order.userId) {
       await updateUserSpent(order.userId, order.payAmount);
     }
+
+    // 发送支付成功邮件
+    if (order.email) {
+      const emailItems = updatedOrder.items.map((item) => ({
+        productName: item.productName,
+        cardKeys: item.cardKeys.map((ck) => decryptCardKey(ck)),
+      }));
+
+      sendPaymentSuccessEmail({
+        to: order.email,
+        orderNo: order.orderNo,
+        queryPassword: order.queryPassword,
+        items: emailItems,
+        totalAmount: order.payAmount,
+      }).catch((err) => {
+        console.error("Failed to send payment email:", err);
+      });
+    }
+
+    // 发送 Telegram 通知
+    sendPaymentSuccessTelegram({
+      orderNo: order.orderNo,
+      email: order.email || "",
+      phone: order.phone || undefined,
+      payAmount: order.payAmount,
+      paymentMethod: order.paymentMethod,
+      items: updatedOrder.items.map((item) => ({
+        productName: item.productName,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+    }).catch((err) => {
+      console.error("Failed to send Telegram notification:", err);
+    });
 
     return updatedOrder as OrderWithItems;
   } finally {

@@ -16,6 +16,18 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // NextAuth 错误码映射
+  const getErrorMessage = (errorCode: string) => {
+    const errorMessages: Record<string, string> = {
+      CredentialsSignin: "账号或密码错误",
+      Configuration: "账号或密码错误",
+      AccessDenied: "账号已被禁用",
+      Verification: "验证链接已过期",
+      Default: "登录失败，请稍后重试",
+    };
+    return errorMessages[errorCode] || errorMessages.Default;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -30,7 +42,7 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        setError(result.error);
+        setError(getErrorMessage(result.error));
       } else if (result?.ok) {
         router.push(callbackUrl);
         router.refresh();
@@ -95,10 +107,17 @@ function LoginForm() {
       </div>
 
       <div className="mt-6 text-center text-sm text-gray-500">
-        还没有账号？{" "}
-        <Link href="/register" className="text-primary hover:underline">
-          立即注册
-        </Link>
+        <div className="mb-2">
+          <Link href="/forgot-password" className="text-primary hover:underline">
+            忘记密码？
+          </Link>
+        </div>
+        <div>
+          还没有账号？{" "}
+          <Link href="/register" className="text-primary hover:underline">
+            立即注册
+          </Link>
+        </div>
       </div>
     </form>
   );

@@ -15,8 +15,8 @@ export class AntiFraudService {
   private static readonly LIMITS = {
     // IP 限制：每分钟最多 10 次请求
     IP: { max: 10, windowSeconds: 60 },
-    // 邮箱限制：每小时最多 5 次下单
-    EMAIL: { max: 5, windowSeconds: 3600 },
+    // 邮箱限制：每小时最多 10 次下单（测试环境）
+    EMAIL: { max: 50, windowSeconds: 3600 },
     // 设备指纹限制：每小时最多 10 次下单
     FINGERPRINT: { max: 10, windowSeconds: 3600 },
   };

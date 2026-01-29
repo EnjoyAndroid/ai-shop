@@ -1,0 +1,197 @@
+"use client";
+
+interface OrderDetailProps {
+  order: any;
+  showQueryPassword?: boolean;
+  queryPassword?: string;
+}
+
+export function OrderDetail({ order, showQueryPassword = false, queryPassword }: OrderDetailProps) {
+  const getStatusText = (status: string) => {
+    const statusMap: Record<string, { text: string; color: string }> = {
+      PENDING: { text: "待支付", color: "bg-yellow-100 text-yellow-600" },
+      PAID: { text: "已支付", color: "bg-blue-100 text-blue-600" },
+      DELIVERED: { text: "已发货", color: "bg-green-100 text-green-600" },
+      COMPLETED: { text: "已完成", color: "bg-gray-100 text-gray-600" },
+      CANCELLED: { text: "已取消", color: "bg-red-100 text-red-600" },
+      REFUNDED: { text: "已退款", color: "bg-purple-100 text-purple-600" },
+    };
+    return statusMap[status] || { text: status, color: "bg-gray-100 text-gray-600" };
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-6">
+      {/* 订单状态 */}
+      <div className="flex items-center justify-between mb-6 pb-6 border-b">
+        <div>
+          <p className="text-gray-500 text-sm">订单号</p>
+          <p className="font-mono font-bold">{order.orderNo}</p>
+        </div>
+        <span
+          className={`px-4 py-2 rounded-full text-sm font-medium ${
+            getStatusText(order.status).color
+          }`}
+        >
+          {getStatusText(order.status).text}
+        </span>
+      </div>
+
+      {/* 查询密码提示 */}
+      {showQueryPassword && queryPassword && (
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-blue-700">🔑 订单查询密码</p>
+              <p className="font-mono font-bold text-blue-900 text-lg">{queryPassword}</p>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(queryPassword);
+                alert("已复制查询密码");
+              }}
+              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+            >
+              复制
+            </button>
+          </div>
+          <p className="text-xs text-blue-600 mt-2">
+            请保存此密码，用于以后查询订单
+          </p>
+        </div>
+      )}
+
+      {/* 订单信息 */}
+      <div className="mb-6">
+        <h3 className="font-semibold text-gray-800 mb-3">订单信息</h3>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="text-gray-500">创建时间:</span>
+            <span className="ml-2">
+              {new Date(order.createdAt).toLocaleString("zh-CN")}
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-500">支付方式:</span>
+            <span className="ml-2">{order.paymentMethod || "-"}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">联系邮箱:</span>
+            <span className="ml-2">{order.email || "-"}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">联系手机:</span>
+            <span className="ml-2">{order.phone || "-"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 商品列表 */}
+      <div className="mb-6">
+        <h3 className="font-semibold text-gray-800 mb-3">商品明细</h3>
+        <div className="space-y-3">
+          {order.items?.map((item: any) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+            >
+              <div>
+                <p className="font-medium">{item.productName}</p>
+                <p className="text-sm text-gray-500">
+                  ¥{(item.price / 100).toFixed(2)} × {item.quantity}
+                </p>
+              </div>
+              <p className="font-bold text-red-500">
+                ¥{((item.price * item.quantity) / 100).toFixed(2)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 金额汇总 */}
+      <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-gray-500">商品总价</span>
+          <span>¥{(order.totalAmount / 100).toFixed(2)}</span>
+        </div>
+        {order.discountAmount > 0 && (
+          <div className="flex justify-between text-sm mb-2">
+            <span className="text-gray-500">会员折扣</span>
+            <span className="text-green-500">
+              -¥{(order.discountAmount / 100).toFixed(2)}
+            </span>
+          </div>
+        )}
+        <div className="flex justify-between font-bold pt-2 border-t">
+          <span>实付金额</span>
+          <span className="text-red-500">
+            ¥{(order.payAmount / 100).toFixed(2)}
+          </span>
+        </div>
+      </div>
+
+      {/* 卡密信息 */}
+      {order.status === "DELIVERED" && order.items?.some((item: any) => item.cardKeys?.length > 0) && (
+        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+          <h3 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
+            <span>🎉</span> 您的卡密
+          </h3>
+          {order.items.map((item: any) => (
+            <div key={item.id} className="mb-4 last:mb-0">
+              <p className="text-sm text-green-700 mb-2">
+                {item.productName}:
+              </p>
+              <div className="space-y-2">
+                {item.cardKeys?.map((cardKey: any) => (
+                  <div
+                    key={cardKey.id}
+                    className="p-3 bg-white rounded border border-green-200 font-mono text-sm break-all flex items-center justify-between"
+                  >
+                    <span>{cardKey.content}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(cardKey.content);
+                        alert("已复制卡密");
+                      }}
+                      className="ml-2 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                    >
+                      复制
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="text-xs text-green-600 mt-3">
+            💡 请妥善保管您的卡密信息
+          </p>
+        </div>
+      )}
+
+      {/* 支付成功提示 */}
+      {order.status === "PAID" && (
+        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-blue-800">
+            ✅ 支付成功！卡密将在 1-5 分钟内发送到您的邮箱
+          </p>
+        </div>
+      )}
+
+      {/* 待支付提示 */}
+      {order.status === "PENDING" && (
+        <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+          <p className="text-yellow-800">
+            ⏳ 订单待支付，请在{" "}
+            <span className="font-bold">
+              {new Date(order.expiredAt).toLocaleString("zh-CN")}
+            </span>{" "}
+            前完成支付
+          </p>
+          <button className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">
+            继续支付
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -3,6 +3,8 @@ import { createOrder } from "@/lib/services/order.service";
 import { AntiFraudService } from "@/lib/services/anti-fraud.service";
 import { getPaymentProvider } from "@/lib/payment";
 import { createOrderSchema } from "@/lib/validations";
+import { decryptCardKey } from "@/lib/services/product.service";
+import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 
 export async function POST(request: NextRequest) {
@@ -19,6 +21,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { items, email, phone, paymentMethod } = validationResult.data;
+
+    // 获取当前登录用户
+    const session = await auth();
+    const userId = session?.user?.id;
 
     // 获取请求信息
     const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
@@ -41,6 +47,7 @@ export async function POST(request: NextRequest) {
 
     // 创建订单
     const order = await createOrder({
+      userId,
       email,
       phone,
       paymentMethod: paymentMethod as any,
@@ -140,7 +147,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "查询密码错误" }, { status: 403 });
     }
 
-    return NextResponse.json({ order });
+    // 解密卡密后返回
+    const orderWithDecryptedKeys = {
+      ...order,
+      items: order.items.map((item) => ({
+        ...item,
+        cardKeys: item.cardKeys.map((ck) => ({
+          ...ck,
+          content: decryptCardKey(ck),
+        })),
+      })),
+    };
+
+    return NextResponse.json({ order: orderWithDecryptedKeys });
   } catch (error) {
     console.error("Query order error:", error);
     return NextResponse.json({ error: "查询订单失败" }, { status: 500 });
