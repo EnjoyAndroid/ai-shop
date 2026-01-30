@@ -3,18 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import SliderCaptcha from "@/components/slider-captcha";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
     email: "",
-    phone: "",
     password: "",
     confirmPassword: "",
     name: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showCaptcha, setShowCaptcha] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -23,12 +24,13 @@ export default function RegisterPage() {
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // 点击注册按钮，先验证表单，再弹出验证码
+  const handleRegisterClick = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!formData.email && !formData.phone) {
-      setError("请填写邮箱或手机号");
+    if (!formData.email) {
+      setError("请填写邮箱");
       return;
     }
 
@@ -42,6 +44,13 @@ export default function RegisterPage() {
       return;
     }
 
+    // 表单验证通过，显示验证码弹窗
+    setShowCaptcha(true);
+  };
+
+  // 验证码验证成功后提交注册
+  const handleCaptchaSuccess = async (token: string) => {
+    setShowCaptcha(false);
     setLoading(true);
 
     try {
@@ -49,10 +58,10 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: formData.email || undefined,
-          phone: formData.phone || undefined,
+          email: formData.email,
           password: formData.password,
           name: formData.name || undefined,
+          captchaToken: token,
         }),
       });
 
@@ -62,7 +71,6 @@ export default function RegisterPage() {
         throw new Error(data.error || "注册失败");
       }
 
-      // 注册成功，跳转到登录页
       router.push("/login?registered=1");
     } catch (err) {
       setError(err instanceof Error ? err.message : "注册失败");
@@ -72,16 +80,25 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <Link href="/" className="text-3xl font-bold text-primary">
-            AI Shop
-          </Link>
-          <p className="text-gray-500 mt-2">创建您的账号</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* 顶部导航 */}
+      <header className="bg-white shadow-sm">
+        <div className="container mx-auto px-4">
+          <div className="h-16 flex items-center">
+            <Link href="/" className="text-xl font-bold text-primary">
+              AI Shop
+            </Link>
+          </div>
         </div>
+      </header>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 shadow-sm">
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-800">创建您的账号</h1>
+          </div>
+
+        <form onSubmit={handleRegisterClick} className="bg-white rounded-2xl p-8 shadow-sm">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">注册</h1>
 
           {error && (
@@ -93,7 +110,7 @@ export default function RegisterPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm text-gray-600 mb-1">
-                邮箱 <span className="text-gray-400">(推荐)</span>
+                邮箱 <span className="text-red-500">*</span>
               </label>
               <input
                 type="email"
@@ -102,20 +119,8 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="your@email.com"
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                手机号 <span className="text-gray-400">(可选)</span>
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="13800138000"
-                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                autoComplete="email"
+                required
               />
             </div>
 
@@ -144,6 +149,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="至少6位密码"
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                autoComplete="new-password"
                 required
               />
             </div>
@@ -159,6 +165,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="再次输入密码"
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                autoComplete="off"
                 required
               />
             </div>
@@ -179,13 +186,41 @@ export default function RegisterPage() {
             </Link>
           </div>
         </form>
-
-        <div className="mt-4 text-center">
-          <Link href="/" className="text-sm text-gray-500 hover:text-primary">
-            ← 返回首页
-          </Link>
         </div>
       </div>
+
+      {/* 验证码弹窗 */}
+      {showCaptcha && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* 遮罩层 */}
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowCaptcha(false)}
+          />
+
+          {/* 弹窗内容 */}
+          <div className="relative bg-white rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 mx-4 w-[360px]">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">安全验证</h3>
+              <button
+                type="button"
+                onClick={() => setShowCaptcha(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <SliderCaptcha
+              onSuccess={handleCaptchaSuccess}
+              onError={() => {}}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
