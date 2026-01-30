@@ -161,6 +161,7 @@ model Product {
   slug        String        @unique
   description String?       @db.Text
   content     String?       @db.Text  // 详细说明 (Markdown)
+  image       String?       // 商品图片 URL
 
   // 分类
   categoryId  String

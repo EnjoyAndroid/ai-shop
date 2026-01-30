@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import redis, { CACHE_KEYS } from "@/lib/redis";
 import { categorySchema } from "@/lib/validations";
 
 // 更新分类
@@ -56,6 +57,9 @@ export async function PUT(
       },
     });
 
+    // 清除分类缓存
+    await redis.del(CACHE_KEYS.CATEGORIES);
+
     return NextResponse.json({ category });
   } catch (error) {
     console.error("Update category error:", error);
@@ -97,6 +101,9 @@ export async function DELETE(
     await prisma.category.delete({
       where: { id: params.id },
     });
+
+    // 清除分类缓存
+    await redis.del(CACHE_KEYS.CATEGORIES);
 
     return NextResponse.json({ success: true });
   } catch (error) {

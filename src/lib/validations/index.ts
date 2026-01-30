@@ -26,6 +26,7 @@ export const productSchema = z.object({
   slug: z.string().min(1, "Slug不能为空").max(100).regex(/^[a-z0-9-]+$/, "Slug只能包含小写字母、数字和连字符"),
   description: z.string().max(500).optional(),
   content: z.string().optional(),
+  image: z.string().nullable().optional(),
   categoryId: z.string().min(1, "请选择分类"),
   price: z.number().min(1, "价格必须大于0"),
   originalPrice: z.number().min(0).optional(),

@@ -90,6 +90,10 @@ export async function getProducts(options: {
     const where = {
       ...(categoryId && { categoryId }),
       ...(isActive !== undefined && { isActive }),
+      // 过滤掉已禁用分类下的商品
+      category: {
+        isActive: true,
+      },
     };
 
     const [products, total] = await Promise.all([

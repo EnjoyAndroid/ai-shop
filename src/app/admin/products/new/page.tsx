@@ -21,6 +21,7 @@ export default function AdminNewProductPage() {
     slug: "",
     description: "",
     content: "",
+    image: "",
     categoryId: "",
     price: "",
     originalPrice: "",
@@ -29,6 +30,7 @@ export default function AdminNewProductPage() {
     maxQuantity: "10",
     isActive: true,
   });
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -59,6 +61,34 @@ export default function AdminNewProductPage() {
     });
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formDataUpload,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "上传失败");
+      }
+
+      setFormData({ ...formData, image: data.url });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -70,6 +100,7 @@ export default function AdminNewProductPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          image: formData.image || null,
           price: Math.round(parseFloat(formData.price) * 100),
           originalPrice: formData.originalPrice
             ? Math.round(parseFloat(formData.originalPrice) * 100)
@@ -118,6 +149,52 @@ export default function AdminNewProductPage() {
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <h2 className="text-lg font-bold text-gray-800 mb-4">基本信息</h2>
             <div className="space-y-4">
+              {/* 商品图片 */}
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  商品图片
+                </label>
+                <div className="flex items-start gap-4">
+                  {formData.image ? (
+                    <div className="relative w-32 h-32 rounded-lg overflow-hidden border">
+                      <img
+                        src={formData.image}
+                        alt="商品图片"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, image: "" })}
+                        className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-32 h-32 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
+                      <span className="text-gray-400 text-4xl">📷</span>
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <label className="block">
+                      <span className="inline-block px-4 py-2 bg-gray-100 text-gray-700 rounded-lg cursor-pointer hover:bg-gray-200">
+                        {uploading ? "上传中..." : "选择图片"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleImageUpload}
+                        disabled={uploading}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-xs text-gray-500 mt-2">
+                      支持 JPG、PNG、GIF、WebP，最大 2MB
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm text-gray-600 mb-1">
                   商品名称 <span className="text-red-500">*</span>

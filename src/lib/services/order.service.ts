@@ -1,6 +1,7 @@
 import prisma from "@/lib/db";
 import { generateOrderNo, generatePassword } from "@/lib/encryption";
 import { allocateCardKeys, decryptCardKey } from "./product.service";
+import { getOrderExpireMinutes, getOrderAutoDeleteDays } from "./settings.service";
 import { sendPaymentSuccessEmail } from "@/lib/mail";
 import { sendPaymentSuccessTelegram } from "@/lib/telegram";
 import redis, { CACHE_KEYS } from "@/lib/redis";
@@ -91,8 +92,9 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
   const orderNo = generateOrderNo();
   const queryPassword = generatePassword();
 
-  // 设置订单过期时间 (10分钟)
-  const expiredAt = new Date(Date.now() + 10 * 60 * 1000);
+  // 从配置获取订单过期时间
+  const expireMinutes = await getOrderExpireMinutes();
+  const expiredAt = new Date(Date.now() + expireMinutes * 60 * 1000);
 
   // 创建订单
   const order = await prisma.order.create({
@@ -422,15 +424,16 @@ export async function cancelExpiredOrders(): Promise<number> {
 }
 
 /**
- * 删除旧订单 (7天前的已完成订单)
+ * 删除旧订单 (根据配置天数)
  */
 export async function deleteOldOrders(): Promise<number> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const deleteDays = await getOrderAutoDeleteDays();
+  const deleteDate = new Date(Date.now() - deleteDays * 24 * 60 * 60 * 1000);
 
   const result = await prisma.order.deleteMany({
     where: {
       status: { in: ["COMPLETED", "CANCELLED"] },
-      createdAt: { lt: sevenDaysAgo },
+      createdAt: { lt: deleteDate },
     },
   });
 

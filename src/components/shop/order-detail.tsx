@@ -126,10 +126,6 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
             <span className="text-gray-500">联系邮箱:</span>
             <span className="ml-2">{order.email || "-"}</span>
           </div>
-          <div>
-            <span className="text-gray-500">联系手机:</span>
-            <span className="ml-2">{order.phone || "-"}</span>
-          </div>
         </div>
       </div>
 

@@ -19,14 +19,24 @@ export function ProductCard({ product }: ProductCardProps) {
   const hasStock = stock > 0;
 
   return (
-    <Link href={`/product/${product.slug}`}>
+    <Link href={`/product/${product.slug}`} target="_blank">
       <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
         {/* 商品图片区域 */}
-        <div className="aspect-video bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-          <span className="text-4xl text-white opacity-80">
-            {product.category.icon || "🤖"}
-          </span>
-        </div>
+        {product.image ? (
+          <div className="aspect-square overflow-hidden">
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-full h-full object-contain bg-gray-50 group-hover:scale-105 transition-transform"
+            />
+          </div>
+        ) : (
+          <div className="aspect-square bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <span className="text-4xl text-white opacity-80">
+              {product.category.icon || "🤖"}
+            </span>
+          </div>
+        )}
 
         {/* 商品信息 */}
         <div className="p-4">
@@ -56,15 +66,18 @@ export function ProductCard({ product }: ProductCardProps) {
                 </span>
               )}
             </div>
-            <span
-              className={`text-xs px-2 py-1 rounded-full ${
-                hasStock
-                  ? "bg-green-100 text-green-600"
-                  : "bg-red-100 text-red-600"
-              }`}
-            >
-              {hasStock ? `库存 ${stock}` : "售罄"}
-            </span>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span
+                className={`px-2 py-1 rounded-full ${
+                  hasStock
+                    ? "bg-green-100 text-green-600"
+                    : "bg-red-100 text-red-600"
+                }`}
+              >
+                {hasStock ? `库存 ${stock}` : "售罄"}
+              </span>
+              <span>已售 {product.salesCount || 0}</span>
+            </div>
           </div>
         </div>
       </div>

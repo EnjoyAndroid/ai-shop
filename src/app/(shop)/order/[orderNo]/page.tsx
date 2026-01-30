@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { HeaderClient } from "@/components/shop/header-client";
 import { OrderDetail } from "@/components/shop/order-detail";
+import { ContactSupport } from "@/components/shop/contact-support";
 
 function OrderDetailContent() {
   const params = useParams();
@@ -103,8 +104,8 @@ export default function OrderDetailPage() {
           </Suspense>
 
           {/* 提示信息 */}
-          <div className="mt-8 text-center text-sm text-gray-500">
-            <p>如有问题，请联系客服</p>
+          <div className="mt-8">
+            <ContactSupport />
           </div>
         </div>
       </main>

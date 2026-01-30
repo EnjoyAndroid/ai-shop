@@ -60,11 +60,21 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* 商品图片 */}
-          <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl aspect-square flex items-center justify-center">
-            <span className="text-9xl text-white opacity-80">
-              {product.category.icon || "🤖"}
-            </span>
-          </div>
+          {product.image ? (
+            <div className="rounded-2xl aspect-square overflow-hidden">
+              <img
+                src={product.image}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl aspect-square flex items-center justify-center">
+              <span className="text-9xl text-white opacity-80">
+                {product.category.icon || "🤖"}
+              </span>
+            </div>
+          )}
 
           {/* 商品信息 */}
           <div className="bg-white rounded-2xl p-8">

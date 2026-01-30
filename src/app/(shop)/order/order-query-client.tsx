@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { HeaderClient } from "@/components/shop/header-client";
 import { OrderDetail } from "@/components/shop/order-detail";
+import { ContactSupport } from "@/components/shop/contact-support";
 
 export function OrderQueryClient() {
   const [orderNo, setOrderNo] = useState("");
@@ -105,8 +106,8 @@ export function OrderQueryClient() {
           )}
 
           {/* 提示信息 */}
-          <div className="mt-8 text-center text-sm text-gray-500">
-            <p>如有问题，请联系客服</p>
+          <div className="mt-8">
+            <ContactSupport />
           </div>
         </div>
       </main>
