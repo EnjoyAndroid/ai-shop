@@ -33,6 +33,9 @@ export const CACHE_KEYS = {
   RATE_LIMIT_EMAIL: (email: string) => `ratelimit:email:${email}`,
   RATE_LIMIT_FINGERPRINT: (fp: string) => `ratelimit:fp:${fp}`,
 
+  // 登录失败次数
+  LOGIN_FAIL_COUNT: (account: string) => `login:fail:${account}`,
+
   // 订单锁
   ORDER_LOCK: (orderId: string) => `order:lock:${orderId}`,
 

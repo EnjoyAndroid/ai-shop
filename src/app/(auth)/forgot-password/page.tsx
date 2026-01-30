@@ -36,14 +36,23 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <Link href="/" className="text-3xl font-bold text-primary">
-            AI Shop
-          </Link>
-          <p className="text-gray-500 mt-2">找回密码</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* 顶部导航 */}
+      <header className="bg-white shadow-sm">
+        <div className="container mx-auto px-4">
+          <div className="h-16 flex items-center">
+            <Link href="/" className="text-xl font-bold text-primary">
+              AI Shop
+            </Link>
+          </div>
         </div>
+      </header>
+
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-800">找回密码</h1>
+          </div>
 
         <div className="bg-white rounded-2xl p-8 shadow-sm">
           <h1 className="text-2xl font-bold text-gray-800 mb-6">忘记密码</h1>
@@ -112,6 +121,7 @@ export default function ForgotPasswordPage() {
               </div>
             </form>
           )}
+        </div>
         </div>
       </div>
     </div>

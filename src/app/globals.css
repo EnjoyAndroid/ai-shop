@@ -56,4 +56,8 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* 始终显示滚动条空间，防止页面切换时偏移 */
+  html {
+    overflow-y: scroll;
+  }
 }

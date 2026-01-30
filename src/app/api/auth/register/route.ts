@@ -2,10 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/db";
 import { registerSchema } from "@/lib/validations";
+import { consumeCaptchaToken } from "@/lib/captcha";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // 验证滑块验证码（必须已通过滑块验证）
+    const { captchaToken } = body;
+    if (!captchaToken) {
+      return NextResponse.json(
+        { error: "请完成滑块验证" },
+        { status: 400 }
+      );
+    }
+
+    const isValidCaptcha = await consumeCaptchaToken(captchaToken);
+    if (!isValidCaptcha) {
+      return NextResponse.json(
+        { error: "验证码无效或已过期，请重新验证" },
+        { status: 400 }
+      );
+    }
 
     // 验证请求数据
     const validationResult = registerSchema.safeParse(body);
