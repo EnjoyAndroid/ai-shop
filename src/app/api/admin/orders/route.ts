@@ -10,7 +10,12 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (status) {
-      where.status = status;
+      // "已完成"包含 DELIVERED 和 COMPLETED 两种状态
+      if (status === "DELIVERED") {
+        where.status = { in: ["DELIVERED", "COMPLETED"] };
+      } else {
+        where.status = status;
+      }
     }
 
     const [orders, total] = await Promise.all([

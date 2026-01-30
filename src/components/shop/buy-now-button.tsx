@@ -28,7 +28,11 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showBalanceConfirm, setShowBalanceConfirm] = useState(false);
+  const [userBalance, setUserBalance] = useState<number | null>(null);
   const router = useRouter();
+
+  const totalAmount = product.price * quantity;
 
   // 获取启用的支付方式
   useEffect(() => {
@@ -46,7 +50,7 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
         const defaultMethods = [
           { value: "WECHAT", label: "微信", icon: "💚" },
           { value: "ALIPAY", label: "支付宝", icon: "💳" },
-          { value: "USDT_TRC20", label: "USDT", icon: "💰" },
+          { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" },
           { value: "BALANCE", label: "余额", icon: "💵" },
         ];
         setPaymentMethods(defaultMethods);
@@ -54,12 +58,62 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       });
   }, []);
 
+  // 检查余额
+  const checkBalance = async () => {
+    try {
+      const res = await fetch("/api/user/balance");
+      if (res.ok) {
+        const data = await res.json();
+        return data.balance || 0;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleBuyNow = async () => {
     if (!email) {
       setError("请填写邮箱，用于接收卡密");
       return;
     }
 
+    // 余额支付：先检查余额，显示确认弹框
+    if (paymentMethod === "BALANCE") {
+      setLoading(true);
+      setError("");
+      const balance = await checkBalance();
+      setLoading(false);
+
+      if (balance === null) {
+        setError("请先登录后使用余额支付");
+        return;
+      }
+
+      setUserBalance(balance);
+
+      if (balance < totalAmount) {
+        setError(`余额不足，当前余额 ¥${(balance / 100).toFixed(2)}，需要 ¥${(totalAmount / 100).toFixed(2)}`);
+        return;
+      }
+
+      // 显示确认弹框
+      setShowBalanceConfirm(true);
+      return;
+    }
+
+    // 其他支付方式走原有流程
+    await submitOrder();
+  };
+
+  // 确认余额支付
+  const handleConfirmBalancePay = async () => {
+    setShowBalanceConfirm(false);
+    await submitOrder();
+  };
+
+  // 提交订单
+  const submitOrder = async () => {
     setLoading(true);
     setError("");
 
@@ -88,11 +142,24 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
         throw new Error(data.error || "创建订单失败");
       }
 
+      // 余额支付成功，直接跳转订单详情
+      if (paymentMethod === "BALANCE") {
+        router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);
+        return;
+      }
+
       // 跳转到支付页面或订单详情
       if (data.qrCode) {
         // 跳转到我们自己的支付页面（带倒计时）
-        const payUrl = `/pay/${data.orderNo}?password=${data.queryPassword}&qrcode=${encodeURIComponent(data.qrCode)}&amount=${product.price * quantity}&method=${paymentMethod}`;
-        router.push(payUrl);
+        const params = new URLSearchParams({
+          password: data.queryPassword,
+          qrcode: data.qrCode,
+          amount: String(product.price * quantity),
+          method: paymentMethod,
+          usdt: String(data.usdtAmount || ""),
+          rate: String(data.exchangeRate || ""),
+        });
+        router.push(`/pay/${data.orderNo}?${params.toString()}`);
       } else if (data.payUrl) {
         // 没有二维码时直接跳转第三方
         window.location.href = data.payUrl;
@@ -108,6 +175,52 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
 
   return (
     <div className="space-y-4">
+      {/* 余额支付确认弹框 */}
+      {showBalanceConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 w-full">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">确认支付</h3>
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">商品</span>
+                <span className="text-gray-800">{product.productName}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">数量</span>
+                <span className="text-gray-800">{quantity}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">当前余额</span>
+                <span className="text-gray-800">¥{((userBalance || 0) / 100).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-bold pt-3 border-t">
+                <span>支付金额</span>
+                <span className="text-red-500">¥{(totalAmount / 100).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">支付后余额</span>
+                <span className="text-green-600">¥{(((userBalance || 0) - totalAmount) / 100).toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowBalanceConfirm(false)}
+                className="flex-1 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmBalancePay}
+                disabled={loading}
+                className="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              >
+                {loading ? "支付中..." : "确认支付"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 数量选择 */}
       <div className="flex items-center gap-4">
         <span className="text-gray-600">数量:</span>
@@ -185,7 +298,15 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
                   : "hover:bg-gray-50"
               }`}
             >
-              <span>{method.icon}</span>
+              {method.value === "USDT_TRC20" ? (
+                <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
+              ) : method.value === "WECHAT" ? (
+                <img src="/icons/wechat.png" alt="微信" className="w-4 h-4" />
+              ) : method.value === "ALIPAY" ? (
+                <img src="/icons/alipay.png" alt="支付宝" className="w-4 h-4" />
+              ) : (
+                <span>{method.icon}</span>
+              )}
               <span>{method.label}</span>
             </button>
           ))}

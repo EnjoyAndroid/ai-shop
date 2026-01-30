@@ -232,6 +232,8 @@ export class XunhuPayProvider implements PaymentProvider {
 
 /**
  * USDT TRC20 支付
+ * 支持通过 TronGrid API 自动验证付款
+ * 支持实时汇率查询
  */
 export class USDTProvider implements PaymentProvider {
   name = "usdt";
@@ -247,34 +249,151 @@ export class USDTProvider implements PaymentProvider {
         : process.env.USDT_ERC20_ADDRESS || "";
   }
 
-  async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
-    const { amount } = params;
+  /**
+   * 生成带小数尾数的 USDT 金额，用于区分不同订单
+   * 例如: 10.00 -> 10.001, 10.002, 10.003 等
+   * 尾数范围: 0.001 - 0.099 (小于1毛钱)
+   */
+  generateUniqueAmount(baseAmount: number, orderNo: string): number {
+    // 使用订单号生成一个 1-99 的尾数（作为第三位小数）
+    const hash = orderNo.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const suffix = (hash % 99) + 1; // 1-99
+    // 加在小数点后第三位，范围 0.001-0.099
+    return parseFloat((baseAmount + suffix / 1000).toFixed(3));
+  }
 
-    // USDT 金额 (假设 1 USDT = 7.2 CNY)
-    const usdtAmount = (amount / 100 / 7.2).toFixed(2);
+  async createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
+    const { amount, orderNo } = params;
+
+    // 使用实时汇率
+    const { cnyToUSDT } = await import("@/lib/exchange-rate");
+    const { usdt: baseAmount, rate } = await cnyToUSDT(amount / 100);
+
+    // 添加唯一尾数以便识别订单
+    const usdtAmount = this.generateUniqueAmount(baseAmount, orderNo);
 
     return {
       success: true,
       payUrl: `${this.network}:${this.address}?amount=${usdtAmount}`,
       qrCode: this.address,
-    };
+      // 额外返回 USDT 金额和汇率供前端显示
+      usdtAmount,
+      exchangeRate: rate,
+    } as PaymentResult & { usdtAmount: number; exchangeRate: number };
   }
 
   async verifyCallback(params: Record<string, string>): Promise<CallbackResult> {
-    // USDT 支付通过区块链监听验证
-    // 这里返回待人工确认状态
-    return {
-      success: false,
-      errorMsg: "USDT 支付需要人工确认",
-    };
+    const { txHash, orderNo, expectedAmount } = params;
+
+    if (!txHash) {
+      return {
+        success: false,
+        errorMsg: "缺少交易哈希",
+      };
+    }
+
+    try {
+      // 动态导入 TronGrid 客户端
+      const { isTransactionConfirmed } = await import("@/lib/trongrid");
+
+      const confirmed = await isTransactionConfirmed(txHash);
+      if (!confirmed) {
+        return {
+          success: false,
+          errorMsg: "交易未确认或失败",
+        };
+      }
+
+      return {
+        success: true,
+        orderNo,
+        tradeNo: txHash,
+        amount: expectedAmount ? parseInt(expectedAmount) : undefined,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        errorMsg: error instanceof Error ? error.message : "验证失败",
+      };
+    }
   }
 
-  async queryOrder(_orderNo: string): Promise<QueryResult> {
-    // 需要查询区块链
-    return {
-      success: true,
-      status: "pending",
-    };
+  /**
+   * 查询订单支付状态
+   * 通过 TronGrid API 查询区块链上是否有匹配的 USDT 转账
+   */
+  async queryOrder(
+    orderNo: string,
+    options?: { expectedAmount?: number; createdAt?: number }
+  ): Promise<QueryResult> {
+    // 如果是 ERC20，暂不支持自动查询
+    if (this.network === "erc20") {
+      return {
+        success: true,
+        status: "pending",
+        errorMsg: "ERC20 暂不支持自动查询，请联系客服确认",
+      };
+    }
+
+    if (!this.address) {
+      return {
+        success: false,
+        status: "pending",
+        errorMsg: "未配置收款地址",
+      };
+    }
+
+    try {
+      const { findUSDTPayment, getTRC20Transfers } = await import("@/lib/trongrid");
+      const { cnyToUSDT } = await import("@/lib/exchange-rate");
+
+      // 默认查询最近 30 分钟的交易
+      const sinceTimestamp = options?.createdAt || Date.now() - 30 * 60 * 1000;
+
+      // 计算预期金额
+      let expectedAmount = options?.expectedAmount;
+      if (!expectedAmount) {
+        // 如果没有传入预期金额，返回 pending
+        return {
+          success: true,
+          status: "pending",
+        };
+      }
+
+      // 将人民币分转为 USDT（使用实时汇率）
+      const { usdt: baseUsdt } = await cnyToUSDT(expectedAmount / 100);
+      const usdtAmount = this.generateUniqueAmount(baseUsdt, orderNo);
+
+      console.log(`[USDT Check] orderNo=${orderNo}, expectedCNY=${expectedAmount/100}, usdtAmount=${usdtAmount}, address=${this.address}`);
+
+      // 查找匹配的交易
+      const tx = await findUSDTPayment(
+        this.address,
+        usdtAmount,
+        sinceTimestamp,
+        0.01 // 容差 0.01 USDT
+      );
+
+      if (tx) {
+        return {
+          success: true,
+          status: "paid",
+          tradeNo: tx.transaction_id,
+        };
+      }
+
+      return {
+        success: true,
+        status: "pending",
+      };
+    } catch (error) {
+      console.error("USDT queryOrder error:", error);
+      return {
+        success: false,
+        status: "pending",
+        errorMsg: error instanceof Error ? error.message : "查询失败",
+      };
+    }
   }
 }
 

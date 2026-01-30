@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: ProductPageProps) {
   if (!product) return { title: "商品不存在" };
 
   return {
-    title: `${product.name} - AI Shop`,
+    title: product.name,
     description: product.description,
   };
 }

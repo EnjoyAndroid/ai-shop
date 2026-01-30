@@ -2,6 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "我的余额",
+};
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -94,9 +99,12 @@ export default async function UserBalancePage() {
               <p className="text-4xl font-bold mb-6">
                 ¥{(user.balance / 100).toFixed(2)}
               </p>
-              <button className="px-6 py-2 bg-white text-primary rounded-lg font-medium hover:bg-white/90">
+              <Link
+                href="/balance/recharge"
+                className="px-6 py-2 bg-white text-primary rounded-lg font-medium hover:bg-white/90 inline-block"
+              >
                 立即充值
-              </button>
+              </Link>
             </div>
 
             {/* 余额记录 */}

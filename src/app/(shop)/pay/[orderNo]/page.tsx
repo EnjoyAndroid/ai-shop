@@ -12,19 +12,108 @@ function PayContent() {
 
   const orderNo = params.orderNo as string;
   const password = searchParams.get("password") || "";
-  const qrCode = searchParams.get("qrcode") || "";
-  const amount = searchParams.get("amount") || "0";
-  const method = searchParams.get("method") || "WECHAT";
+  const urlQrCode = searchParams.get("qrcode") || "";
+  const urlAmount = searchParams.get("amount") || "";
+  const urlMethod = searchParams.get("method") || "";
+  const urlUsdtAmount = searchParams.get("usdt") || "";
 
-  const [countdown, setCountdown] = useState(5 * 60); // 5分钟
+  // 状态：优先使用 API 数据，URL 参数作为备用
+  const [orderData, setOrderData] = useState<{
+    payAmount: number;
+    paymentMethod: string;
+    qrCode: string;
+    usdtAmount: string;
+  } | null>(null);
+
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // 使用 API 数据或 URL 参数
+  const amount = orderData?.payAmount || (urlAmount ? parseInt(urlAmount) : 0);
+  const method = orderData?.paymentMethod || urlMethod || "WECHAT";
+  const qrCode = orderData?.qrCode || urlQrCode;
+  const usdtAmount = orderData?.usdtAmount || urlUsdtAmount;
+
+  const isUSDT = method.startsWith("USDT");
+
+  // 复制地址到剪贴板
+  const copyAddress = async () => {
+    if (qrCode) {
+      await navigator.clipboard.writeText(qrCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // 获取订单信息（金额、过期时间、二维码等）
+  useEffect(() => {
+    const fetchOrderData = async () => {
+      try {
+        // 先尝试获取支付信息（包含二维码）
+        const payRes = await fetch(`/api/orders/${orderNo}/pay?password=${password}`);
+        const payData = await payRes.json();
+
+        if (payRes.ok && payData) {
+          setOrderData({
+            payAmount: payData.payAmount,
+            paymentMethod: payData.paymentMethod,
+            qrCode: payData.qrCode || urlQrCode,
+            usdtAmount: payData.usdtAmount || urlUsdtAmount,
+          });
+
+          // 设置倒计时
+          if (payData.expiredAt) {
+            const expiredAt = new Date(payData.expiredAt).getTime();
+            const now = Date.now();
+            const remainingSeconds = Math.max(0, Math.floor((expiredAt - now) / 1000));
+            setCountdown(remainingSeconds);
+          } else {
+            setCountdown(10 * 60);
+          }
+        } else {
+          // 如果获取支付信息失败，尝试获取订单基本信息
+          const res = await fetch(`/api/orders?orderNo=${orderNo}&password=${password}`);
+          const data = await res.json();
+
+          if (data.order) {
+            setOrderData({
+              payAmount: data.order.payAmount,
+              paymentMethod: data.order.paymentMethod,
+              qrCode: urlQrCode,
+              usdtAmount: urlUsdtAmount,
+            });
+
+            if (data.order.expiredAt) {
+              const expiredAt = new Date(data.order.expiredAt).getTime();
+              const now = Date.now();
+              const remainingSeconds = Math.max(0, Math.floor((expiredAt - now) / 1000));
+              setCountdown(remainingSeconds);
+            } else {
+              setCountdown(10 * 60);
+            }
+          } else {
+            setCountdown(10 * 60);
+          }
+        }
+      } catch (e) {
+        console.error("Fetch order data error:", e);
+        setCountdown(10 * 60);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrderData();
+  }, [orderNo, password, urlQrCode, urlUsdtAmount]);
 
   // 倒计时
   useEffect(() => {
-    if (countdown <= 0) return;
+    if (countdown === null || countdown <= 0) return;
 
     const timer = setInterval(() => {
       setCountdown((prev) => {
-        if (prev <= 1) {
+        if (prev === null || prev <= 1) {
           clearInterval(timer);
           return 0;
         }
@@ -33,28 +122,51 @@ function PayContent() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [countdown !== null]); // 当 countdown 从 null 变成有值时触发
 
   // 轮询检查支付状态
   useEffect(() => {
     const checkPayment = async () => {
       try {
-        const res = await fetch(`/api/orders?orderNo=${orderNo}&password=${password}`);
+        // USDT 使用专用 API
+        const apiUrl = isUSDT
+          ? `/api/payment/usdt/check?orderNo=${orderNo}&password=${password}`
+          : `/api/orders?orderNo=${orderNo}&password=${password}`;
+
+        const res = await fetch(apiUrl);
         const data = await res.json();
 
-        if (data.order?.status === "DELIVERED" || data.order?.status === "PAID") {
-          router.push(`/order/${orderNo}?password=${password}`);
+        // 判断是否为充值订单（订单号以 R 开头）
+        const isRechargeOrder = orderNo.startsWith("R");
+
+        // USDT API 返回 paid: true
+        if (data.paid) {
+          if (isRechargeOrder) {
+            router.push("/balance?recharge=success");
+          } else {
+            router.push(`/order/${orderNo}?password=${password}`);
+          }
+          return;
+        }
+
+        // 普通支付 API 返回 order.status（包含 COMPLETED 状态）
+        if (data.order?.status === "DELIVERED" || data.order?.status === "PAID" || data.order?.status === "COMPLETED") {
+          if (isRechargeOrder) {
+            router.push("/balance?recharge=success");
+          } else {
+            router.push(`/order/${orderNo}?password=${password}`);
+          }
         }
       } catch (e) {
         console.error("Check payment error:", e);
       }
     };
 
-    // 每3秒检查一次
-    const interval = setInterval(checkPayment, 3000);
+    // USDT 每 5 秒检查一次（区块链确认需要时间），其他每 3 秒
+    const interval = setInterval(checkPayment, isUSDT ? 5000 : 3000);
 
     return () => clearInterval(interval);
-  }, [orderNo, password, router]);
+  }, [orderNo, password, router, isUSDT]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -63,8 +175,21 @@ function PayContent() {
   };
 
   const isWechat = method === "WECHAT";
-  const methodLabel = isWechat ? "微信" : method === "ALIPAY" ? "支付宝" : method;
-  const themeColor = isWechat ? "#07C160" : "#1677FF";
+  const isAlipay = method === "ALIPAY";
+  const methodLabel = isWechat ? "微信" : isAlipay ? "支付宝" : "USDT (TRON-TRC20)";
+  const themeColor = isWechat ? "#07C160" : isAlipay ? "#1677FF" : "#26A17B";
+
+  // 加载中状态
+  if (loading || countdown === null) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">加载支付信息...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (countdown <= 0) {
     return (
@@ -99,6 +224,112 @@ function PayContent() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            {isUSDT ? (
+              /* USDT 支付界面 */
+              <div className="p-8">
+                {/* 标题 */}
+                <div className="flex items-center justify-center gap-2 mb-6">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: "#26A17B" }}>
+                    <span className="text-white font-bold text-lg">₮</span>
+                  </div>
+                  <span className="text-xl font-bold" style={{ color: "#26A17B" }}>
+                    USDT (TRON-TRC20) 支付
+                  </span>
+                </div>
+
+                {/* 订单信息 */}
+                <div className="text-center mb-6">
+                  <p className="text-gray-500 text-sm mb-2">订单号: {orderNo}</p>
+                  <div className="flex items-center justify-center gap-4">
+                    <div>
+                      <p className="text-gray-500 text-sm">人民币金额</p>
+                      <p className="text-2xl font-bold text-gray-800">¥ {(parseInt(amount) / 100).toFixed(2)}</p>
+                    </div>
+                    <div className="text-2xl text-gray-300">=</div>
+                    <div>
+                      <p className="text-gray-500 text-sm">USDT 金额</p>
+                      <p className="text-2xl font-bold" style={{ color: "#26A17B" }}>
+                        {usdtAmount || "计算中..."} USDT
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 收款地址 */}
+                <div className="bg-gray-50 rounded-lg p-6 mb-6">
+                  <p className="text-gray-600 text-sm mb-4 text-center">收款地址 (TRC20 网络)</p>
+
+                  {/* 地址二维码 */}
+                  <div className="flex justify-center mb-4">
+                    <div className="p-3 bg-white rounded-lg border-2 border-gray-200">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCode)}`}
+                        alt="收款地址二维码"
+                        className="w-44 h-44"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 地址文本 */}
+                  <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-4">
+                    <p className="font-mono text-sm text-center break-all text-gray-800 select-all">
+                      {qrCode}
+                    </p>
+                  </div>
+                  <button
+                    onClick={copyAddress}
+                    className="mt-4 w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: copied ? "#22c55e" : "#26A17B",
+                      color: "white",
+                    }}
+                  >
+                    {copied ? (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        已复制
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        复制地址
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 重要提示 */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                  <div className="flex gap-3">
+                    <span className="text-yellow-500 text-xl">⚠️</span>
+                    <div className="text-sm text-yellow-800">
+                      <p className="font-medium mb-1">转账注意事项：</p>
+                      <ul className="list-disc list-inside space-y-1 text-yellow-700">
+                        <li>请确保使用 <strong>TRC20</strong> 网络转账</li>
+                        <li>转账金额必须为 <strong>{usdtAmount} USDT</strong></li>
+                        <li>金额不符可能导致无法自动确认</li>
+                        <li>区块确认通常需要 1 分钟左右</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 倒计时和状态 */}
+                <div className="text-center">
+                  <p className="text-red-500 text-sm font-medium mb-2">
+                    请在 <span className="text-lg font-bold">{formatTime(countdown)}</span> 内完成转账
+                  </p>
+                  <div className="flex items-center justify-center gap-2 text-gray-500 text-sm">
+                    <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                    正在监听区块链，转账后将自动确认...
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2">
               {/* 左侧：二维码区域 */}
               <div className="p-8 flex flex-col items-center">
@@ -214,6 +445,7 @@ function PayContent() {
                 </div>
               </div>
             </div>
+            )}
           </div>
 
           {/* 底部提示 */}

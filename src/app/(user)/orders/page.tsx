@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import { getOrderStatusInfo } from "@/lib/order-status";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -24,18 +25,6 @@ export default async function UserOrdersPage() {
       },
     },
   });
-
-  const getStatusInfo = (status: string) => {
-    const statusMap: Record<string, { text: string; color: string }> = {
-      PENDING: { text: "待支付", color: "bg-yellow-100 text-yellow-600" },
-      PAID: { text: "已支付", color: "bg-blue-100 text-blue-600" },
-      DELIVERED: { text: "已发货", color: "bg-green-100 text-green-600" },
-      COMPLETED: { text: "已完成", color: "bg-gray-100 text-gray-600" },
-      CANCELLED: { text: "已取消", color: "bg-red-100 text-red-600" },
-      REFUNDED: { text: "已退款", color: "bg-purple-100 text-purple-600" },
-    };
-    return statusMap[status] || { text: status, color: "bg-gray-100 text-gray-600" };
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -95,7 +84,9 @@ export default async function UserOrdersPage() {
 
               {orders.length > 0 ? (
                 <div className="divide-y">
-                  {orders.map((order) => (
+                  {orders.map((order) => {
+                    const isRechargeOrder = order.orderNo.startsWith("R");
+                    return (
                     <div key={order.id} className="p-6">
                       {/* 订单头部 */}
                       <div className="flex items-center justify-between mb-4">
@@ -109,14 +100,29 @@ export default async function UserOrdersPage() {
                         </div>
                         <span
                           className={`px-3 py-1 text-xs rounded-full ${
-                            getStatusInfo(order.status).color
+                            getOrderStatusInfo(order.status).color
                           }`}
                         >
-                          {getStatusInfo(order.status).text}
+                          {getOrderStatusInfo(order.status).text}
                         </span>
                       </div>
 
-                      {/* 商品列表 */}
+                      {/* 商品列表 / 充值信息 */}
+                      {isRechargeOrder ? (
+                        <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                              <span className="text-white text-lg">💰</span>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-800">余额充值</p>
+                              <p className="text-sm text-gray-500">
+                                充值金额：¥{(order.payAmount / 100).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="space-y-3 mb-4">
                         {order.items.map((item) => (
                           <div
@@ -142,11 +148,12 @@ export default async function UserOrdersPage() {
                           </div>
                         ))}
                       </div>
+                      )}
 
                       {/* 订单底部 */}
                       <div className="flex items-center justify-between pt-4 border-t">
                         <div className="text-sm text-gray-500">
-                          共 {order.items.reduce((sum, item) => sum + item.quantity, 0)} 件商品
+                          {isRechargeOrder ? "余额充值订单" : `共 ${order.items.reduce((sum, item) => sum + item.quantity, 0)} 件商品`}
                         </div>
                         <div className="flex items-center gap-4">
                           <span className="text-gray-600">
@@ -164,7 +171,7 @@ export default async function UserOrdersPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               ) : (
                 <div className="p-16 text-center">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { Suspense } from "react";
+import { getOrderStatusInfo } from "@/lib/order-status";
 
 interface Order {
   id: string;
@@ -65,26 +66,18 @@ function OrdersContent() {
     { value: "REFUNDED", label: "已退款" },
   ];
 
-  const getStatusLabel = (s: string) => {
-    const labels: Record<string, string> = {
-      PENDING: "待支付",
-      PAID: "待发货",
-      DELIVERED: "已完成",
-      CANCELLED: "已取消",
-      REFUNDED: "已退款",
-    };
-    return labels[s] || s;
-  };
-
-  const getStatusClass = (s: string) => {
-    const classes: Record<string, string> = {
-      DELIVERED: "bg-green-100 text-green-600",
-      PENDING: "bg-yellow-100 text-yellow-600",
-      PAID: "bg-blue-100 text-blue-600",
-      CANCELLED: "bg-gray-100 text-gray-600",
-      REFUNDED: "bg-purple-100 text-purple-600",
-    };
-    return classes[s] || "bg-gray-100 text-gray-600";
+  // 获取商品描述
+  const getProductDescription = (order: Order) => {
+    if (order.orderNo.startsWith("R")) {
+      return "余额充值";
+    }
+    if (order.items.length === 0) {
+      return "-";
+    }
+    const firstProduct = order.items[0]?.product.name || "-";
+    return order.items.length > 1
+      ? `${firstProduct} 等${order.items.length}件`
+      : firstProduct;
   };
 
   return (
@@ -168,10 +161,7 @@ function OrdersContent() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm">
-                      {order.items[0]?.product.name}
-                      {order.items.length > 1 && (
-                        <span className="text-gray-500"> 等{order.items.length}件</span>
-                      )}
+                      {getProductDescription(order)}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-red-500">
@@ -182,9 +172,9 @@ function OrdersContent() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 py-1 text-xs rounded-full ${getStatusClass(order.status)}`}
+                      className={`px-2 py-1 text-xs rounded-full ${getOrderStatusInfo(order.status).color}`}
                     >
-                      {getStatusLabel(order.status)}
+                      {getOrderStatusInfo(order.status).text}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

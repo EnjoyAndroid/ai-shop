@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOrder } from "@/lib/services/order.service";
+import { createOrder, handlePaymentSuccess } from "@/lib/services/order.service";
 import { AntiFraudService } from "@/lib/services/anti-fraud.service";
 import { getPaymentProvider } from "@/lib/payment";
 import { createOrderSchema } from "@/lib/validations";
@@ -59,11 +59,56 @@ export async function POST(request: NextRequest) {
 
     // 余额支付直接处理
     if (paymentMethod === "BALANCE") {
-      // TODO: 验证用户余额并扣除
+      if (!userId) {
+        return NextResponse.json(
+          { error: "请先登录后使用余额支付" },
+          { status: 401 }
+        );
+      }
+
+      // 获取用户余额
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { balance: true },
+      });
+
+      if (!user || user.balance < order.payAmount) {
+        return NextResponse.json(
+          { error: `余额不足，当前余额 ¥${((user?.balance || 0) / 100).toFixed(2)}` },
+          { status: 400 }
+        );
+      }
+
+      // 扣除余额并更新订单状态
+      await prisma.$transaction(async (tx) => {
+        // 扣除用户余额
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            balance: { decrement: order.payAmount },
+          },
+        });
+
+        // 创建余额变动记录
+        await tx.balanceLog.create({
+          data: {
+            userId,
+            type: "CONSUME",
+            amount: -order.payAmount,
+            balance: user.balance - order.payAmount,
+            remark: `购买商品 - 订单${order.orderNo}`,
+            orderId: order.id,
+          },
+        });
+      });
+
+      // 处理支付成功逻辑（更新订单状态、发送通知等）
+      await handlePaymentSuccess(order.orderNo, `BALANCE_${order.orderNo}`);
+
       return NextResponse.json({
         orderNo: order.orderNo,
         queryPassword: order.queryPassword,
-        message: "余额支付需要登录",
+        message: "支付成功",
       });
     }
 
@@ -104,6 +149,8 @@ export async function POST(request: NextRequest) {
       queryPassword: order.queryPassword,
       payUrl: paymentResult.payUrl,
       qrCode: paymentResult.qrCode,
+      usdtAmount: (paymentResult as any).usdtAmount,
+      exchangeRate: (paymentResult as any).exchangeRate,
     });
   } catch (error) {
     console.error("Create order error:", error);

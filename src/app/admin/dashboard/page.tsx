@@ -3,6 +3,7 @@ import Link from "next/link";
 import prisma from "@/lib/db";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { getAdminSession } from "@/lib/admin-auth";
+import { getOrderStatusInfo } from "@/lib/order-status";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -197,13 +198,11 @@ export default async function AdminDashboardPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">
-                          {order.items[0]?.product.name}
-                          {order.items.length > 1 && (
-                            <span className="text-gray-500">
-                              {" "}
-                              等{order.items.length}件
-                            </span>
-                          )}
+                          {order.orderNo.startsWith("R")
+                            ? "余额充值"
+                            : order.items[0]?.product.name
+                            ? `${order.items[0]?.product.name}${order.items.length > 1 ? ` 等${order.items.length}件` : ""}`
+                            : "-"}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-500">
@@ -212,24 +211,10 @@ export default async function AdminDashboardPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
                           className={`px-2 py-1 text-xs rounded-full ${
-                            order.status === "DELIVERED"
-                              ? "bg-green-100 text-green-600"
-                              : order.status === "PENDING"
-                              ? "bg-yellow-100 text-yellow-600"
-                              : order.status === "CANCELLED"
-                              ? "bg-red-100 text-red-600"
-                              : "bg-gray-100 text-gray-600"
+                            getOrderStatusInfo(order.status).color
                           }`}
                         >
-                          {order.status === "PENDING"
-                            ? "待支付"
-                            : order.status === "PAID"
-                            ? "已支付"
-                            : order.status === "DELIVERED"
-                            ? "已发货"
-                            : order.status === "CANCELLED"
-                            ? "已取消"
-                            : order.status}
+                          {getOrderStatusInfo(order.status).text}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

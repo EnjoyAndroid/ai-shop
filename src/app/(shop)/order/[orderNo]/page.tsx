@@ -16,6 +16,10 @@ function OrderDetailContent() {
   const [error, setError] = useState("");
   const [order, setOrder] = useState<any>(null);
 
+  // 判断是否为充值订单
+  const isRechargeOrder = orderNo.startsWith("R");
+  const pageTitle = isRechargeOrder ? "余额充值订单详情" : "订单详情";
+
   useEffect(() => {
     const fetchOrder = async () => {
       try {
@@ -65,11 +69,16 @@ function OrderDetailContent() {
 
       {/* 订单详情 - 使用共用组件 */}
       {order && (
-        <OrderDetail
-          order={order}
-          showQueryPassword={true}
-          queryPassword={password}
-        />
+        <>
+          <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+            {isRechargeOrder ? "余额充值订单详情" : "商品订单详情"}
+          </h1>
+          <OrderDetail
+            order={order}
+            showQueryPassword={true}
+            queryPassword={password}
+          />
+        </>
       )}
     </>
   );
@@ -82,10 +91,6 @@ export default function OrderDetailPage() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-800 mb-8 text-center">
-            订单详情
-          </h1>
-
           <Suspense
             fallback={
               <div className="bg-white rounded-xl p-12 text-center">

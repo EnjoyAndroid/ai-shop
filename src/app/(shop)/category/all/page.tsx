@@ -8,7 +8,7 @@ import { Header } from "@/components/shop/header";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "全部商品 - AI Shop",
+  title: "全部商品",
   description: "浏览所有 AI 服务商品",
 };
 

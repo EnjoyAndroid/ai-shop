@@ -165,7 +165,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">💳</span>
+                    <img src="/icons/alipay.png" alt="支付宝" className="w-8 h-8" />
                     <div>
                       <p className="font-medium">支付宝</p>
                       <p className="text-sm text-gray-500">通过虎皮椒接入</p>
@@ -186,7 +186,7 @@ export default function AdminSettingsPage() {
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">💚</span>
+                    <img src="/icons/wechat.png" alt="微信支付" className="w-8 h-8" />
                     <div>
                       <p className="font-medium">微信支付</p>
                       <p className="text-sm text-gray-500">通过虎皮椒接入</p>
@@ -207,7 +207,7 @@ export default function AdminSettingsPage() {
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">💰</span>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-lg font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
                     <div>
                       <p className="font-medium">USDT</p>
                       <p className="text-sm text-gray-500">TRC20/ERC20</p>
