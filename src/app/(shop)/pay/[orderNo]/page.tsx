@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { ContactSupport } from "@/components/shop/contact-support";
 
 function PayContent() {
   const params = useParams();
@@ -449,8 +450,8 @@ function PayContent() {
           </div>
 
           {/* 底部提示 */}
-          <div className="text-center mt-6 text-sm text-gray-500">
-            <p>支付后有问题请联系客服</p>
+          <div className="mt-6">
+            <ContactSupport prefix="支付后有问题请" />
           </div>
         </div>
       </div>

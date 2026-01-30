@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Header } from "@/components/shop/header";
+import { PurchaseSteps } from "@/components/shop/purchase-steps";
+import { ContactButtons } from "@/components/shop/contact-buttons";
 
 export const metadata = {
   title: "使用帮助",
@@ -11,7 +13,7 @@ export default function HelpPage() {
     {
       question: "如何购买商品？",
       answer:
-        "1. 浏览商品并选择需要的商品\n2. 点击「立即购买」或加入购物车\n3. 填写接收卡密的邮箱或手机号\n4. 选择支付方式并完成支付\n5. 支付成功后卡密会自动发送到您的邮箱",
+        "1. 浏览商品并选择需要的商品\n2. 点击「立即购买」或加入购物车\n3. 填写接收卡密的邮箱\n4. 选择支付方式并完成支付\n5. 支付成功后卡密会自动发送到您的邮箱",
     },
     {
       question: "支持哪些支付方式？",
@@ -36,7 +38,7 @@ export default function HelpPage() {
     {
       question: "如何成为会员？",
       answer:
-        "点击页面右上角的「注册」按钮，填写邮箱或手机号和密码即可注册成为会员。会员可享受：\n• 余额支付\n• 会员折扣\n• 订单历史记录\n• 更多专属优惠",
+        "点击页面右上角的「注册」按钮，填写邮箱和密码即可注册成为会员。会员可享受：\n• 余额支付\n• 会员折扣\n• 订单历史记录\n• 更多专属优惠",
     },
     {
       question: "会员等级如何升级？",
@@ -77,36 +79,7 @@ export default function HelpPage() {
         {/* 快速入门 */}
         <div className="bg-white rounded-2xl p-8 mb-8">
           <h2 className="text-xl font-bold text-gray-800 mb-6">🚀 快速入门</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="text-center p-4">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">1️⃣</span>
-              </div>
-              <h3 className="font-semibold mb-2">选择商品</h3>
-              <p className="text-sm text-gray-500">浏览分类，选择需要的 AI 服务</p>
-            </div>
-            <div className="text-center p-4">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">2️⃣</span>
-              </div>
-              <h3 className="font-semibold mb-2">填写信息</h3>
-              <p className="text-sm text-gray-500">填写接收卡密的邮箱或手机</p>
-            </div>
-            <div className="text-center p-4">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">3️⃣</span>
-              </div>
-              <h3 className="font-semibold mb-2">完成支付</h3>
-              <p className="text-sm text-gray-500">选择支付方式并完成付款</p>
-            </div>
-            <div className="text-center p-4">
-              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">4️⃣</span>
-              </div>
-              <h3 className="font-semibold mb-2">获取卡密</h3>
-              <p className="text-sm text-gray-500">支付成功后自动发送卡密</p>
-            </div>
-          </div>
+          <PurchaseSteps />
         </div>
 
         {/* 常见问题 */}
@@ -138,20 +111,7 @@ export default function HelpPage() {
           <p className="text-gray-600 mb-6">
             如果以上内容没有解决您的问题，请联系我们的客服
           </p>
-          <div className="flex justify-center gap-4">
-            <a
-              href="#"
-              className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90"
-            >
-              📧 发送邮件
-            </a>
-            <a
-              href="#"
-              className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-            >
-              💬 Telegram
-            </a>
-          </div>
+          <ContactButtons />
         </div>
       </main>
 
