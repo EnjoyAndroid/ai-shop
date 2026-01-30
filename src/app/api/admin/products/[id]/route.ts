@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import redis, { CACHE_KEYS } from "@/lib/redis";
 import { productSchema } from "@/lib/validations";
 
 // 获取单个商品
@@ -96,6 +97,17 @@ export async function PUT(
       },
     });
 
+    // 清除商品缓存
+    await redis.del(CACHE_KEYS.PRODUCT(existing.slug));
+    if (data.slug !== existing.slug) {
+      await redis.del(CACHE_KEYS.PRODUCT(data.slug));
+    }
+    // 清除商品列表缓存
+    const keys = await redis.keys("products:*");
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+
     return NextResponse.json({ product });
   } catch (error) {
     console.error("Update product error:", error);
@@ -149,6 +161,14 @@ export async function DELETE(
     await prisma.product.delete({
       where: { id: params.id },
     });
+
+    // 清除商品缓存
+    await redis.del(CACHE_KEYS.PRODUCT(product.slug));
+    // 清除商品列表缓存
+    const keys = await redis.keys("products:*");
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

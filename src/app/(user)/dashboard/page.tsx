@@ -110,7 +110,7 @@ export default async function UserDashboardPage() {
                   ¥{(user.balance / 100).toFixed(2)}
                 </p>
                 <Link
-                  href="/balance"
+                  href="/balance/recharge"
                   className="text-sm text-primary hover:underline mt-2 inline-block"
                 >
                   充值 →
@@ -161,8 +161,11 @@ export default async function UserDashboardPage() {
                       <div>
                         <p className="font-mono text-sm text-gray-800">{order.orderNo}</p>
                         <p className="text-sm text-gray-500 mt-1">
-                          {order.items[0]?.product.name}
-                          {order.items.length > 1 && ` 等${order.items.length}件`}
+                          {order.orderNo.startsWith("R")
+                            ? "余额充值"
+                            : order.items[0]?.product.name
+                            ? `${order.items[0]?.product.name}${order.items.length > 1 ? ` 等${order.items.length}件` : ""}`
+                            : order.remark || "-"}
                         </p>
                       </div>
                       <div className="text-right">
@@ -171,17 +174,29 @@ export default async function UserDashboardPage() {
                         </p>
                         <span
                           className={`text-xs px-2 py-1 rounded-full ${
-                            order.status === "DELIVERED"
+                            order.status === "DELIVERED" || order.status === "COMPLETED"
                               ? "bg-green-100 text-green-600"
                               : order.status === "PENDING"
                               ? "bg-yellow-100 text-yellow-600"
+                              : order.status === "CANCELLED"
+                              ? "bg-gray-100 text-gray-600"
+                              : order.status === "REFUNDED"
+                              ? "bg-red-100 text-red-600"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
                           {order.status === "PENDING"
                             ? "待支付"
+                            : order.status === "PAID"
+                            ? "已支付"
                             : order.status === "DELIVERED"
                             ? "已发货"
+                            : order.status === "COMPLETED"
+                            ? "已完成"
+                            : order.status === "CANCELLED"
+                            ? "已取消"
+                            : order.status === "REFUNDED"
+                            ? "已退款"
                             : order.status}
                         </span>
                       </div>

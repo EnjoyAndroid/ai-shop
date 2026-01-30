@@ -62,7 +62,20 @@ export default function CheckoutPage() {
 
       // 跳转到支付页面
       if (data.payUrl) {
-        window.location.href = data.payUrl;
+        // USDT 支付跳转到内部支付页
+        if (paymentMethod.startsWith("USDT")) {
+          const params = new URLSearchParams({
+            password: data.queryPassword,
+            qrcode: data.qrCode || "",
+            amount: String(totalAmount),
+            method: paymentMethod,
+            usdt: String(data.usdtAmount || ""),
+            rate: String(data.exchangeRate || ""),
+          });
+          router.push(`/pay/${data.orderNo}?${params.toString()}`);
+        } else {
+          window.location.href = data.payUrl;
+        }
       } else {
         router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);
       }
@@ -190,9 +203,9 @@ export default function CheckoutPage() {
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { value: "ALIPAY", label: "支付宝", icon: "💳" },
-                    { value: "WECHAT", label: "微信支付", icon: "💚" },
-                    { value: "USDT_TRC20", label: "USDT TRC20", icon: "💰" },
+                    { value: "ALIPAY", label: "支付宝", icon: "alipay" },
+                    { value: "WECHAT", label: "微信支付", icon: "wechat" },
+                    { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "usdt" },
                     { value: "BALANCE", label: "余额支付", icon: "💵" },
                   ].map((method) => (
                     <button
@@ -205,7 +218,15 @@ export default function CheckoutPage() {
                           : "hover:bg-gray-50"
                       }`}
                     >
-                      <span>{method.icon}</span>
+                      {method.icon === "usdt" ? (
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
+                      ) : method.icon === "wechat" ? (
+                        <img src="/icons/wechat.png" alt="微信" className="w-5 h-5" />
+                      ) : method.icon === "alipay" ? (
+                        <img src="/icons/alipay.png" alt="支付宝" className="w-5 h-5" />
+                      ) : (
+                        <span>{method.icon}</span>
+                      )}
                       <span>{method.label}</span>
                     </button>
                   ))}

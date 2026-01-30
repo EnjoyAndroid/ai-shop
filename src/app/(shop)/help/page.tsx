@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Header } from "@/components/shop/header";
 
 export const metadata = {
-  title: "使用帮助 - AI Shop",
+  title: "使用帮助",
   description: "AI Shop 使用帮助和常见问题",
 };
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { getOrderStatusInfo } from "@/lib/order-status";
 
 interface OrderDetailProps {
   order: any;
@@ -9,9 +11,19 @@ interface OrderDetailProps {
 }
 
 export function OrderDetail({ order, showQueryPassword = false, queryPassword }: OrderDetailProps) {
+  const router = useRouter();
   const [toast, setToast] = useState("");
   const [countdown, setCountdown] = useState("");
   const [expired, setExpired] = useState(false);
+
+  // 继续支付
+  const handleContinuePay = () => {
+    const params = new URLSearchParams();
+    if (queryPassword) {
+      params.set("password", queryPassword);
+    }
+    router.push(`/pay/${order.orderNo}?${params.toString()}`);
+  };
 
   // 倒计时
   useEffect(() => {
@@ -49,17 +61,6 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
     showToast(label);
   };
 
-  const getStatusText = (status: string) => {
-    const statusMap: Record<string, { text: string; color: string }> = {
-      PENDING: { text: "待支付", color: "bg-yellow-100 text-yellow-600" },
-      PAID: { text: "已支付", color: "bg-blue-100 text-blue-600" },
-      DELIVERED: { text: "已发货", color: "bg-green-100 text-green-600" },
-      COMPLETED: { text: "已完成", color: "bg-gray-100 text-gray-600" },
-      CANCELLED: { text: "已取消", color: "bg-red-100 text-red-600" },
-      REFUNDED: { text: "已退款", color: "bg-purple-100 text-purple-600" },
-    };
-    return statusMap[status] || { text: status, color: "bg-gray-100 text-gray-600" };
-  };
 
   return (
     <>
@@ -79,10 +80,10 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
         </div>
         <span
           className={`px-4 py-2 rounded-full text-sm font-medium ${
-            getStatusText(order.status).color
+            getOrderStatusInfo(order.status).color
           }`}
         >
-          {getStatusText(order.status).text}
+          {getOrderStatusInfo(order.status).text}
         </span>
       </div>
 
@@ -241,7 +242,10 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
                   </span>
                 </div>
               </div>
-              <button className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">
+              <button
+                onClick={handleContinuePay}
+                className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+              >
                 继续支付
               </button>
             </>

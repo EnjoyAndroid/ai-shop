@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: CategoryPageProps) {
   if (!category) return { title: "分类不存在" };
 
   return {
-    title: `${category.name} - AI Shop`,
+    title: category.name,
     description: category.description,
   };
 }

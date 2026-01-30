@@ -32,7 +32,7 @@ export async function GET() {
       methods.push({ value: "ALIPAY", label: "支付宝", icon: "💳" });
     }
     if (settings["usdtEnabled"]) {
-      methods.push({ value: "USDT_TRC20", label: "USDT", icon: "💰" });
+      methods.push({ value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" });
     }
     if (settings["balanceEnabled"]) {
       methods.push({ value: "BALANCE", label: "余额", icon: "💵" });
@@ -43,7 +43,7 @@ export async function GET() {
       methods.push(
         { value: "WECHAT", label: "微信", icon: "💚" },
         { value: "ALIPAY", label: "支付宝", icon: "💳" },
-        { value: "USDT_TRC20", label: "USDT", icon: "💰" },
+        { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" },
         { value: "BALANCE", label: "余额", icon: "💵" }
       );
     }
@@ -56,7 +56,7 @@ export async function GET() {
       methods: [
         { value: "WECHAT", label: "微信", icon: "💚" },
         { value: "ALIPAY", label: "支付宝", icon: "💳" },
-        { value: "USDT_TRC20", label: "USDT", icon: "💰" },
+        { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" },
         { value: "BALANCE", label: "余额", icon: "💵" },
       ],
     });

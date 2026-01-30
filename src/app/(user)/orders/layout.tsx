@@ -1,0 +1,13 @@
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "我的订单",
+};
+
+export default function UserOrdersLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <>{children}</>;
+}

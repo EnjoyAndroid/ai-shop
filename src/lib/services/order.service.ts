@@ -91,8 +91,8 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
   const orderNo = generateOrderNo();
   const queryPassword = generatePassword();
 
-  // 设置订单过期时间 (5分钟)
-  const expiredAt = new Date(Date.now() + 5 * 60 * 1000);
+  // 设置订单过期时间 (10分钟)
+  const expiredAt = new Date(Date.now() + 10 * 60 * 1000);
 
   // 创建订单
   const order = await prisma.order.create({
@@ -171,7 +171,61 @@ export async function handlePaymentSuccess(
       return order as OrderWithItems;
     }
 
-    // 分配卡密
+    // 判断是否为充值订单（订单号以 R 开头或没有商品项）
+    const isRechargeOrder = orderNo.startsWith("R") || order.items.length === 0;
+
+    if (isRechargeOrder) {
+      // 充值订单：增加用户余额
+      if (order.userId) {
+        await prisma.user.update({
+          where: { id: order.userId },
+          data: {
+            balance: { increment: order.payAmount },
+          },
+        });
+
+        // 记录余额变动
+        const user = await prisma.user.findUnique({
+          where: { id: order.userId },
+          select: { balance: true },
+        });
+
+        await prisma.balanceLog.create({
+          data: {
+            userId: order.userId,
+            type: "RECHARGE",
+            amount: order.payAmount,
+            balance: user?.balance || 0,
+            orderId: order.id,
+            remark: `充值 ¥${(order.payAmount / 100).toFixed(2)}`,
+          },
+        });
+      }
+
+      // 更新订单状态
+      const updatedOrder = await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: "COMPLETED",
+          paymentNo,
+          paidAt: new Date(),
+        },
+        include: {
+          items: {
+            include: {
+              cardKeys: true,
+              product: {
+                select: { id: true, name: true, slug: true },
+              },
+            },
+          },
+        },
+      });
+
+      return updatedOrder as OrderWithItems;
+    }
+
+    // 商品订单：分配卡密
     for (const item of order.items) {
       await allocateCardKeys(item.productId, item.quantity, item.id);
     }

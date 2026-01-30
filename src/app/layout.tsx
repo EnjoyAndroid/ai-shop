@@ -6,9 +6,15 @@ import { Providers } from "@/components/providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AI Shop - AI 服务自助充值平台",
-  description: "专业的 AI 服务充值平台，提供 ChatGPT、Claude、Cursor 等 AI 工具的账号和充值服务",
+  title: {
+    default: "AI Shop - AI服务自助充值平台",
+    template: "%s | AI Shop - AI服务自助充值平台",
+  },
+  description: "专业的AI服务充值平台，提供 ChatGPT、Claude、Cursor 等 AI 工具的账号和充值服务",
   keywords: "ChatGPT, Claude, Cursor, AI, 充值, 账号",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
