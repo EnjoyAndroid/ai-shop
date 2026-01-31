@@ -17,6 +17,20 @@ const nextConfig = {
       },
     ],
   },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // 客户端构建时不打包这些服务端模块
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        net: false,
+        tls: false,
+        dns: false,
+        fs: false,
+        child_process: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
