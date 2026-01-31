@@ -267,7 +267,7 @@ export async function handlePaymentSuccess(
       sendPaymentSuccessEmail({
         to: order.email,
         orderNo: order.orderNo,
-        queryPassword: order.queryPassword,
+        queryPassword: order.queryPassword || "",
         items: emailItems,
         totalAmount: order.payAmount,
       }).catch((err) => {
@@ -281,7 +281,7 @@ export async function handlePaymentSuccess(
       email: order.email || "",
       phone: order.phone || undefined,
       payAmount: order.payAmount,
-      paymentMethod: order.paymentMethod,
+      paymentMethod: order.paymentMethod || "BALANCE",
       items: updatedOrder.items.map((item) => ({
         productName: item.productName,
         quantity: item.quantity,
