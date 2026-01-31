@@ -244,7 +244,7 @@ function PayContent() {
                   <div className="flex items-center justify-center gap-4">
                     <div>
                       <p className="text-gray-500 text-sm">人民币金额</p>
-                      <p className="text-2xl font-bold text-gray-800">¥ {(parseInt(amount) / 100).toFixed(2)}</p>
+                      <p className="text-2xl font-bold text-gray-800">¥ {(Number(amount) / 100).toFixed(2)}</p>
                     </div>
                     <div className="text-2xl text-gray-300">=</div>
                     <div>
