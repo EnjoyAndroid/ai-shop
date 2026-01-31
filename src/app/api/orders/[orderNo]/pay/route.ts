@@ -35,6 +35,11 @@ export async function GET(
       return NextResponse.json({ error: "订单已过期" }, { status: 400 });
     }
 
+    // 检查支付方式
+    if (!order.paymentMethod) {
+      return NextResponse.json({ error: "订单支付方式无效" }, { status: 400 });
+    }
+
     // 重新生成支付链接
     const paymentProvider = getPaymentProvider(order.paymentMethod);
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
