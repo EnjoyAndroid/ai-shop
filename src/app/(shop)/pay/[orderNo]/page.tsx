@@ -357,7 +357,7 @@ function PayContent() {
 
                 {/* 金额 */}
                 <p className="text-2xl font-bold mb-4" style={{ color: themeColor }}>
-                  ¥ {(parseInt(amount) / 100).toFixed(2)}
+                  ¥ {(Number(amount) / 100).toFixed(2)}
                 </p>
 
                 {/* 二维码 */}
