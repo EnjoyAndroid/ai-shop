@@ -17,11 +17,11 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* 顶部导航 */}
       <Header />
 
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8 flex-1">
         {/* 公告 */}
         <Suspense fallback={<div className="mb-6 h-16 bg-gray-100 rounded-lg animate-pulse" />}>
           <Announcement />

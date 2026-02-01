@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SliderCaptcha from "@/components/slider-captcha";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -142,13 +143,12 @@ export default function RegisterPage() {
               <label className="block text-sm text-gray-600 mb-1">
                 密码 <span className="text-red-500">*</span>
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="至少6位密码"
-                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 autoComplete="new-password"
                 required
               />
@@ -158,13 +158,12 @@ export default function RegisterPage() {
               <label className="block text-sm text-gray-600 mb-1">
                 确认密码 <span className="text-red-500">*</span>
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 name="confirmPassword"
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 placeholder="再次输入密码"
-                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 autoComplete="off"
                 required
               />

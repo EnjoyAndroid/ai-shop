@@ -10,7 +10,7 @@ export function HeaderClient() {
     <header className="bg-white shadow-sm sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          <Link href="/" className="text-xl font-bold text-primary">
+          <Link href="/" className="text-2xl font-bold text-blue-600">
             AI Shop
           </Link>
           <nav className="hidden md:flex items-center space-x-6">
