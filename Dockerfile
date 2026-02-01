@@ -44,8 +44,8 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# 创建空的 public 目录
-RUN mkdir -p ./public
+# 复制 public 静态资源（图标等）
+COPY --from=builder /app/public ./public
 
 # 设置权限
 RUN chown -R nextjs:nodejs /app
