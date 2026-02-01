@@ -496,9 +496,9 @@ export async function cancelExpiredOrders(): Promise<number> {
   });
 
   // 清除相关商品缓存，确保库存显示正确
-  const productIds = [...new Set(expiredOrders.flatMap((order) =>
+  const productIds = Array.from(new Set(expiredOrders.flatMap((order) =>
     order.items.map((item) => item.productId)
-  ))];
+  )));
 
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
