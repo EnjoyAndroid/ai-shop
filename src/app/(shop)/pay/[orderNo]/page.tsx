@@ -26,6 +26,7 @@ function PayContent() {
     usdtAmount: string;
   } | null>(null);
 
+  const [expiredAt, setExpiredAt] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,13 +64,14 @@ function PayContent() {
             usdtAmount: payData.usdtAmount || urlUsdtAmount,
           });
 
-          // 设置倒计时
+          // 设置过期时间戳
           if (payData.expiredAt) {
-            const expiredAt = new Date(payData.expiredAt).getTime();
+            setExpiredAt(new Date(payData.expiredAt).getTime());
             const now = Date.now();
-            const remainingSeconds = Math.max(0, Math.floor((expiredAt - now) / 1000));
+            const remainingSeconds = Math.max(0, Math.floor((new Date(payData.expiredAt).getTime() - now) / 1000));
             setCountdown(remainingSeconds);
           } else {
+            setExpiredAt(Date.now() + 10 * 60 * 1000);
             setCountdown(10 * 60);
           }
         } else {
@@ -86,19 +88,22 @@ function PayContent() {
             });
 
             if (data.order.expiredAt) {
-              const expiredAt = new Date(data.order.expiredAt).getTime();
+              setExpiredAt(new Date(data.order.expiredAt).getTime());
               const now = Date.now();
-              const remainingSeconds = Math.max(0, Math.floor((expiredAt - now) / 1000));
+              const remainingSeconds = Math.max(0, Math.floor((new Date(data.order.expiredAt).getTime() - now) / 1000));
               setCountdown(remainingSeconds);
             } else {
+              setExpiredAt(Date.now() + 10 * 60 * 1000);
               setCountdown(10 * 60);
             }
           } else {
+            setExpiredAt(Date.now() + 10 * 60 * 1000);
             setCountdown(10 * 60);
           }
         }
       } catch (e) {
         console.error("Fetch order data error:", e);
+        setExpiredAt(Date.now() + 10 * 60 * 1000);
         setCountdown(10 * 60);
       } finally {
         setLoading(false);
@@ -108,22 +113,34 @@ function PayContent() {
     fetchOrderData();
   }, [orderNo, password, urlQrCode, urlUsdtAmount]);
 
-  // 倒计时
+  // 倒计时 - 基于过期时间戳实时计算，页面不可见时也能正确计时
   useEffect(() => {
-    if (countdown === null || countdown <= 0) return;
+    if (expiredAt === null) return;
 
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const updateCountdown = () => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((expiredAt - now) / 1000));
+      setCountdown(remaining);
+    };
 
-    return () => clearInterval(timer);
-  }, [countdown !== null]); // 当 countdown 从 null 变成有值时触发
+    // 立即更新一次
+    updateCountdown();
+
+    const timer = setInterval(updateCountdown, 1000);
+
+    // 页面可见性变化时立即更新
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        updateCountdown();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [expiredAt]);
 
   // 轮询检查支付状态
   useEffect(() => {
@@ -147,6 +164,12 @@ function PayContent() {
           } else {
             router.push(`/order/${orderNo}?password=${password}`);
           }
+          return;
+        }
+
+        // 检查订单是否已取消
+        if (data.order?.status === "CANCELLED") {
+          setCountdown(0); // 触发超时界面
           return;
         }
 

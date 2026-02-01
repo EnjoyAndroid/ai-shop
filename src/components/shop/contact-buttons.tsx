@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 const EMAIL = "komarkonde@gmail.com";
-const TELEGRAM_URL = "https://t.me/ai_pro_labs";
+const TELEGRAM_URL = "https://t.me/ai_shop_5";
 
 export function ContactButtons() {
   const [showToast, setShowToast] = useState(false);

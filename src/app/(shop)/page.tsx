@@ -82,7 +82,7 @@ export default async function HomePage() {
               <ul className="space-y-2 text-sm">
                 <li>
                   <a
-                    href="https://t.me/ai_pro_labs"
+                    href="https://t.me/ai_shop_5"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:text-white"

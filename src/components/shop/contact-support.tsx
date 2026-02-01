@@ -1,6 +1,6 @@
 "use client";
 
-const TELEGRAM_URL = "https://t.me/ai_pro_labs";
+const TELEGRAM_URL = "https://t.me/ai_shop_5";
 
 interface ContactSupportProps {
   prefix?: string;
