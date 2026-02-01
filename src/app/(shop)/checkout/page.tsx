@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/shop/header";
 import { useCartStore } from "@/stores/cart";
+
+interface PaymentMethod {
+  value: string;
+  label: string;
+  icon: string;
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -12,9 +18,34 @@ export default function CheckoutPage() {
     useCartStore();
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("ALIPAY");
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // 获取支付方式
+  useEffect(() => {
+    fetch("/api/settings/payment-methods")
+      .then((res) => res.json())
+      .then((data) => {
+        const methods = data.methods || [];
+        setPaymentMethods(methods);
+        if (methods.length > 0) {
+          setPaymentMethod(methods[0].value);
+        }
+      })
+      .catch(() => {
+        // 出错时使用默认支付方式
+        const defaultMethods = [
+          { value: "ALIPAY", label: "支付宝", icon: "alipay" },
+          { value: "WECHAT", label: "微信支付", icon: "wechat" },
+          { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "usdt" },
+          { value: "BALANCE", label: "余额支付", icon: "💵" },
+        ];
+        setPaymentMethods(defaultMethods);
+        setPaymentMethod("ALIPAY");
+      });
+  }, []);
 
   const totalAmount = getTotalAmount();
 
@@ -202,12 +233,7 @@ export default function CheckoutPage() {
                   支付方式
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: "ALIPAY", label: "支付宝", icon: "alipay" },
-                    { value: "WECHAT", label: "微信支付", icon: "wechat" },
-                    { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "usdt" },
-                    { value: "BALANCE", label: "余额支付", icon: "💵" },
-                  ].map((method) => (
+                  {paymentMethods.map((method) => (
                     <button
                       key={method.value}
                       type="button"
@@ -218,11 +244,11 @@ export default function CheckoutPage() {
                           : "hover:bg-gray-50"
                       }`}
                     >
-                      {method.icon === "usdt" ? (
+                      {method.value === "USDT_TRC20" ? (
                         <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
-                      ) : method.icon === "wechat" ? (
+                      ) : method.value === "WECHAT" ? (
                         <img src="/icons/wechat.png" alt="微信" className="w-5 h-5" />
-                      ) : method.icon === "alipay" ? (
+                      ) : method.value === "ALIPAY" ? (
                         <img src="/icons/alipay.png" alt="支付宝" className="w-5 h-5" />
                       ) : (
                         <span>{method.icon}</span>
