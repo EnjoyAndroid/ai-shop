@@ -33,7 +33,7 @@ export interface CreateOrderParams {
 }
 
 /**
- * 创建订单
+ * 创建订单（使用事务锁定卡密）
  */
 export async function createOrder(params: CreateOrderParams): Promise<Order> {
   const { userId, email, phone, paymentMethod, items, ip, userAgent, fingerprint } = params;
@@ -96,39 +96,79 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
   const expireMinutes = await getOrderExpireMinutes();
   const expiredAt = new Date(Date.now() + expireMinutes * 60 * 1000);
 
-  // 创建订单
-  const order = await prisma.order.create({
-    data: {
-      orderNo,
-      userId,
-      email,
-      phone,
-      queryPassword,
-      totalAmount,
-      discountAmount,
-      payAmount,
-      paymentMethod,
-      status: "PENDING",
-      ip,
-      userAgent,
-      fingerprint,
-      expiredAt,
-      items: {
-        create: items.map((item) => {
-          const product = productMap.get(item.productId)!;
-          return {
-            productId: item.productId,
-            productName: product.name,
-            price: product.price,
-            quantity: item.quantity,
-          };
-        }),
+  // 使用事务创建订单并锁定卡密
+  const order = await prisma.$transaction(async (tx) => {
+    // 创建订单
+    const newOrder = await tx.order.create({
+      data: {
+        orderNo,
+        userId,
+        email,
+        phone,
+        queryPassword,
+        totalAmount,
+        discountAmount,
+        payAmount,
+        paymentMethod,
+        status: "PENDING",
+        ip,
+        userAgent,
+        fingerprint,
+        expiredAt,
+        items: {
+          create: items.map((item) => {
+            const product = productMap.get(item.productId)!;
+            return {
+              productId: item.productId,
+              productName: product.name,
+              price: product.price,
+              quantity: item.quantity,
+            };
+          }),
+        },
       },
-    },
-    include: {
-      items: true,
-    },
+      include: {
+        items: true,
+      },
+    });
+
+    // 为每个订单项锁定对应数量的卡密
+    for (const orderItem of newOrder.items) {
+      // 查询 AVAILABLE 状态的卡密
+      const availableCardKeys = await tx.cardKey.findMany({
+        where: {
+          productId: orderItem.productId,
+          status: "AVAILABLE",
+        },
+        take: orderItem.quantity,
+        orderBy: { createdAt: "asc" },
+      });
+
+      // 检查库存是否足够
+      if (availableCardKeys.length < orderItem.quantity) {
+        const product = productMap.get(orderItem.productId);
+        throw new Error(`${product?.name || "商品"} 库存不足`);
+      }
+
+      // 将卡密状态更新为 LOCKED，关联 orderItemId
+      await tx.cardKey.updateMany({
+        where: {
+          id: { in: availableCardKeys.map((k) => k.id) },
+        },
+        data: {
+          status: "LOCKED",
+          orderId: orderItem.id,
+        },
+      });
+    }
+
+    return newOrder;
   });
+
+  // 清除商品缓存，确保库存显示正确
+  for (const product of products) {
+    await redis.del(CACHE_KEYS.PRODUCT(product.slug));
+  }
 
   return order;
 }
@@ -407,20 +447,69 @@ export function getOrderCardKeys(order: OrderWithItems): {
 }
 
 /**
- * 取消过期订单
+ * 取消过期订单（释放锁定的卡密）
  */
 export async function cancelExpiredOrders(): Promise<number> {
-  const result = await prisma.order.updateMany({
+  // 查询过期的 PENDING 订单
+  const expiredOrders = await prisma.order.findMany({
     where: {
       status: "PENDING",
       expiredAt: { lt: new Date() },
     },
-    data: {
-      status: "CANCELLED",
+    include: {
+      items: true,
     },
   });
 
-  return result.count;
+  if (expiredOrders.length === 0) {
+    return 0;
+  }
+
+  // 使用事务释放卡密并取消订单
+  await prisma.$transaction(async (tx) => {
+    // 获取所有订单项 ID
+    const orderItemIds = expiredOrders.flatMap((order) =>
+      order.items.map((item) => item.id)
+    );
+
+    // 释放锁定的卡密：将 LOCKED 状态改为 AVAILABLE，清除 orderId
+    await tx.cardKey.updateMany({
+      where: {
+        orderId: { in: orderItemIds },
+        status: "LOCKED",
+      },
+      data: {
+        status: "AVAILABLE",
+        orderId: null,
+      },
+    });
+
+    // 更新订单状态为 CANCELLED
+    await tx.order.updateMany({
+      where: {
+        id: { in: expiredOrders.map((o) => o.id) },
+      },
+      data: {
+        status: "CANCELLED",
+      },
+    });
+  });
+
+  // 清除相关商品缓存，确保库存显示正确
+  const productIds = [...new Set(expiredOrders.flatMap((order) =>
+    order.items.map((item) => item.productId)
+  ))];
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { slug: true },
+  });
+
+  for (const product of products) {
+    await redis.del(CACHE_KEYS.PRODUCT(product.slug));
+  }
+
+  return expiredOrders.length;
 }
 
 /**

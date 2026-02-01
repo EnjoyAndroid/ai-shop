@@ -20,9 +20,39 @@
 - 代码修改后先让用户本地确认，再提交
 - 不要主动提交代码，等用户确认
 
+### Redis 缓存隔离
+- 多个项目共用同一个 Redis 时，使用不同的数据库编号隔离
+- ai-shop 使用 `redis://localhost:6379/1`
+- 清除 ai-shop 缓存: `docker exec crypto_quant_redis redis-cli -n 1 FLUSHDB`
+
 ---
 
 ## 2026-02-02 提交记录
+
+### commit - 下单锁定卡密功能
+
+**新增功能：**
+- 下单时锁定卡密，防止超卖
+- 订单过期/取消时自动释放卡密
+- 支付成功时将 LOCKED 状态转为 SOLD
+
+**修改文件：**
+- `src/lib/services/order.service.ts` - createOrder 使用事务锁定卡密，cancelExpiredOrders 释放卡密并清除缓存
+- `src/lib/services/product.service.ts` - allocateCardKeys 支持从 LOCKED 转 SOLD
+- `src/app/(shop)/pay/[orderNo]/page.tsx` - 倒计时改用时间戳计算，支持页面不可见时正确计时；检测订单取消状态
+- `src/components/shop/contact-support.tsx` - Telegram 联系方式更新为 @example_support
+- `src/components/shop/contact-buttons.tsx` - Telegram 联系方式更新
+- `src/app/(shop)/page.tsx` - 页脚 Telegram 链接更新
+
+**新增脚本：**
+- `scripts/fix-locked-cardkeys.ts` - 修复历史遗留的 LOCKED 状态卡密
+
+**遇到的问题：**
+1. 订单取消后库存没释放 - 旧代码没有释放卡密逻辑，需要重启服务
+2. 缓存导致库存显示不正确 - 下单/取消订单后需要清除商品缓存
+3. 支付页面倒计时页面不可见时不走 - 改用基于过期时间戳实时计算
+
+---
 
 ### commit 086d295 - 多项修复和优化
 - 禁用支付方式 API 缓存

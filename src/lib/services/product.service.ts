@@ -227,7 +227,7 @@ export async function importCardKeys(
 }
 
 /**
- * 分配卡密给订单
+ * 分配卡密给订单（支付成功时，将 LOCKED 状态转为 SOLD）
  */
 export async function allocateCardKeys(
   productId: string,
@@ -245,7 +245,39 @@ export async function allocateCardKeys(
   }
 
   try {
-    // 查找可用卡密
+    // 查找已锁定的卡密（下单时已锁定）
+    const lockedCardKeys = await prisma.cardKey.findMany({
+      where: {
+        orderId: orderItemId,
+        status: "LOCKED",
+      },
+    });
+
+    if (lockedCardKeys.length > 0) {
+      // 将 LOCKED 状态更新为 SOLD
+      await prisma.cardKey.updateMany({
+        where: {
+          id: { in: lockedCardKeys.map((k) => k.id) },
+        },
+        data: {
+          status: "SOLD",
+          soldAt: new Date(),
+        },
+      });
+
+      // 更新商品库存和销量
+      await prisma.product.update({
+        where: { id: productId },
+        data: {
+          stock: { decrement: lockedCardKeys.length },
+          salesCount: { increment: lockedCardKeys.length },
+        },
+      });
+
+      return lockedCardKeys;
+    }
+
+    // 兼容旧逻辑：如果没有锁定的卡密，从 AVAILABLE 分配（用于手动发货等场景）
     const cardKeys = await prisma.cardKey.findMany({
       where: {
         productId,
