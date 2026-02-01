@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AdminSidebar } from "@/components/admin/sidebar";
+import { PasswordInput } from "@/components/ui/password-input";
 
 interface Settings {
   siteName: string;
@@ -28,6 +29,15 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // 修改密码相关状态
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -74,6 +84,48 @@ export default function AdminSettingsPage() {
 
   const handleChange = (key: keyof Settings, value: string) => {
     setSettings({ ...settings, [key]: value });
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPassword(true);
+    setPasswordMessage(null);
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordMessage({ type: "error", text: "两次输入的新密码不一致" });
+      setSavingPassword(false);
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      setPasswordMessage({ type: "error", text: "新密码至少6位" });
+      setSavingPassword(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/admin/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "修改失败");
+      }
+
+      setPasswordMessage({ type: "success", text: "密码修改成功" });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } catch (err) {
+      setPasswordMessage({ type: "error", text: err instanceof Error ? err.message : "修改失败" });
+    } finally {
+      setSavingPassword(false);
+    }
   };
 
   return (
@@ -257,6 +309,73 @@ export default function AdminSettingsPage() {
             >
               {saving ? "保存中..." : "保存设置"}
             </button>
+          </form>
+        )}
+
+        {/* 修改密码 */}
+        {!loading && (
+          <form onSubmit={handlePasswordSubmit} className="max-w-2xl mt-6">
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">修改密码</h2>
+
+              {passwordMessage && (
+                <div
+                  className={`p-4 rounded-lg mb-4 ${
+                    passwordMessage.type === "success"
+                      ? "bg-green-50 text-green-600"
+                      : "bg-red-50 text-red-600"
+                  }`}
+                >
+                  {passwordMessage.text}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">当前密码</label>
+                  <PasswordInput
+                    value={passwordForm.currentPassword}
+                    onChange={(e) =>
+                      setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
+                    }
+                    className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">新密码</label>
+                  <PasswordInput
+                    value={passwordForm.newPassword}
+                    onChange={(e) =>
+                      setPasswordForm({ ...passwordForm, newPassword: e.target.value })
+                    }
+                    className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">确认新密码</label>
+                  <PasswordInput
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) =>
+                      setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
+                    }
+                    className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    required
+                    minLength={6}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="w-full mt-4 py-3 bg-gray-800 text-white rounded-lg font-semibold hover:bg-gray-700 disabled:opacity-50"
+              >
+                {savingPassword ? "修改中..." : "修改密码"}
+              </button>
+            </div>
           </form>
         )}
       </main>

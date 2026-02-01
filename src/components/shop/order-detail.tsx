@@ -61,6 +61,42 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
     showToast(label);
   };
 
+  // 下载密钥为txt文件
+  const downloadCardKeys = () => {
+    if (!order.items) return;
+
+    let content = `订单号: ${order.orderNo}\n`;
+    if (order.queryPassword) {
+      content += `查询密码: ${order.queryPassword}\n`;
+    }
+    content += `================================\n\n`;
+
+    order.items.forEach((item: any) => {
+      if (item.cardKeys?.length > 0) {
+        content += `【${item.productName}】\n`;
+        item.cardKeys.forEach((cardKey: any, index: number) => {
+          content += `${index + 1}. ${cardKey.content}\n`;
+        });
+        content += `\n`;
+      }
+    });
+
+    content += `================================\n`;
+    content += `来自 aiprolabs.xyz\n`;
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `卡密_aiprolabs.xyz.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast("密钥文件已下载");
+  };
+
 
   return (
     <>
@@ -177,9 +213,20 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
       {/* 卡密信息 */}
       {order.status === "DELIVERED" && order.items?.some((item: any) => item.cardKeys?.length > 0) && (
         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <h3 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
-            <span>🎉</span> 您的卡密
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-green-800 flex items-center gap-2">
+              <span>🎉</span> 您的卡密
+            </h3>
+            <button
+              onClick={downloadCardKeys}
+              className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center gap-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              下载密钥
+            </button>
+          </div>
           {order.items.map((item: any) => (
             <div key={item.id} className="mb-4 last:mb-0">
               <p className="text-sm text-green-700 mb-2">

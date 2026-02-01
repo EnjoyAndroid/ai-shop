@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import SliderCaptcha from "@/components/slider-captcha";
+import { PasswordInput } from "@/components/ui/password-input";
 
 function LoginForm() {
   const router = useRouter();
@@ -122,12 +123,11 @@ function LoginForm() {
 
           <div>
             <label className="block text-sm text-gray-600 mb-1">密码</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
-              className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
               autoComplete="current-password"
               required
             />

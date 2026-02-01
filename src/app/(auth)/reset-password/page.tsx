@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { PasswordInput } from "@/components/ui/password-input";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -97,12 +98,11 @@ function ResetPasswordForm() {
       <div className="space-y-4">
         <div>
           <label className="block text-sm text-gray-600 mb-1">新密码</label>
-          <input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入新密码（至少6位）"
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
             required
             minLength={6}
           />
@@ -110,12 +110,11 @@ function ResetPasswordForm() {
 
         <div>
           <label className="block text-sm text-gray-600 mb-1">确认密码</label>
-          <input
-            type="password"
+          <PasswordInput
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="请再次输入新密码"
-            className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
             required
           />
         </div>
