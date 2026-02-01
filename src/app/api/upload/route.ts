@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+
+// 配置 Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // 允许的图片类型
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -9,6 +15,15 @@ const MAX_SIZE = 2 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   try {
+    // 检查 Cloudinary 配置
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      console.error("Cloudinary 配置缺失");
+      return NextResponse.json(
+        { error: "服务器配置错误" },
+        { status: 500 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -35,30 +50,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 生成文件名
-    const ext = file.name.split(".").pop() || "jpg";
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
-
-    // 确保上传目录存在
-    const uploadDir = path.join(process.cwd(), "public/uploads/products");
-    await mkdir(uploadDir, { recursive: true });
-
-    // 保存文件
-    const filePath = path.join(uploadDir, fileName);
+    // 将文件转换为 base64
     const bytes = await file.arrayBuffer();
-    await writeFile(filePath, Buffer.from(bytes));
+    const buffer = Buffer.from(bytes);
+    const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
-    // 返回文件 URL
-    const url = `/uploads/products/${fileName}`;
+    // 上传到 Cloudinary
+    const result = await cloudinary.uploader.upload(base64, {
+      folder: "products",
+      resource_type: "image",
+    });
 
     return NextResponse.json({
       success: true,
-      url,
+      url: result.secure_url,
     });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: "上传失败" },
+      { error: "上传失败，请稍后重试" },
       { status: 500 }
     );
   }
