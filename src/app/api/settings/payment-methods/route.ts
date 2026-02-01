@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 
+// 禁用缓存，每次请求都从数据库读取
+export const dynamic = "force-dynamic";
+
 // 获取启用的支付方式（公开接口）
 export async function GET() {
   try {
