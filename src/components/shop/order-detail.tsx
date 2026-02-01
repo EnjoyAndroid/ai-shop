@@ -82,13 +82,13 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
     });
 
     content += `================================\n`;
-    content += `来自 aiprolabs.xyz\n`;
+    content += `来自 5aishop.com\n`;
 
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `卡密_aiprolabs.xyz.txt`;
+    a.download = `卡密_5aishop.com.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
