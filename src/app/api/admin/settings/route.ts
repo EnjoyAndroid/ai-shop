@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { clearSettingsCache } from "@/lib/services/settings.service";
 
 // 获取系统设置
 export async function GET() {
@@ -36,6 +37,9 @@ export async function POST(request: NextRequest) {
     );
 
     await Promise.all(updates);
+
+    // 清除设置缓存
+    await clearSettingsCache();
 
     return NextResponse.json({ success: true });
   } catch (error) {
