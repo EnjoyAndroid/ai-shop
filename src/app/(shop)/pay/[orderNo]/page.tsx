@@ -183,10 +183,25 @@ function PayContent() {
   // 加载中状态
   if (loading || countdown === null) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-500">加载支付信息...</p>
+      <div className="min-h-screen bg-gray-100">
+        <header className="bg-white shadow-sm sticky top-0 z-50">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between h-16">
+              <Link href="/" className="text-2xl font-bold text-blue-600">
+                AI Shop
+              </Link>
+              <h1 className="text-xl font-bold text-gray-800">
+                网站收银台
+              </h1>
+              <div className="w-20"></div>
+            </div>
+          </div>
+        </header>
+        <div className="flex items-center justify-center" style={{ minHeight: "calc(100vh - 64px)" }}>
+          <div className="text-center">
+            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-500">加载支付信息...</p>
+          </div>
         </div>
       </div>
     );
@@ -194,17 +209,32 @@ function PayContent() {
 
   if (countdown <= 0) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg p-8 shadow-sm text-center max-w-md">
-          <div className="text-6xl mb-4">⏰</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">支付超时</h2>
-          <p className="text-gray-500 mb-6">订单已超时，请重新下单</p>
-          <Link
-            href="/"
-            className="inline-block px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90"
-          >
-            返回首页
-          </Link>
+      <div className="min-h-screen bg-gray-100">
+        <header className="bg-white shadow-sm sticky top-0 z-50">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between h-16">
+              <Link href="/" className="text-2xl font-bold text-blue-600">
+                AI Shop
+              </Link>
+              <h1 className="text-xl font-bold text-gray-800">
+                网站收银台
+              </h1>
+              <div className="w-20"></div>
+            </div>
+          </div>
+        </header>
+        <div className="flex items-center justify-center" style={{ minHeight: "calc(100vh - 64px)" }}>
+          <div className="bg-white rounded-lg p-8 shadow-sm text-center max-w-md">
+            <div className="text-6xl mb-4">⏰</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">支付超时</h2>
+            <p className="text-gray-500 mb-6">订单已超时，请重新下单</p>
+            <Link
+              href="/"
+              className="inline-block px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90"
+            >
+              返回首页
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -212,14 +242,20 @@ function PayContent() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* 顶部标题栏 */}
-      <div className="bg-white border-b">
+      {/* 顶部导航 */}
+      <header className="bg-white shadow-sm sticky top-0 z-50">
         <div className="container mx-auto px-4">
-          <h1 className="text-center text-xl font-bold py-4 text-gray-800">
-            {methodLabel}支付收银台
-          </h1>
+          <div className="flex items-center justify-between h-16">
+            <Link href="/" className="text-2xl font-bold text-blue-600">
+              AI Shop
+            </Link>
+            <h1 className="text-xl font-bold text-gray-800">
+              网站收银台
+            </h1>
+            <div className="w-20"></div>
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* 主内容 */}
       <div className="container mx-auto px-4 py-8">
