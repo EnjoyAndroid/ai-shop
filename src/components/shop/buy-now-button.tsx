@@ -177,8 +177,8 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
     <div className="space-y-4">
       {/* 余额支付确认弹框 */}
       {showBalanceConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-sm mx-4 w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-gray-800 mb-4">确认支付</h3>
             <div className="space-y-3 mb-6">
               <div className="flex justify-between text-sm">
@@ -222,12 +222,12 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       )}
 
       {/* 数量选择 */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4">
         <span className="text-gray-600">数量:</span>
         <div className="flex items-center border rounded-lg">
           <button
             onClick={() => setQuantity(Math.max(product.minQuantity, quantity - 1))}
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100"
+            className="px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100"
             disabled={disabled}
           >
             -
@@ -243,7 +243,7 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
                 )
               )
             }
-            className="w-16 text-center border-x py-2"
+            className="w-12 sm:w-16 text-center border-x py-2"
             min={product.minQuantity}
             max={product.maxQuantity}
             disabled={disabled}
@@ -252,13 +252,13 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
             onClick={() =>
               setQuantity(Math.min(product.maxQuantity, quantity + 1))
             }
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100"
+            className="px-3 sm:px-4 py-2 text-gray-600 hover:bg-gray-100"
             disabled={disabled}
           >
             +
           </button>
         </div>
-        <span className="text-gray-500 text-sm">
+        <span className="text-gray-500 text-sm w-full sm:w-auto mt-1 sm:mt-0">
           小计: <span className="text-red-500 font-bold">¥{((product.price * quantity) / 100).toFixed(2)}</span>
         </span>
       </div>

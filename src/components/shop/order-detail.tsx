@@ -147,7 +147,7 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
       {/* 订单信息 */}
       <div className="mb-6">
         <h3 className="font-semibold text-gray-800 mb-3">订单信息</h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-gray-500">创建时间:</span>
             <span className="ml-2">
@@ -236,9 +236,9 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
                 {item.cardKeys?.map((cardKey: any) => (
                   <div
                     key={cardKey.id}
-                    className="p-3 bg-white rounded border border-green-200 font-mono text-sm break-all flex items-center justify-between"
+                    className="p-3 bg-white rounded border border-green-200 font-mono text-sm break-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2"
                   >
-                    <span>{cardKey.content}</span>
+                    <span className="overflow-x-auto max-w-full">{cardKey.content}</span>
                     <button
                       onClick={() => copyToClipboard(cardKey.content, "已复制卡密")}
                       className="ml-2 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"

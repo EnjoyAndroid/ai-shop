@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
+import { HeaderClient } from "./header-client";
 
 export async function Header() {
   const session = await auth();
@@ -48,14 +49,7 @@ export async function Header() {
           </nav>
 
           {/* 移动端菜单 */}
-          <div className="md:hidden flex items-center gap-4">
-            <Link
-              href={session?.user ? "/dashboard" : "/login"}
-              className="text-gray-600 hover:text-primary"
-            >
-              {session?.user ? "👤" : "登录"}
-            </Link>
-          </div>
+          <HeaderClient isLoggedIn={!!session?.user} userName={session?.user?.name || session?.user?.email || ""} />
         </div>
       </div>
     </header>
