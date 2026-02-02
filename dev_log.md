@@ -4,6 +4,10 @@
 
 ### Docker 部署
 - 添加新环境变量时，同步更新 `docker-compose.yml`
+- **环境变量名必须与代码中的 `process.env.XXX` 完全一致**
+  - 错误示例：代码用 `XUNHU_WECHAT_APPID`，docker-compose 写 `XUNHU_APPID`
+  - 检查方法：`grep -r "process.env" src/` 查看代码中实际使用的变量名
+- 修改 `docker-compose.yml` 后需要 `docker compose up -d` 重新加载
 - 修改 `public/` 目录文件后，需要 `--build` 重新构建镜像
 - 检查 `.dockerignore` 是否排除了需要的文件
 
