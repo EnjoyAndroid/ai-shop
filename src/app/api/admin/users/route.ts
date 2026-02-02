@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 防止构建时预渲染
 export const dynamic = "force-dynamic";
 
 // 获取所有用户
 export async function GET() {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },

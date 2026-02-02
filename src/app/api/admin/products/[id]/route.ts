@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import { productSchema } from "@/lib/validations";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 获取单个商品
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const product = await prisma.product.findUnique({
       where: { id: params.id },
@@ -43,6 +49,11 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 
@@ -124,6 +135,11 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     // 检查商品是否存在
     const product = await prisma.product.findUnique({

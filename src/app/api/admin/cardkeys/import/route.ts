@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { importCardKeys } from "@/lib/services/product.service";
 import { importCardKeysSchema } from "@/lib/validations";
+import { getAdminSession } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 

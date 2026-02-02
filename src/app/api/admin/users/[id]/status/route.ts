@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 更新用户状态（封禁/解封）
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { status } = body;

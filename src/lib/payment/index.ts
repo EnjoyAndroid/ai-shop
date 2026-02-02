@@ -3,10 +3,15 @@ import { hashMD5 } from "@/lib/encryption";
 /**
  * 发送 POST 请求
  */
+const isDev = process.env.NODE_ENV === "development";
+
 async function curlPost(url: string, data: Record<string, string>): Promise<any> {
   const postData = new URLSearchParams(data).toString();
-  console.log("[Payment] Request URL:", url);
-  console.log("[Payment] Request data:", postData);
+  if (isDev) {
+    console.log("[Payment] Request URL:", url);
+    // 不打印完整请求数据，避免泄露密钥
+    console.log("[Payment] Request order:", data.trade_order_id || data.order_id || "unknown");
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
@@ -21,9 +26,10 @@ async function curlPost(url: string, data: Record<string, string>): Promise<any>
       signal: controller.signal,
     });
 
-    console.log("[Payment] Response status:", response.status);
+    if (isDev) {
+      console.log("[Payment] Response status:", response.status);
+    }
     const text = await response.text();
-    console.log("[Payment] Response body:", text);
 
     if (!text.trim()) {
       throw new Error("空响应");

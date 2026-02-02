@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import { categorySchema } from "@/lib/validations";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 更新分类
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 
@@ -75,6 +81,11 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     // 检查分类下是否有商品
     const category = await prisma.category.findUnique({

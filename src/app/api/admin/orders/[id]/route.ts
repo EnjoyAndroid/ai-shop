@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { allocateCardKeys, decryptCardKey } from "@/lib/services/product.service";
+import { getAdminSession } from "@/lib/admin-auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const order = await prisma.order.findUnique({
       where: { id: params.id },
@@ -48,6 +54,11 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const { action, remark } = await request.json();
 
