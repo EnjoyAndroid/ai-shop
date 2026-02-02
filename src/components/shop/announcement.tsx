@@ -1,80 +1,70 @@
 import prisma from "@/lib/db";
 
-// 简单的文本格式化：支持链接、加粗、高亮、颜色
+// 简单的文本格式化：支持链接、加粗、高亮、颜色（可嵌套组合）
 function formatContent(content: string): React.ReactNode {
-  // 匹配模式：[链接文字](URL)、**加粗**、==高亮==、{红色}、{绿色}、{蓝色}
-  const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|==([^=]+)==|\{红色\}([^{]+)\{\/红色\}|\{绿色\}([^{]+)\{\/绿色\}|\{蓝色\}([^{]+)\{\/蓝色\}/g;
+  // 递归处理所有格式
+  const processText = (text: string, keyPrefix: string = ""): React.ReactNode => {
+    // 匹配：[链接](URL)、**加粗**、==高亮==、{颜色}...{/颜色}
+    const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([\s\S]*?)\*\*|==([\s\S]*?)==|\{(红色|绿色|蓝色)\}([\s\S]*?)\{\/\5\}/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+    let key = 0;
 
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-  let key = 0;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
 
-  while ((match = pattern.exec(content)) !== null) {
-    // 添加匹配前的普通文本
-    if (match.index > lastIndex) {
-      parts.push(content.slice(lastIndex, match.index));
+      if (match[1] && match[2]) {
+        // 链接: [文字](URL)
+        parts.push(
+          <a
+            key={`${keyPrefix}-link-${key++}`}
+            href={match[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline font-medium"
+          >
+            {processText(match[1], `${keyPrefix}-l${key}`)}
+          </a>
+        );
+      } else if (match[3] !== undefined) {
+        // 加粗: **文字**
+        parts.push(
+          <strong key={`${keyPrefix}-bold-${key++}`} className="font-bold">
+            {processText(match[3], `${keyPrefix}-b${key}`)}
+          </strong>
+        );
+      } else if (match[4] !== undefined) {
+        // 高亮: ==文字==
+        parts.push(
+          <span key={`${keyPrefix}-mark-${key++}`} className="bg-yellow-200 px-1 rounded">
+            {processText(match[4], `${keyPrefix}-m${key}`)}
+          </span>
+        );
+      } else if (match[5] && match[6] !== undefined) {
+        // 颜色: {红色}文字{/红色}
+        const color = match[5];
+        const colorClass = color === "红色" ? "text-red-500" : color === "绿色" ? "text-green-500" : "text-blue-500";
+        parts.push(
+          <span key={`${keyPrefix}-color-${key++}`} className={colorClass}>
+            {processText(match[6], `${keyPrefix}-c${key}`)}
+          </span>
+        );
+      }
+
+      lastIndex = match.index + match[0].length;
     }
 
-    if (match[1] && match[2]) {
-      // 链接: [文字](URL)
-      parts.push(
-        <a
-          key={key++}
-          href={match[2]}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary hover:underline font-medium"
-        >
-          {match[1]}
-        </a>
-      );
-    } else if (match[3]) {
-      // 加粗: **文字**
-      parts.push(
-        <strong key={key++} className="font-bold">
-          {match[3]}
-        </strong>
-      );
-    } else if (match[4]) {
-      // 高亮: ==文字==
-      parts.push(
-        <span key={key++} className="bg-yellow-200 px-1 rounded">
-          {match[4]}
-        </span>
-      );
-    } else if (match[5]) {
-      // 红色: {红色}文字{/红色}
-      parts.push(
-        <span key={key++} className="text-red-500">
-          {match[5]}
-        </span>
-      );
-    } else if (match[6]) {
-      // 绿色: {绿色}文字{/绿色}
-      parts.push(
-        <span key={key++} className="text-green-500">
-          {match[6]}
-        </span>
-      );
-    } else if (match[7]) {
-      // 蓝色: {蓝色}文字{/蓝色}
-      parts.push(
-        <span key={key++} className="text-blue-500">
-          {match[7]}
-        </span>
-      );
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
     }
 
-    lastIndex = match.index + match[0].length;
-  }
+    return parts.length > 0 ? parts : text;
+  };
 
-  // 添加剩余的普通文本
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-
-  return parts.length > 0 ? parts : content;
+  return processText(content);
 }
 
 export async function Announcement() {
@@ -115,8 +105,8 @@ export async function Announcement() {
                 : "📢"}
             </span>
             <div>
-              <h4 className="font-semibold text-gray-800">{announcement.title}</h4>
-              <p className="text-sm text-gray-600 mt-1">{formatContent(announcement.content)}</p>
+              <h4 className="font-semibold text-gray-800 text-lg">{announcement.title}</h4>
+              <p className="text-base text-gray-600 mt-1">{formatContent(announcement.content)}</p>
             </div>
           </div>
         ))}
