@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
       params[key] = value.toString();
     });
 
-    console.log("Alipay callback params:", params);
+    // 生产环境不打印完整回调参数，避免泄露签名等敏感信息
+    if (process.env.NODE_ENV === "development") {
+      console.log("Alipay callback params:", params);
+    }
 
     // 验证签名
     const provider = new XunhuPayProvider("alipay");

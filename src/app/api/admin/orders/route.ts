@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { getAdminSession } from "@/lib/admin-auth";
 
 export async function GET(request: NextRequest) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");

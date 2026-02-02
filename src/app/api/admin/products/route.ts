@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { productSchema } from "@/lib/validations";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 获取所有商品
 export async function GET() {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const products = await prisma.product.findMany({
       orderBy: [{ sort: "asc" }, { createdAt: "desc" }],
@@ -29,6 +35,11 @@ export async function GET() {
 
 // 创建商品
 export async function POST(request: NextRequest) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 

@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { categorySchema } from "@/lib/validations";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 获取所有分类
 export async function GET() {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const categories = await prisma.category.findMany({
       orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
@@ -26,6 +32,11 @@ export async function GET() {
 
 // 创建分类
 export async function POST(request: NextRequest) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: "未授权" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 
