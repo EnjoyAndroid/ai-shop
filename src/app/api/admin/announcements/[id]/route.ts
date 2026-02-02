@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { verifyAdmin } from "@/lib/admin-auth";
+import { getAdminSession } from "@/lib/admin-auth";
 
 // 更新公告
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await verifyAdmin(request);
+  const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }
@@ -40,7 +40,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await verifyAdmin(request);
+  const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }

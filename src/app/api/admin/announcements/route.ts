@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { verifyAdmin } from "@/lib/admin-auth";
+import { getAdminSession } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 // 获取公告列表
-export async function GET(request: NextRequest) {
-  const admin = await verifyAdmin(request);
+export async function GET() {
+  const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
 // 创建公告
 export async function POST(request: NextRequest) {
-  const admin = await verifyAdmin(request);
+  const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }
