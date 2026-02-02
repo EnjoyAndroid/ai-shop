@@ -48,7 +48,7 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn, userName: propUserNam
                         {userName}
                       </span>
                       <button
-                        onClick={() => signOut()}
+                        onClick={() => signOut({ callbackUrl: "/" })}
                         className="text-gray-500 hover:text-red-500 text-sm"
                       >
                         退出
@@ -238,7 +238,7 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn, userName: propUserNam
               <button
                 onClick={() => {
                   closeMenu();
-                  signOut();
+                  signOut({ callbackUrl: "/" });
                 }}
                 className="flex items-center justify-center gap-2 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
