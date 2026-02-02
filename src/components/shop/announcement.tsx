@@ -1,5 +1,61 @@
 import prisma from "@/lib/db";
 
+// 简单的文本格式化：支持链接、加粗、高亮
+function formatContent(content: string): React.ReactNode {
+  // 匹配模式：[链接文字](URL)、**加粗**、==高亮==
+  const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|==([^=]+)==/g;
+
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = pattern.exec(content)) !== null) {
+    // 添加匹配前的普通文本
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    if (match[1] && match[2]) {
+      // 链接: [文字](URL)
+      parts.push(
+        <a
+          key={key++}
+          href={match[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline font-medium"
+        >
+          {match[1]}
+        </a>
+      );
+    } else if (match[3]) {
+      // 加粗: **文字**
+      parts.push(
+        <strong key={key++} className="font-bold">
+          {match[3]}
+        </strong>
+      );
+    } else if (match[4]) {
+      // 高亮: ==文字==
+      parts.push(
+        <span key={key++} className="bg-yellow-200 px-1 rounded">
+          {match[4]}
+        </span>
+      );
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // 添加剩余的普通文本
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : content;
+}
+
 export async function Announcement() {
   // 构建时跳过数据库查询
   if (process.env.NODE_ENV === "production" && !process.env.DATABASE_URL?.includes("@")) {
@@ -39,7 +95,7 @@ export async function Announcement() {
             </span>
             <div>
               <h4 className="font-semibold text-gray-800">{announcement.title}</h4>
-              <p className="text-sm text-gray-600 mt-1">{announcement.content}</p>
+              <p className="text-sm text-gray-600 mt-1">{formatContent(announcement.content)}</p>
             </div>
           </div>
         ))}
