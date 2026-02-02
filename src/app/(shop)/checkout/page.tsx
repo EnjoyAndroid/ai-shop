@@ -144,44 +144,46 @@ export default function CheckoutPage() {
             {items.map((item) => (
               <div
                 key={item.productId}
-                className="bg-white rounded-xl p-4 flex items-center gap-4"
+                className="bg-white rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4"
               >
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <span className="text-2xl text-white">🤖</span>
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl sm:text-2xl text-white">🤖</span>
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-800">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-800 truncate">
                     {item.productName}
                   </h3>
                   <p className="text-red-500 font-bold">
                     ¥{(item.price / 100).toFixed(2)}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() =>
+                        updateQuantity(item.productId, item.quantity - 1)
+                      }
+                      className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                    >
+                      -
+                    </button>
+                    <span className="w-8 text-center">{item.quantity}</span>
+                    <button
+                      onClick={() =>
+                        updateQuantity(item.productId, item.quantity + 1)
+                      }
+                      className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+                    >
+                      +
+                    </button>
+                  </div>
                   <button
-                    onClick={() =>
-                      updateQuantity(item.productId, item.quantity - 1)
-                    }
-                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200"
+                    onClick={() => removeItem(item.productId)}
+                    className="text-gray-400 hover:text-red-500"
                   >
-                    -
-                  </button>
-                  <span className="w-8 text-center">{item.quantity}</span>
-                  <button
-                    onClick={() =>
-                      updateQuantity(item.productId, item.quantity + 1)
-                    }
-                    className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200"
-                  >
-                    +
+                    删除
                   </button>
                 </div>
-                <button
-                  onClick={() => removeItem(item.productId)}
-                  className="text-gray-400 hover:text-red-500"
-                >
-                  删除
-                </button>
               </div>
             ))}
           </div>

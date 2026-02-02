@@ -143,10 +143,10 @@ export default async function UserDashboardPage() {
               {recentOrders.length > 0 ? (
                 <div className="divide-y">
                   {recentOrders.map((order) => (
-                    <div key={order.id} className="p-4 flex items-center justify-between">
-                      <div>
-                        <p className="font-mono text-sm text-gray-800">{order.orderNo}</p>
-                        <p className="text-sm text-gray-500 mt-1">
+                    <div key={order.id} className="p-4 flex items-start sm:items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-sm text-gray-800 truncate">{order.orderNo}</p>
+                        <p className="text-sm text-gray-500 mt-1 truncate">
                           {order.orderNo.startsWith("R")
                             ? "余额充值"
                             : order.items[0]?.product.name
@@ -154,12 +154,12 @@ export default async function UserDashboardPage() {
                             : order.remark || "-"}
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex-shrink-0">
                         <p className="font-bold text-red-500">
                           ¥{(order.payAmount / 100).toFixed(2)}
                         </p>
                         <span
-                          className={`text-xs px-2 py-1 rounded-full ${
+                          className={`inline-block text-xs px-2 py-1 rounded-full whitespace-nowrap ${
                             order.status === "DELIVERED" || order.status === "COMPLETED"
                               ? "bg-green-100 text-green-600"
                               : order.status === "PENDING"

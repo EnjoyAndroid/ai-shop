@@ -213,8 +213,9 @@ function PayContent() {
               <Link href="/" className="text-2xl font-bold text-blue-600">
                 AI Shop
               </Link>
-              <h1 className="text-xl font-bold text-gray-800">
-                网站收银台
+              <h1 className="text-lg sm:text-xl font-bold text-gray-800">
+                <span className="hidden sm:inline">网站收银台</span>
+                <span className="sm:hidden">收银台</span>
               </h1>
               <div className="w-20"></div>
             </div>
@@ -239,8 +240,9 @@ function PayContent() {
               <Link href="/" className="text-2xl font-bold text-blue-600">
                 AI Shop
               </Link>
-              <h1 className="text-xl font-bold text-gray-800">
-                网站收银台
+              <h1 className="text-lg sm:text-xl font-bold text-gray-800">
+                <span className="hidden sm:inline">网站收银台</span>
+                <span className="sm:hidden">收银台</span>
               </h1>
               <div className="w-20"></div>
             </div>
@@ -300,15 +302,15 @@ function PayContent() {
                 {/* 订单信息 */}
                 <div className="text-center mb-6">
                   <p className="text-gray-500 text-sm mb-2">订单号: {orderNo}</p>
-                  <div className="flex items-center justify-center gap-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
                     <div>
                       <p className="text-gray-500 text-sm">人民币金额</p>
-                      <p className="text-2xl font-bold text-gray-800">¥ {(Number(amount) / 100).toFixed(2)}</p>
+                      <p className="text-xl sm:text-2xl font-bold text-gray-800">¥ {(Number(amount) / 100).toFixed(2)}</p>
                     </div>
                     <div className="text-2xl text-gray-300">=</div>
                     <div>
                       <p className="text-gray-500 text-sm">USDT 金额</p>
-                      <p className="text-2xl font-bold" style={{ color: "#26A17B" }}>
+                      <p className="text-xl sm:text-2xl font-bold" style={{ color: "#26A17B" }}>
                         {usdtAmount || "计算中..."} USDT
                       </p>
                     </div>
@@ -325,7 +327,7 @@ function PayContent() {
                       <img
                         src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCode)}`}
                         alt="收款地址二维码"
-                        className="w-44 h-44"
+                        className="w-36 h-36 sm:w-44 sm:h-44"
                       />
                     </div>
                   </div>
@@ -426,7 +428,7 @@ function PayContent() {
                       <img
                         src={qrCode}
                         alt="支付二维码"
-                        className="w-52 h-52"
+                        className="w-40 h-40 sm:w-52 sm:h-52"
                       />
                       {/* 中心图标 */}
                       <div
