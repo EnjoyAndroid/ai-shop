@@ -70,3 +70,82 @@
 3. Next.js 构建时静态化了支付方式 API
 4. 保存设置后 Redis 缓存没清除，设置不生效
 5. 服务端 Header 组件放到客户端页面导致报错
+
+---
+
+## 2026-02-02 移动端兼容性优化
+
+### commit 3848656 - 移动端兼容性优化
+
+**新增功能：**
+- 添加 viewport 配置 (device-width, initialScale, maximumScale)
+- 完善移动端抽屉式导航菜单 (汉堡按钮、侧边栏、导航链接)
+
+**优化内容：**
+- 支付页面响应式优化 (标题、二维码尺寸、USDT金额布局)
+- 订单详情响应式网格布局 (grid-cols-1 sm:grid-cols-2)
+- 购买按钮数量选择器响应式 (flex-wrap)
+- 结账页面商品项响应式布局
+- 修复个人中心订单状态标签被挤压问题 (添加 whitespace-nowrap, flex-shrink-0)
+
+**修改文件：**
+- `src/app/layout.tsx` - 添加 viewport 配置
+- `src/components/shop/header.tsx` - 集成 HeaderClient 移动端菜单
+- `src/components/shop/header-client.tsx` - 实现完整的移动端抽屉式导航
+- `src/app/(shop)/pay/[orderNo]/page.tsx` - 响应式布局优化
+- `src/components/shop/order-detail.tsx` - 网格布局响应式
+- `src/components/shop/buy-now-button.tsx` - 数量选择器响应式
+- `src/app/(shop)/checkout/page.tsx` - 商品项响应式
+- `src/app/(user)/dashboard/page.tsx` - 订单状态标签不换行
+
+---
+
+### commit 04d0a26 - 修复退出登录无反应问题
+
+**Bug 修复：**
+- PC端和移动端退出登录按钮点击无反应
+
+**原因：**
+- `signOut()` 没有传递 `callbackUrl` 参数，导致退出后页面没有跳转刷新
+
+**修复：**
+- 改为 `signOut({ callbackUrl: "/" })`
+
+---
+
+### commit 974361b - 重置密码页面UI优化
+
+**优化内容：**
+- 统一使用与登录页相同的顶部导航布局 (左上角 AI Shop logo)
+- 移除自定义"生成"密码按钮，改用浏览器原生密码生成
+- 添加 `autoComplete="new-password"` 触发 Chrome 密码建议
+
+**修改文件：**
+- `src/app/(auth)/reset-password/page.tsx` - 页面布局重构
+- `src/components/ui/password-input.tsx` - 添加可选的 showGenerator 属性
+
+---
+
+### Docker 部署注意事项（新增）
+
+**需要 `--no-cache` 重新构建的情况：**
+1. 修改了前端页面组件（CSS、布局、样式）
+2. 修改了静态文件（public 目录）
+3. Dockerfile 中间层命令没变但文件内容变了
+4. 依赖包更新（package.json 修改）
+5. NEXT_PUBLIC_* 环境变量修改（构建时嵌入）
+
+**命令：**
+```bash
+# 强制无缓存重新构建
+docker-compose build --no-cache
+docker-compose up -d
+
+# 或一条命令
+docker-compose up -d --build --force-recreate
+```
+
+**不需要清缓存的情况：**
+- 只改了服务端 API 逻辑（/api/* 路由）
+- 只改了数据库操作代码
+- 只改了运行时读取的环境变量（非 NEXT_PUBLIC_*）
