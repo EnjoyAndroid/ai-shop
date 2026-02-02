@@ -1,55 +1,44 @@
 import { hashMD5 } from "@/lib/encryption";
-import { spawn } from "child_process";
 
 /**
- * 使用 curl 发送 POST 请求（通过 spawn 异步执行）
+ * 发送 POST 请求
  */
-function curlPost(url: string, data: Record<string, string>): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const postData = new URLSearchParams(data).toString();
+async function curlPost(url: string, data: Record<string, string>): Promise<any> {
+  const postData = new URLSearchParams(data).toString();
 
-    const curl = spawn("curl", [
-      "-s",
-      "-X", "POST",
-      url,
-      "-d", postData,
-      "--max-time", "30"
-    ]);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
-    let stdout = "";
-    let stderr = "";
-
-    curl.stdout.on("data", (data) => {
-      stdout += data.toString();
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: postData,
+      signal: controller.signal,
     });
 
-    curl.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
+    const text = await response.text();
+    console.log("Xunhu API response:", text);
 
-    curl.on("close", (code) => {
-      console.log("Xunhu API response:", stdout);
+    if (!text.trim()) {
+      throw new Error("空响应");
+    }
 
-      if (stderr) {
-        console.error("curl stderr:", stderr);
-      }
-
-      if (!stdout.trim()) {
-        reject(new Error("空响应"));
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(stdout));
-      } catch {
-        reject(new Error(`JSON解析失败: ${stdout}`));
-      }
-    });
-
-    curl.on("error", (err) => {
-      reject(new Error(`curl执行失败: ${err.message}`));
-    });
-  });
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`JSON解析失败: ${text}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("请求超时");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export interface PaymentProvider {
