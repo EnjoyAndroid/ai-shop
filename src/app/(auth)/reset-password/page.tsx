@@ -54,7 +54,7 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <div className="text-center">
+      <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <span className="text-3xl">❌</span>
         </div>
@@ -69,7 +69,7 @@ function ResetPasswordForm() {
 
   if (success) {
     return (
-      <div className="text-center">
+      <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <span className="text-3xl">✅</span>
         </div>
@@ -86,7 +86,8 @@ function ResetPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 shadow-sm">
+      <h1 className="text-2xl font-bold text-gray-800 mb-2">设置新密码</h1>
       <p className="text-gray-500 text-sm mb-6">请设置您的新密码</p>
 
       {error && (
@@ -103,6 +104,7 @@ function ResetPasswordForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入新密码（至少6位）"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            autoComplete="new-password"
             required
             minLength={6}
           />
@@ -115,6 +117,7 @@ function ResetPasswordForm() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="请再次输入新密码"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            autoComplete="new-password"
             required
           />
         </div>
@@ -127,24 +130,37 @@ function ResetPasswordForm() {
           {loading ? "重置中..." : "重置密码"}
         </button>
       </div>
+
+      <div className="mt-6 text-center text-sm text-gray-500">
+        <Link href="/login" className="text-primary hover:underline">
+          返回登录
+        </Link>
+      </div>
     </form>
   );
 }
 
 export default function ResetPasswordPage() {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <Link href="/" className="text-3xl font-bold text-primary">
-            AI Shop
-          </Link>
-          <p className="text-gray-500 mt-2">重置密码</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* 顶部导航 - 与登录页保持一致 */}
+      <header className="bg-white shadow-sm">
+        <div className="container mx-auto px-4">
+          <div className="h-16 flex items-center">
+            <Link href="/" className="text-xl font-bold text-primary">
+              AI Shop
+            </Link>
+          </div>
         </div>
+      </header>
 
-        <div className="bg-white rounded-2xl p-8 shadow-sm">
-          <h1 className="text-2xl font-bold text-gray-800 mb-6">设置新密码</h1>
-          <Suspense fallback={<div className="animate-pulse h-48 bg-gray-100 rounded-lg" />}>
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-gray-800">重置密码</h1>
+          </div>
+
+          <Suspense fallback={<div className="bg-white rounded-2xl p-8 shadow-sm animate-pulse h-96" />}>
             <ResetPasswordForm />
           </Suspense>
         </div>
