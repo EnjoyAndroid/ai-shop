@@ -10,6 +10,7 @@ const menuItems = [
   { href: "/admin/categories", label: "分类管理", icon: "📁" },
   { href: "/admin/cardkeys", label: "卡密管理", icon: "🔑" },
   { href: "/admin/users", label: "用户管理", icon: "👥" },
+  { href: "/admin/announcements", label: "公告管理", icon: "📢" },
   { href: "/admin/settings", label: "系统设置", icon: "⚙️" },
 ];
 
