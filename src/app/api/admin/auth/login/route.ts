@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import prisma from "@/lib/db";
+import redis from "@/lib/redis";
 import { SignJWT } from "jose";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "admin-secret-key"
 );
+
+// 登录失败限制配置
+const FAIL_THRESHOLD = 5; // 5次失败后锁定
+const FAIL_EXPIRE_SECONDS = 30 * 60; // 30分钟
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,12 +25,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 检查登录失败次数
+    const failKey = `admin_login_fail:${username}`;
+    const failCount = parseInt((await redis.get(failKey)) || "0");
+
+    if (failCount >= FAIL_THRESHOLD) {
+      const ttl = await redis.ttl(failKey);
+      return NextResponse.json(
+        { error: `登录失败次数过多，请${Math.ceil(ttl / 60)}分钟后再试` },
+        { status: 429 }
+      );
+    }
+
     // 查找管理员
     const admin = await prisma.admin.findUnique({
       where: { username },
     });
 
     if (!admin) {
+      // 增加失败计数
+      await redis.incr(failKey);
+      await redis.expire(failKey, FAIL_EXPIRE_SECONDS);
       return NextResponse.json(
         { error: "用户名或密码错误" },
         { status: 401 }
@@ -43,11 +63,19 @@ export async function POST(request: NextRequest) {
     const isValid = await bcrypt.compare(password, admin.password);
 
     if (!isValid) {
+      // 增加失败计数
+      await redis.incr(failKey);
+      await redis.expire(failKey, FAIL_EXPIRE_SECONDS);
+      const newCount = failCount + 1;
+      const remaining = FAIL_THRESHOLD - newCount;
       return NextResponse.json(
-        { error: "用户名或密码错误" },
+        { error: `用户名或密码错误${remaining > 0 ? `，还剩${remaining}次机会` : ""}` },
         { status: 401 }
       );
     }
+
+    // 登录成功，清除失败计数
+    await redis.del(failKey);
 
     // 更新最后登录时间
     await prisma.admin.update({

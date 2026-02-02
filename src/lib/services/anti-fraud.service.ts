@@ -15,8 +15,8 @@ export class AntiFraudService {
   private static readonly LIMITS = {
     // IP 限制：每分钟最多 10 次请求
     IP: { max: 10, windowSeconds: 60 },
-    // 邮箱限制：每小时最多 10 次下单（测试环境）
-    EMAIL: { max: 50, windowSeconds: 3600 },
+    // 邮箱限制：每小时最多 10 次下单
+    EMAIL: { max: 10, windowSeconds: 3600 },
     // 设备指纹限制：每小时最多 10 次下单
     FINGERPRINT: { max: 10, windowSeconds: 3600 },
   };
@@ -83,22 +83,26 @@ export class AntiFraudService {
   }
 
   /**
-   * 通用限流检查
+   * 通用限流检查（使用 Lua 脚本保证原子性）
    */
   private static async checkLimit(
     key: string,
     max: number,
     windowSeconds: number
   ): Promise<RateLimitResult> {
-    const current = await redis.incr(key);
+    // Lua 脚本保证 incr 和 expire 原子执行
+    const luaScript = `
+      local current = redis.call('incr', KEYS[1])
+      if current == 1 then
+        redis.call('expire', KEYS[1], ARGV[1])
+      end
+      local ttl = redis.call('ttl', KEYS[1])
+      return {current, ttl}
+    `;
 
-    if (current === 1) {
-      // 首次请求，设置过期时间
-      await redis.expire(key, windowSeconds);
-    }
-
-    const ttl = await redis.ttl(key);
-    const resetAt = Date.now() + ttl * 1000;
+    const result = await redis.eval(luaScript, 1, key, windowSeconds) as [number, number];
+    const [current, ttl] = result;
+    const resetAt = Date.now() + Math.max(ttl, 0) * 1000;
 
     return {
       allowed: current <= max,
