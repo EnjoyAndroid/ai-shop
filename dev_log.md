@@ -149,3 +149,54 @@ docker-compose up -d --build --force-recreate
 - 只改了服务端 API 逻辑（/api/* 路由）
 - 只改了数据库操作代码
 - 只改了运行时读取的环境变量（非 NEXT_PUBLIC_*）
+
+---
+
+## 2026-02-03 公告管理系统
+
+### commit 1b42f01 - 新增后台公告管理功能
+
+**新增功能：**
+- 后台侧边栏添加"📢 公告管理"入口
+- 公告列表页面（查看、启用/停用、删除）
+- 新增/编辑公告弹窗（标题、内容、类型、排序、置顶）
+- 公告管理 API（CRUD）
+
+**新增文件：**
+- `src/app/admin/announcements/page.tsx` - 公告管理页面
+- `src/app/admin/announcements/layout.tsx` - 布局文件
+- `src/app/api/admin/announcements/route.ts` - 列表/创建 API
+- `src/app/api/admin/announcements/[id]/route.ts` - 更新/删除 API
+
+---
+
+### commit a57539e - 修复公告管理API认证函数错误
+
+**Bug 修复：**
+- API 使用了不存在的 `verifyAdmin` 函数导致报错
+
+**修复：**
+- 改为使用 `getAdminSession()`
+
+---
+
+### commit 2137664 - 公告支持富文本格式嵌套组合
+
+**新增功能：**
+- 支持链接：`[文字](URL)`
+- 支持加粗：`**文字**`
+- 支持高亮：`==文字==`
+- 支持颜色：`{红色}文字{/红色}`、`{绿色}`、`{蓝色}`
+- 支持任意嵌套组合：`**{红色}红色加粗{/红色}**`
+
+**样式调整：**
+- 公告标题字体：`text-lg` (18px)
+- 公告内容字体：`text-base` (16px)
+- 后台编辑框高度：`h-40`
+
+**使用示例：**
+```
+**{红色}重要通知{/红色}**：本站已上线新功能！
+==限时优惠==活动进行中，{绿色}全场9折{/绿色}！
+详情请[点击这里](https://example.com)
+```
