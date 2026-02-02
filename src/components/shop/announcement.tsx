@@ -1,5 +1,15 @@
 import prisma from "@/lib/db";
 
+// 验证 URL 是否安全（仅允许 http/https 协议）
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url, "https://example.com");
+    return ["http:", "https:"].includes(parsedUrl.protocol);
+  } catch {
+    return false;
+  }
+}
+
 // 简单的文本格式化：支持链接、加粗、高亮、颜色（可嵌套组合）
 function formatContent(content: string): React.ReactNode {
   // 递归处理所有格式
@@ -17,18 +27,28 @@ function formatContent(content: string): React.ReactNode {
       }
 
       if (match[1] && match[2]) {
-        // 链接: [文字](URL)
-        parts.push(
-          <a
-            key={`${keyPrefix}-link-${key++}`}
-            href={match[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline font-medium"
-          >
-            {processText(match[1], `${keyPrefix}-l${key}`)}
-          </a>
-        );
+        // 链接: [文字](URL) - 验证 URL 安全性
+        const url = match[2];
+        if (isSafeUrl(url)) {
+          parts.push(
+            <a
+              key={`${keyPrefix}-link-${key++}`}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              {processText(match[1], `${keyPrefix}-l${key}`)}
+            </a>
+          );
+        } else {
+          // 不安全的 URL，仅显示文本
+          parts.push(
+            <span key={`${keyPrefix}-text-${key++}`}>
+              {processText(match[1], `${keyPrefix}-t${key}`)}
+            </span>
+          );
+        }
       } else if (match[3] !== undefined) {
         // 加粗: **文字**
         parts.push(

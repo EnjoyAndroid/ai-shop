@@ -3,14 +3,15 @@ import crypto from "crypto";
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
+const SALT = "ai-shop-encryption-salt-v1";
 
 function getEncryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
   if (!key) {
     throw new Error("ENCRYPTION_KEY environment variable is not set");
   }
-  // 确保密钥是32字节
-  return crypto.createHash("sha256").update(key).digest();
+  // 使用 PBKDF2 进行密钥派生（更安全）
+  return crypto.pbkdf2Sync(key, SALT, 100000, 32, "sha256");
 }
 
 export interface EncryptedData {
@@ -57,19 +58,19 @@ export function decrypt(encryptedData: EncryptedData): string {
 }
 
 /**
- * 生成随机密码 (用于订单查询密码)
+ * 生成随机密码 (用于订单查询密码) - 使用加密安全的随机数
  */
 export function generatePassword(length: number = 8): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let password = "";
   for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars.charAt(crypto.randomInt(0, chars.length));
   }
   return password;
 }
 
 /**
- * 生成订单号
+ * 生成订单号 - 使用加密安全的随机数
  */
 export function generateOrderNo(): string {
   const now = new Date();
@@ -79,9 +80,8 @@ export function generateOrderNo(): string {
   const hour = now.getHours().toString().padStart(2, "0");
   const minute = now.getMinutes().toString().padStart(2, "0");
   const second = now.getSeconds().toString().padStart(2, "0");
-  const random = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
+  // 使用加密安全的随机数，增加到6位
+  const random = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
 
   return `${year}${month}${day}${hour}${minute}${second}${random}`;
 }
