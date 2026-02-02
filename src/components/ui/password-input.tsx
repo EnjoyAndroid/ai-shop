@@ -5,6 +5,7 @@ import { useState } from "react";
 interface PasswordInputProps {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onValueChange?: (value: string) => void;
   placeholder?: string;
   className?: string;
   required?: boolean;
@@ -12,11 +13,37 @@ interface PasswordInputProps {
   autoComplete?: string;
   id?: string;
   name?: string;
+  showGenerator?: boolean;
+}
+
+// 生成随机密码
+function generatePassword(length: number = 12): string {
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const numbers = "0123456789";
+  const symbols = "!@#$%^&*";
+  const allChars = lowercase + uppercase + numbers + symbols;
+
+  let password = "";
+  // 确保至少包含每种类型的字符
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += symbols[Math.floor(Math.random() * symbols.length)];
+
+  // 填充剩余长度
+  for (let i = password.length; i < length; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // 打乱顺序
+  return password.split("").sort(() => Math.random() - 0.5).join("");
 }
 
 export function PasswordInput({
   value,
   onChange,
+  onValueChange,
   placeholder = "",
   className = "",
   required = false,
@@ -24,8 +51,20 @@ export function PasswordInput({
   autoComplete,
   id,
   name,
+  showGenerator = false,
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = useState(false);
+
+  const handleGeneratePassword = () => {
+    const newPassword = generatePassword(12);
+    // 创建一个模拟的 event 对象
+    const syntheticEvent = {
+      target: { value: newPassword, name: name || "" },
+    } as React.ChangeEvent<HTMLInputElement>;
+    onChange(syntheticEvent);
+    onValueChange?.(newPassword);
+    setShowPassword(true); // 显示生成的密码
+  };
 
   return (
     <div className="relative">
@@ -34,18 +73,29 @@ export function PasswordInput({
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        className={`w-full pr-10 ${className}`}
+        className={`w-full ${showGenerator ? "pr-20" : "pr-10"} ${className}`}
         required={required}
         minLength={minLength}
         autoComplete={autoComplete}
         id={id}
         name={name}
       />
-      <button
-        type="button"
-        onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-      >
+      <div className={`absolute right-3 top-1/2 -translate-y-1/2 flex items-center ${showGenerator ? "gap-2" : ""}`}>
+        {showGenerator && (
+          <button
+            type="button"
+            onClick={handleGeneratePassword}
+            className="text-primary hover:text-primary/80 text-xs font-medium"
+            title="自动生成密码"
+          >
+            生成
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="text-gray-400 hover:text-gray-600"
+        >
         {showPassword ? (
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -83,6 +133,7 @@ export function PasswordInput({
           </svg>
         )}
       </button>
+      </div>
     </div>
   );
 }
