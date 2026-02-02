@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface Announcement {
   id: string;
@@ -144,17 +145,22 @@ export default function AnnouncementsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
+      <div className="flex min-h-screen bg-gray-100">
+        <AdminSidebar />
+        <main className="flex-1 p-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-64 bg-gray-200 rounded"></div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
+    <div className="flex min-h-screen bg-gray-100">
+      <AdminSidebar />
+      <main className="flex-1 p-8">
       {/* 头部 */}
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-800">公告管理</h1>
@@ -348,6 +354,7 @@ export default function AnnouncementsPage() {
           </div>
         </div>
       )}
+      </main>
     </div>
   );
 }
