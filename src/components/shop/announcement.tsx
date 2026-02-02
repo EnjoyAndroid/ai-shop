@@ -1,9 +1,9 @@
 import prisma from "@/lib/db";
 
-// 简单的文本格式化：支持链接、加粗、高亮
+// 简单的文本格式化：支持链接、加粗、高亮、颜色
 function formatContent(content: string): React.ReactNode {
-  // 匹配模式：[链接文字](URL)、**加粗**、==高亮==
-  const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|==([^=]+)==/g;
+  // 匹配模式：[链接文字](URL)、**加粗**、==高亮==、{红色}、{绿色}、{蓝色}
+  const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|==([^=]+)==|\{红色\}([^{]+)\{\/红色\}|\{绿色\}([^{]+)\{\/绿色\}|\{蓝色\}([^{]+)\{\/蓝色\}/g;
 
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -41,6 +41,27 @@ function formatContent(content: string): React.ReactNode {
       parts.push(
         <span key={key++} className="bg-yellow-200 px-1 rounded">
           {match[4]}
+        </span>
+      );
+    } else if (match[5]) {
+      // 红色: {红色}文字{/红色}
+      parts.push(
+        <span key={key++} className="text-red-500">
+          {match[5]}
+        </span>
+      );
+    } else if (match[6]) {
+      // 绿色: {绿色}文字{/绿色}
+      parts.push(
+        <span key={key++} className="text-green-500">
+          {match[6]}
+        </span>
+      );
+    } else if (match[7]) {
+      // 蓝色: {蓝色}文字{/蓝色}
+      parts.push(
+        <span key={key++} className="text-blue-500">
+          {match[7]}
         </span>
       );
     }
