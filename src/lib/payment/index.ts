@@ -5,6 +5,8 @@ import { hashMD5 } from "@/lib/encryption";
  */
 async function curlPost(url: string, data: Record<string, string>): Promise<any> {
   const postData = new URLSearchParams(data).toString();
+  console.log("[Payment] Request URL:", url);
+  console.log("[Payment] Request data:", postData);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
@@ -19,8 +21,9 @@ async function curlPost(url: string, data: Record<string, string>): Promise<any>
       signal: controller.signal,
     });
 
+    console.log("[Payment] Response status:", response.status);
     const text = await response.text();
-    console.log("Xunhu API response:", text);
+    console.log("[Payment] Response body:", text);
 
     if (!text.trim()) {
       throw new Error("空响应");
@@ -32,6 +35,7 @@ async function curlPost(url: string, data: Record<string, string>): Promise<any>
       throw new Error(`JSON解析失败: ${text}`);
     }
   } catch (error) {
+    console.error("[Payment] Fetch error:", error);
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("请求超时");
     }
