@@ -200,3 +200,90 @@ docker-compose up -d --build --force-recreate
 ==限时优惠==活动进行中，{绿色}全场9折{/绿色}！
 详情请[点击这里](https://example.com)
 ```
+
+---
+
+## 2026-02-03 安全加固
+
+### commit dda7778 - 后台安全加固
+
+**安全修复：**
+- 所有 admin API 添加 `getAdminSession()` 权限验证
+- 生产环境移除敏感日志（支付请求/响应/回调参数）
+- 添加 `middleware.ts` 统一路由保护，未登录访问后台自动跳转登录页
+
+**修改文件：**
+- `src/middleware.ts` - 新增，后台路由保护中间件
+- `src/app/api/admin/*/route.ts` - 12个文件添加权限验证
+- `src/lib/payment/index.ts` - 敏感日志仅开发环境打印
+- `src/app/api/payment/callback/*/route.ts` - 回调参数仅开发环境打印
+
+---
+
+### commit 4483def - 修复多项安全漏洞
+
+**1. Redis 限流竞态条件修复**
+- 使用 Lua 脚本保证 `incr + expire` 原子执行
+- 防止程序崩溃导致 key 永不过期
+
+**2. 管理员登录添加失败限流**
+- 5次失败后锁定30分钟
+- 显示剩余尝试次数
+- 清除锁定命令：`redis-cli del admin_login_fail:用户名`
+
+**3. 公告富文本 XSS 防护**
+- 添加 `isSafeUrl()` 验证 URL 协议
+- 仅允许 http/https，拦截 javascript: 等危险协议
+
+**4. 下单限流配置收紧**
+- EMAIL 从每小时50次降至10次
+
+**5. 密钥派生安全增强**
+- 改用 PBKDF2（10万次迭代 + 固定盐值）替代简单 SHA256
+- ⚠️ **重要**：此修改导致旧卡密无法解密，需重新导入
+
+**6. 随机数生成器修复**
+- `generatePassword` / `generateOrderNo` 改用 `crypto.randomInt()`
+- 订单号随机部分从4位增至6位，降低碰撞风险
+
+**修改文件：**
+- `src/lib/services/anti-fraud.service.ts` - Lua脚本限流、配置收紧
+- `src/app/api/admin/auth/login/route.ts` - 管理员登录限流
+- `src/components/shop/announcement.tsx` - XSS防护
+- `src/lib/encryption.ts` - PBKDF2密钥派生、安全随机数
+
+---
+
+### commit ecdf359 - 公告管理页面布局修复
+
+**修复：**
+- 公告管理页面添加 AdminSidebar 组件
+- 统一布局结构与其他管理模块一致
+
+---
+
+### commit cd0c449 - 已登录管理员访问登录页自动跳转
+
+**优化：**
+- 登录页 layout 添加 `getAdminSession` 检测
+- 已登录状态自动重定向到 `/admin/dashboard`
+
+---
+
+### 安全注意事项
+
+**密钥派生算法变更影响：**
+- 2026-02-03 之前导入的卡密使用旧算法加密
+- 新算法无法解密旧卡密，会报错 `unable to authenticate data`
+- 解决方案：清空旧卡密，重新导入
+
+```bash
+# 清空卡密表
+docker exec -it <postgres容器> psql -U aishop -d ai_shop -c "DELETE FROM \"CardKey\";"
+```
+
+**管理员登录被锁定解决：**
+```bash
+# 清除锁定
+docker exec <redis容器> redis-cli -n 1 del admin_login_fail:admin
+```
