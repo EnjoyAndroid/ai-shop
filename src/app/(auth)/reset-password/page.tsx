@@ -19,8 +19,8 @@ function ResetPasswordForm() {
     e.preventDefault();
     setError("");
 
-    if (password.length < 6) {
-      setError("密码长度不能少于6位");
+    if (password.length < 8) {
+      setError("密码长度不能少于8位");
       return;
     }
 
@@ -102,11 +102,11 @@ function ResetPasswordForm() {
           <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="请输入新密码（至少6位）"
+            placeholder="请输入新密码（至少8位）"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-            autoComplete="new-password"
+            autoComplete="off"
             required
-            minLength={6}
+            minLength={8}
           />
         </div>
 
@@ -117,7 +117,7 @@ function ResetPasswordForm() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="请再次输入新密码"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-            autoComplete="new-password"
+            autoComplete="off"
             required
           />
         </div>

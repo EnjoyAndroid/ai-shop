@@ -25,6 +25,19 @@ function LoginForm() {
     e.preventDefault();
     setError("");
 
+    // 邮箱格式验证
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(account)) {
+      setError("请输入有效的邮箱地址");
+      return;
+    }
+
+    // 密码长度验证
+    if (password.length < 8) {
+      setError("密码至少8位");
+      return;
+    }
+
     // 如果需要验证码但还没验证，弹出验证码
     if (requireCaptcha && !captchaToken) {
       setShowCaptcha(true);

@@ -97,8 +97,8 @@ export default function AdminSettingsPage() {
       return;
     }
 
-    if (passwordForm.newPassword.length < 6) {
-      setPasswordMessage({ type: "error", text: "新密码至少6位" });
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordMessage({ type: "error", text: "新密码至少8位" });
       setSavingPassword(false);
       return;
     }
@@ -339,6 +339,7 @@ export default function AdminSettingsPage() {
                       setPasswordForm({ ...passwordForm, currentPassword: e.target.value })
                     }
                     className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoComplete="one-time-code"
                     required
                   />
                 </div>
@@ -350,8 +351,9 @@ export default function AdminSettingsPage() {
                       setPasswordForm({ ...passwordForm, newPassword: e.target.value })
                     }
                     className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoComplete="new-password"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
                 </div>
                 <div>
@@ -362,8 +364,9 @@ export default function AdminSettingsPage() {
                       setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })
                     }
                     className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoComplete="new-password"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
                 </div>
               </div>

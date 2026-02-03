@@ -14,8 +14,15 @@ export default function AdminLoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+
+    // 密码长度验证
+    if (password.length < 8) {
+      setError("密码至少8位");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch("/api/admin/auth/login", {
