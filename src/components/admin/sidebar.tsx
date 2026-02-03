@@ -31,7 +31,7 @@ export function AdminSidebar() {
   };
 
   return (
-    <aside className="w-64 bg-gray-900 min-h-screen text-white flex flex-col">
+    <aside className="w-64 bg-gray-900 h-screen text-white flex flex-col sticky top-0">
       {/* Logo */}
       <div className="p-6 border-b border-gray-800">
         <Link href="/admin/dashboard" className="text-xl font-bold">
