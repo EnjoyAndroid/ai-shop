@@ -104,7 +104,7 @@ function ResetPasswordForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入新密码（至少8位）"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-            autoComplete="off"
+            autoComplete="new-password"
             required
             minLength={8}
           />
@@ -117,7 +117,7 @@ function ResetPasswordForm() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="请再次输入新密码"
             className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-            autoComplete="off"
+            autoComplete="new-password"
             required
           />
         </div>
