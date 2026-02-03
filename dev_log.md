@@ -270,7 +270,39 @@ docker-compose up -d --build --force-recreate
 
 ---
 
+## 2026-02-03 密码策略和表单验证优化
+
+### commit - 密码最小长度改为8位 + 前端表单验证
+
+**安全增强：**
+- 密码最小长度从 6 位改为 8 位（所有页面）
+- 前端添加邮箱格式验证（登录、注册、忘记密码）
+- 前端添加密码长度验证，减少无效 API 请求
+
+**表单优化：**
+- 注册/重置密码页面密码框 `autoComplete="off"` 禁用浏览器自动填充
+- 管理员设置页面当前密码 `autoComplete="one-time-code"` 阻止填充已保存密码
+- 管理员设置页面新密码 `autoComplete="new-password"`
+
+**修改文件：**
+- `src/app/(auth)/login/page.tsx` - 邮箱格式 + 密码长度验证
+- `src/app/(auth)/register/page.tsx` - 邮箱格式 + 密码长度验证 + autoComplete
+- `src/app/(auth)/forgot-password/page.tsx` - 邮箱格式验证
+- `src/app/(auth)/reset-password/page.tsx` - 密码长度验证 + autoComplete
+- `src/app/admin/login/page.tsx` - 密码长度验证
+- `src/app/admin/settings/page.tsx` - 密码长度验证 + autoComplete
+- `src/lib/validations/index.ts` - 密码 schema 改为 min(8)
+- `src/app/api/auth/reset-password/route.ts` - 后端验证改为 8 位
+- `src/app/api/admin/password/route.ts` - 后端验证改为 8 位
+
+---
+
 ### 安全注意事项
+
+**密码策略变更：**
+- 2026-02-03 密码最小长度从 6 位改为 8 位
+- 影响范围：注册、登录、重置密码、管理员登录、管理员修改密码
+- 旧账号不受影响，仅新设置的密码需要满足 8 位要求
 
 **密钥派生算法变更影响：**
 - 2026-02-03 之前导入的卡密使用旧算法加密

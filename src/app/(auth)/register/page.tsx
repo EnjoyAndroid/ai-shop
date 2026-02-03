@@ -30,13 +30,15 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
-    if (!formData.email) {
-      setError("请填写邮箱");
+    // 邮箱格式验证
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setError("请输入有效的邮箱地址");
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError("密码至少6位");
+    if (formData.password.length < 8) {
+      setError("密码至少8位");
       return;
     }
 
@@ -147,9 +149,9 @@ export default function RegisterPage() {
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="至少6位密码"
+                placeholder="至少8位密码"
                 className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                autoComplete="new-password"
+                autoComplete="off"
                 required
               />
             </div>

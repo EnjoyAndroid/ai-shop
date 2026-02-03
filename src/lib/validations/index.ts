@@ -8,7 +8,7 @@ export const registerSchema = z.object({
     .string()
     .regex(/^1[3-9]\d{9}$/, "请输入有效的手机号")
     .optional(),
-  password: z.string().min(6, "密码至少6位").max(32, "密码最多32位"),
+  password: z.string().min(8, "密码至少8位").max(32, "密码最多32位"),
   name: z.string().min(2, "昵称至少2个字符").max(20, "昵称最多20个字符").optional(),
 }).refine(data => data.email || data.phone, {
   message: "邮箱和手机号至少填写一个",

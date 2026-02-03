@@ -11,8 +11,16 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+
+    // 邮箱格式验证
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("请输入有效的邮箱地址");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const response = await fetch("/api/auth/forgot-password", {

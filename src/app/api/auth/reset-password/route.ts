@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "参数不完整" }, { status: 400 });
     }
 
-    if (password.length < 6) {
-      return NextResponse.json({ error: "密码长度不能少于6位" }, { status: 400 });
+    if (password.length < 8) {
+      return NextResponse.json({ error: "密码长度不能少于8位" }, { status: 400 });
     }
 
     // 从 Redis 获取用户 ID
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 加密新密码
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // 更新密码
     await prisma.user.update({
