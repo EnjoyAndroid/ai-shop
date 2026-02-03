@@ -319,3 +319,28 @@ docker exec -it <postgres容器> psql -U aishop -d ai_shop -c "DELETE FROM \"Car
 # 清除锁定
 docker exec <redis容器> redis-cli -n 1 del admin_login_fail:admin
 ```
+
+---
+
+## 2026-02-04 表单自动填充优化 & 重置密码过期验证
+
+### commit - 禁用注册/重置密码表单自动填充 + token 过期验证
+
+**优化内容：**
+- 注册页面邮箱禁用自动填充 (`autoComplete="off"`)
+- 注册/重置密码页面密码框改用 `autoComplete="new-password"`
+- 重置密码链接有效期从 30 分钟改为 10 分钟
+- 重置密码页面打开时立即验证 token 有效性
+
+**新增文件：**
+- `src/app/api/auth/verify-reset-token/route.ts` - 验证重置密码 token 是否有效
+
+**修改文件：**
+- `src/app/(auth)/register/page.tsx` - 邮箱 autoComplete="off"，密码 autoComplete="new-password"
+- `src/app/(auth)/reset-password/page.tsx` - 页面加载时验证 token，过期直接显示错误
+- `src/app/api/auth/forgot-password/route.ts` - 过期时间改为 10 分钟，使用 setex 确保过期生效
+
+**技术细节：**
+- Redis 存储 token 使用 `setex` 替代 `set + EX` 参数，确保过期时间正确设置
+- 前端使用 useEffect 在页面加载时调用验证 API
+- 验证中显示加载状态，过期/无效显示错误页面并引导重新获取链接

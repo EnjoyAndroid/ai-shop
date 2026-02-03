@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -14,6 +14,35 @@ function ResetPasswordForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [tokenValid, setTokenValid] = useState<boolean | null>(null);
+  const [verifying, setVerifying] = useState(true);
+
+  // 页面加载时验证 token
+  useEffect(() => {
+    if (!token) {
+      setTokenValid(false);
+      setVerifying(false);
+      return;
+    }
+
+    const verifyToken = async () => {
+      try {
+        const response = await fetch("/api/auth/verify-reset-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const data = await response.json();
+        setTokenValid(data.valid);
+      } catch {
+        setTokenValid(false);
+      } finally {
+        setVerifying(false);
+      }
+    };
+
+    verifyToken();
+  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +81,21 @@ function ResetPasswordForm() {
     }
   };
 
-  if (!token) {
+  // 正在验证中
+  if (verifying) {
+    return (
+      <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+          <span className="text-3xl">🔐</span>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-2">验证中...</h2>
+        <p className="text-gray-500">正在验证重置链接</p>
+      </div>
+    );
+  }
+
+  // token 无效或已过期
+  if (!token || tokenValid === false) {
     return (
       <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
