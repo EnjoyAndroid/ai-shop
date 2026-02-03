@@ -122,7 +122,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="your@email.com"
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                autoComplete="email"
+                autoComplete="off"
                 required
               />
             </div>
@@ -151,7 +151,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="至少8位密码"
                 className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                autoComplete="off"
+                autoComplete="new-password"
                 required
               />
             </div>
@@ -166,7 +166,7 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 placeholder="再次输入密码"
                 className="px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                autoComplete="off"
+                autoComplete="new-password"
                 required
               />
             </div>

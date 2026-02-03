@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     const token = crypto.randomBytes(32).toString("hex");
     const expireTime = 30 * 60; // 30 分钟
 
-    // 存储到 Redis
-    await redis.set(`reset_password:${token}`, user.id, "EX", expireTime);
+    // 存储到 Redis（使用 setex 确保过期时间生效）
+    await redis.setex(`reset_password:${token}`, expireTime, user.id);
 
     // 发送重置邮件
     const resetUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password?token=${token}`;
