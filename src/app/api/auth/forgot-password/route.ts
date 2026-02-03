@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
 
     // 生成重置 token
     const token = crypto.randomBytes(32).toString("hex");
-    const expireTime = 30 * 60; // 30 分钟
+    const expireTime = 10 * 60; // 10 分钟
 
-    // 存储到 Redis（使用 setex 确保过期时间生效）
+    // 存储到 Redis
     await redis.setex(`reset_password:${token}`, expireTime, user.id);
 
     // 发送重置邮件
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
             </p>
 
             <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
-              请点击下方按钮重置您的密码，链接有效期为 30 分钟。
+              请点击下方按钮重置您的密码，链接有效期为 10 分钟。
             </p>
 
             <div style="text-align: center; margin: 30px 0;">
