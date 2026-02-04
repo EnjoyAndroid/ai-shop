@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import prisma from "@/lib/db";
 import { registerSchema } from "@/lib/validations";
 import { consumeCaptchaToken } from "@/lib/captcha";
+import { logError } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Register error:", error);
+    logError("User register", error);
     return NextResponse.json(
       { error: "注册失败，请稍后重试" },
       { status: 500 }

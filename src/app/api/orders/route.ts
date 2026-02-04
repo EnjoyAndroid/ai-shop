@@ -7,6 +7,7 @@ import { decryptCardKey } from "@/lib/services/product.service";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
+import { logError } from "@/lib/logger";
 
 // 订单查询频率限制（防暴力破解查询密码）
 const QUERY_RATE_LIMIT = 20; // 最多查询次数
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
       exchangeRate: (paymentResult as any).exchangeRate,
     });
   } catch (error) {
-    console.error("Create order error:", error);
+    logError("Create order", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "创建订单失败" },
       { status: 500 }
@@ -237,7 +238,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ order: orderWithDecryptedKeys });
   } catch (error) {
-    console.error("Query order error:", error);
+    logError("Query order", error);
     return NextResponse.json({ error: "查询订单失败" }, { status: 500 });
   }
 }

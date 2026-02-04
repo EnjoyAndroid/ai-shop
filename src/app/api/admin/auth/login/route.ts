@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 import { SignJWT } from "jose";
+import { logError } from "@/lib/logger";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "admin-secret-key"
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Admin login error:", error);
+    logError("Admin login", error);
     return NextResponse.json(
       { error: "登录失败，请稍后重试" },
       { status: 500 }
