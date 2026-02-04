@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { allocateCardKeys, decryptCardKey } from "@/lib/services/product.service";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 export async function GET(
   request: NextRequest,
@@ -45,7 +46,7 @@ export async function GET(
 
     return NextResponse.json({ order: orderWithDecryptedKeys });
   } catch (error) {
-    console.error("Get order error:", error);
+    logError("Get order", error);
     return NextResponse.json({ error: "获取订单失败" }, { status: 500 });
   }
 }
@@ -184,7 +185,7 @@ export async function POST(
 
     return NextResponse.json({ order: orderWithDecryptedKeys });
   } catch (error) {
-    console.error("Order action error:", error);
+    logError("Order action", error);
     return NextResponse.json({ error: "操作失败" }, { status: 500 });
   }
 }

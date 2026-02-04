@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 // 禁用缓存，每次请求都从数据库读取
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET() {
 
     return NextResponse.json({ methods });
   } catch (error) {
-    console.error("Get payment methods error:", error);
+    logError("Get payment methods", error);
     // 出错时返回默认支付方式
     return NextResponse.json({
       methods: [

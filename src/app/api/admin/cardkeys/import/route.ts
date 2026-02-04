@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { importCardKeys } from "@/lib/services/product.service";
 import { importCardKeysSchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   const admin = await getAdminSession();
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       message: `成功导入 ${count} 条卡密`,
     });
   } catch (error) {
-    console.error("Import cardkeys error:", error);
+    logError("Import cardkeys", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "导入失败" },
       { status: 500 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 export async function GET() {
   try {
@@ -29,7 +30,7 @@ export async function GET() {
       balance: user.balance,
     });
   } catch (error) {
-    console.error("Get balance error:", error);
+    logError("Get balance", error);
     return NextResponse.json(
       { error: "获取余额失败" },
       { status: 500 }

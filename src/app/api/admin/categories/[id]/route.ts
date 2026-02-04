@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import { categorySchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 更新分类
 export async function PUT(
@@ -68,7 +69,7 @@ export async function PUT(
 
     return NextResponse.json({ category });
   } catch (error) {
-    console.error("Update category error:", error);
+    logError("Update category", error);
     return NextResponse.json(
       { error: "更新分类失败" },
       { status: 500 }
@@ -118,7 +119,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Delete category error:", error);
+    logError("Delete category", error);
     return NextResponse.json(
       { error: "删除分类失败" },
       { status: 500 }

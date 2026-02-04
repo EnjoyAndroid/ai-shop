@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
   const admin = await getAdminSession();
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ orders, total });
   } catch (error) {
-    console.error("Get orders error:", error);
+    logError("Get orders", error);
     return NextResponse.json(
       { error: "获取订单列表失败" },
       { status: 500 }

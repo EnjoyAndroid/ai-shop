@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPaymentProvider } from "@/lib/payment";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 // 重新获取/生成支付信息
 export async function GET(
@@ -70,7 +71,7 @@ export async function GET(
       expiredAt: order.expiredAt,
     });
   } catch (error) {
-    console.error("Get payment info error:", error);
+    logError("Get payment info", error);
     return NextResponse.json(
       { error: "获取支付信息失败" },
       { status: 500 }

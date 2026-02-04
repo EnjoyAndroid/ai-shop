@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handlePaymentSuccess } from "@/lib/services/order.service";
 import { USDTProvider } from "@/lib/payment";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 /**
  * USDT 支付状态查询 API
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
       paid: false,
     });
   } catch (error) {
-    console.error("USDT check error:", error);
+    logError("USDT check", error);
     return NextResponse.json(
       {
         success: false,

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 防止构建时预渲染
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET() {
 
     return NextResponse.json({ users });
   } catch (error) {
-    console.error("Get users error:", error);
+    logError("Get users", error);
     return NextResponse.json(
       { error: "获取用户失败" },
       { status: 500 }

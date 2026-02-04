@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handlePaymentSuccess } from "@/lib/services/order.service";
 import { XunhuPayProvider } from "@/lib/payment";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 // 支付宝回调
 export async function POST(request: NextRequest) {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     return new NextResponse("success", { status: 200 });
   } catch (error) {
-    console.error("Alipay callback error:", error);
+    logError("Alipay callback", error);
     return new NextResponse("fail", { status: 200 });
   }
 }

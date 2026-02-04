@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 更新公告
 export async function PUT(
@@ -30,7 +31,7 @@ export async function PUT(
 
     return NextResponse.json({ announcement });
   } catch (error) {
-    console.error("Update announcement error:", error);
+    logError("Update announcement", error);
     return NextResponse.json({ error: "更新公告失败" }, { status: 500 });
   }
 }
@@ -54,7 +55,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Delete announcement error:", error);
+    logError("Delete announcement", error);
     return NextResponse.json({ error: "删除公告失败" }, { status: 500 });
   }
 }

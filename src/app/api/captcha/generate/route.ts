@@ -4,6 +4,7 @@ import {
   generateCaptchaToken,
   storeCaptcha,
 } from "@/lib/captcha";
+import { logError } from "@/lib/logger";
 
 export async function POST() {
   try {
@@ -28,7 +29,7 @@ export async function POST() {
       },
     });
   } catch (error) {
-    console.error("Generate captcha error:", error);
+    logError("Generate captcha", error);
     return NextResponse.json(
       { error: "生成验证码失败" },
       { status: 500 }

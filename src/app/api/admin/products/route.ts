@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { productSchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 获取所有商品
 export async function GET() {
@@ -25,7 +26,7 @@ export async function GET() {
 
     return NextResponse.json({ products });
   } catch (error) {
-    console.error("Get products error:", error);
+    logError("Get products", error);
     return NextResponse.json(
       { error: "获取商品失败" },
       { status: 500 }
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ product });
   } catch (error) {
-    console.error("Create product error:", error);
+    logError("Create product", error);
     return NextResponse.json(
       { error: "创建商品失败" },
       { status: 500 }

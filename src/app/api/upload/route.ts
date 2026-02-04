@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
+import { logError } from "@/lib/logger";
 
 // 配置 Cloudinary
 cloudinary.config({
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
       url: result.secure_url,
     });
   } catch (error) {
-    console.error("Upload error:", error);
+    logError("Upload", error);
     return NextResponse.json(
       { error: "上传失败，请稍后重试" },
       { status: 500 }

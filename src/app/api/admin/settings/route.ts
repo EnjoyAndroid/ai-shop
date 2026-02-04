@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { clearSettingsCache } from "@/lib/services/settings.service";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 获取系统设置
 export async function GET() {
@@ -20,7 +21,7 @@ export async function GET() {
 
     return NextResponse.json({ settings });
   } catch (error) {
-    console.error("Get settings error:", error);
+    logError("Get settings", error);
     return NextResponse.json(
       { error: "获取设置失败" },
       { status: 500 }
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Save settings error:", error);
+    logError("Save settings", error);
     return NextResponse.json(
       { error: "保存设置失败" },
       { status: 500 }

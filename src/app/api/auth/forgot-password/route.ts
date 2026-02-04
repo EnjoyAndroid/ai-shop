@@ -3,6 +3,7 @@ import crypto from "crypto";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 import nodemailer from "nodemailer";
+import { logError } from "@/lib/logger";
 
 // 创建邮件发送器
 const transporter = nodemailer.createTransport({
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    logError("Forgot password", error);
     return NextResponse.json({ error: "发送失败，请稍后重试" }, { status: 500 });
   }
 }

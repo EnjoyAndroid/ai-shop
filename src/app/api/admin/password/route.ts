@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import prisma from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { jwtVerify } from "jose";
+import { logError } from "@/lib/logger";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "admin-secret-key"
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Change password error:", error);
+    logError("Change password", error);
     return NextResponse.json(
       { error: "修改密码失败" },
       { status: 500 }
