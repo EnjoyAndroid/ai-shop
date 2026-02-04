@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import prisma from "@/lib/db";
 import { redis, CACHE_KEYS } from "@/lib/redis";
 import { consumeCaptchaToken } from "@/lib/captcha";
+import { logError } from "@/lib/logger";
 
 // 登录失败次数阈值
 const FAIL_THRESHOLD = 3;
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    logError("User login", error);
     return NextResponse.json(
       { error: "登录失败，请稍后重试" },
       { status: 500 }
