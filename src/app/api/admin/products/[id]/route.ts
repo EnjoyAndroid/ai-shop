@@ -3,6 +3,7 @@ import prisma from "@/lib/db";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import { productSchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 获取单个商品
 export async function GET(
@@ -36,7 +37,7 @@ export async function GET(
 
     return NextResponse.json({ product });
   } catch (error) {
-    console.error("Get product error:", error);
+    logError("Get product", error);
     return NextResponse.json(
       { error: "获取商品失败" },
       { status: 500 }
@@ -122,7 +123,7 @@ export async function PUT(
 
     return NextResponse.json({ product });
   } catch (error) {
-    console.error("Update product error:", error);
+    logError("Update product", error);
     return NextResponse.json(
       { error: "更新商品失败" },
       { status: 500 }
@@ -189,7 +190,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Delete product error:", error);
+    logError("Delete product", error);
     return NextResponse.json(
       { error: "删除商品失败" },
       { status: 500 }

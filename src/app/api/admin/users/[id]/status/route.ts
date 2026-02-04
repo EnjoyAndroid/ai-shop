@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 更新用户状态（封禁/解封）
 export async function POST(
@@ -41,7 +42,7 @@ export async function POST(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Update user status error:", error);
+    logError("Update user status", error);
     return NextResponse.json(
       { error: "更新状态失败" },
       { status: 500 }

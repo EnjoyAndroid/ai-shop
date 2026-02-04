@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelExpiredOrders } from "@/lib/services/order.service";
+import { logError } from "@/lib/logger";
 
 // Vercel Cron 或外部调用
 export async function GET(request: NextRequest) {
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[Cron] Cancel expired orders error:", error);
+    logError("[Cron] Cancel expired orders", error);
     return NextResponse.json(
       { error: "Failed to cancel expired orders" },
       { status: 500 }

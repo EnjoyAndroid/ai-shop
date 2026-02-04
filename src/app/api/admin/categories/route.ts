@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { categorySchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 获取所有分类
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
 
     return NextResponse.json({ categories });
   } catch (error) {
-    console.error("Get categories error:", error);
+    logError("Get categories", error);
     return NextResponse.json(
       { error: "获取分类失败" },
       { status: 500 }
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ category });
   } catch (error) {
-    console.error("Create category error:", error);
+    logError("Create category", error);
     return NextResponse.json(
       { error: "创建分类失败" },
       { status: 500 }

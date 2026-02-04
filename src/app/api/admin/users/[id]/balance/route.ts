@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 // 调整用户余额
 export async function POST(
@@ -62,7 +63,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, balance: newBalance });
   } catch (error) {
-    console.error("Adjust balance error:", error);
+    logError("Adjust balance", error);
     return NextResponse.json(
       { error: "调整余额失败" },
       { status: 500 }

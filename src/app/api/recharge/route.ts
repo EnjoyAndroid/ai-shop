@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { getPaymentProvider } from "@/lib/payment";
 import { generateOrderNo, generatePassword } from "@/lib/encryption";
 import prisma from "@/lib/db";
+import { logError } from "@/lib/logger";
 
 /**
  * 创建充值订单
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
       exchangeRate: (paymentResult as any).exchangeRate,
     });
   } catch (error) {
-    console.error("Create recharge order error:", error);
+    logError("Create recharge order", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "创建充值订单失败" },
       { status: 500 }

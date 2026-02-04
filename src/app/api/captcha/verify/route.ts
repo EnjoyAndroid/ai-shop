@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCaptcha } from "@/lib/captcha";
+import { logError } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error("Verify captcha error:", error);
+    logError("Verify captcha", error);
     return NextResponse.json(
       { error: "验证失败" },
       { status: 500 }

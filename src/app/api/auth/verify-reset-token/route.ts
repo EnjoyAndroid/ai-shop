@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import redis from "@/lib/redis";
+import { logError } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ valid: true });
   } catch (error) {
-    console.error("Verify reset token error:", error);
+    logError("Verify reset token", error);
     return NextResponse.json({ valid: false, error: "验证失败" }, { status: 500 });
   }
 }

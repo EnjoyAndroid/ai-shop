@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { getAdminSession } from "@/lib/admin-auth";
+import { logError } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function GET() {
 
     return NextResponse.json({ announcements });
   } catch (error) {
-    console.error("Get announcements error:", error);
+    logError("Get announcements", error);
     return NextResponse.json({ error: "获取公告失败" }, { status: 500 });
   }
 }
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ announcement });
   } catch (error) {
-    console.error("Create announcement error:", error);
+    logError("Create announcement", error);
     return NextResponse.json({ error: "创建公告失败" }, { status: 500 });
   }
 }
