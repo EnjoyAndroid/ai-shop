@@ -31,6 +31,39 @@
 
 ---
 
+## 2026-02-04 安全与性能优化
+
+### commit - 高危安全问题修复
+
+**安全修复：**
+
+1. **中间件 JWT 验证** - 后台路由现在验证 token 有效性，无效/过期 token 自动拒绝
+2. **会话时间缩短** - 管理员和用户会话从 7 天改为 24 小时
+3. **CSRF 保护加强** - Cookie SameSite 从 `lax` 改为 `strict`（管理员+用户）
+4. **订单查询频率限制** - 每 IP 每订单 20 次/5分钟，防暴力破解查询密码
+5. **卡密数量限制** - 单次查询最多返回 100 条卡密，防止大订单性能问题
+6. **未支付订单不返回卡密** - 仅 PAID/COMPLETED 状态订单返回解密卡密
+
+**性能优化：**
+
+7. **商品列表缓存** - 首页商品列表 Redis 缓存 5 分钟，更新时自动清除
+
+**修改文件：**
+- `src/middleware.ts` - JWT 验证逻辑
+- `src/lib/auth.ts` - 会话时间 + 用户 Cookie 安全配置
+- `src/app/api/admin/auth/login/route.ts` - 管理员 Cookie SameSite=strict
+- `src/lib/services/product.service.ts` - 商品列表缓存
+- `src/app/api/orders/route.ts` - 频率限制 + 卡密安全
+
+**验证方法：**
+- JWT 验证：修改浏览器 cookie 后刷新，应跳转登录页
+- 会话时间：解析 JWT payload，有效期应为 24 小时
+- CSRF：查看 Cookie 属性，SameSite 应为 Strict
+- 频率限制：连续请求 21 次，第 21 次返回 429
+- 卡密安全：查询 PENDING 订单，cardKeys 应为空数组
+
+---
+
 ## 2026-02-02 提交记录
 
 ### commit - 下单锁定卡密功能

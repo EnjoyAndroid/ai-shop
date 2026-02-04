@@ -6,6 +6,11 @@ import { createOrderSchema } from "@/lib/validations";
 import { decryptCardKey } from "@/lib/services/product.service";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
+import redis from "@/lib/redis";
+
+// 订单查询频率限制（防暴力破解查询密码）
+const QUERY_RATE_LIMIT = 20; // 最多查询次数
+const QUERY_RATE_WINDOW = 300; // 5 分钟
 
 export async function POST(request: NextRequest) {
   try {
@@ -171,12 +176,34 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "请提供订单号" }, { status: 400 });
     }
 
+    // 获取客户端 IP 用于频率限制
+    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "unknown";
+
+    // 订单查询频率限制（防暴力破解）
+    const rateLimitKey = `order_query:${clientIp}:${orderNo}`;
+    const queryCount = await redis.incr(rateLimitKey);
+    if (queryCount === 1) {
+      await redis.expire(rateLimitKey, QUERY_RATE_WINDOW);
+    }
+    if (queryCount > QUERY_RATE_LIMIT) {
+      return NextResponse.json(
+        { error: "查询过于频繁，请稍后再试" },
+        { status: 429 }
+      );
+    }
+
     const order = await prisma.order.findUnique({
       where: { orderNo },
       include: {
         items: {
           include: {
-            cardKeys: true,
+            // 限制单次查询的卡密数量，防止大量数据导致性能问题
+            cardKeys: {
+              take: 100,
+              orderBy: { createdAt: "asc" },
+            },
             product: {
               select: { id: true, name: true, slug: true },
             },
@@ -189,20 +216,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "订单不存在" }, { status: 404 });
     }
 
-    // 验证查询密码
+    // 验证查询密码（游客订单需要密码）
     if (!order.userId && order.queryPassword !== password) {
       return NextResponse.json({ error: "查询密码错误" }, { status: 403 });
     }
 
-    // 解密卡密后返回
+    // 仅对已支付订单解密卡密
     const orderWithDecryptedKeys = {
       ...order,
       items: order.items.map((item) => ({
         ...item,
-        cardKeys: item.cardKeys.map((ck) => ({
-          ...ck,
-          content: decryptCardKey(ck),
-        })),
+        cardKeys: order.status === "PAID" || order.status === "COMPLETED"
+          ? item.cardKeys.map((ck) => ({
+              ...ck,
+              content: decryptCardKey(ck),
+            }))
+          : [], // 未支付订单不返回卡密
       })),
     };
 

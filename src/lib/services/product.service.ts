@@ -72,7 +72,7 @@ export async function getCategoryBySlug(slug: string): Promise<Category | null> 
 }
 
 /**
- * 获取商品列表
+ * 获取商品列表（带缓存）
  */
 export async function getProducts(options: {
   categoryId?: string;
@@ -86,6 +86,18 @@ export async function getProducts(options: {
 
   try {
     const { categoryId, isActive = true, page = 1, limit = 20 } = options;
+
+    // 构建缓存键（仅对首页默认查询启用缓存）
+    const isDefaultQuery = !categoryId && isActive === true && page === 1 && limit === 20;
+    const cacheKey = isDefaultQuery ? CACHE_KEYS.PRODUCTS_LIST : null;
+
+    // 尝试从缓存获取
+    if (cacheKey) {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    }
 
     const where = {
       ...(categoryId && { categoryId }),
@@ -116,7 +128,14 @@ export async function getProducts(options: {
       prisma.product.count({ where }),
     ]);
 
-    return { products: products as ProductWithCategory[], total };
+    const result = { products: products as ProductWithCategory[], total };
+
+    // 缓存首页商品列表 5 分钟
+    if (cacheKey) {
+      await redis.set(cacheKey, JSON.stringify(result), "EX", 300);
+    }
+
+    return result;
   } catch (error) {
     console.error("getProducts error:", error);
     return { products: [], total: 0 };
