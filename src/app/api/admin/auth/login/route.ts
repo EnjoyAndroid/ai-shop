@@ -5,6 +5,7 @@ import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 import { SignJWT } from "jose";
 import { logError } from "@/lib/logger";
+import { getClientIp } from "@/lib/get-client-ip";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "admin-secret-key"
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
       where: { id: admin.id },
       data: {
         lastLoginAt: new Date(),
-        lastLoginIp: request.headers.get("x-forwarded-for") || "",
+        lastLoginIp: getClientIp(request),
       },
     });
 

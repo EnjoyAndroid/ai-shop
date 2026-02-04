@@ -8,6 +8,7 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 import { logError } from "@/lib/logger";
+import { getClientIp } from "@/lib/get-client-ip";
 
 // 订单查询频率限制（防暴力破解查询密码）
 const QUERY_RATE_LIMIT = 20; // 最多查询次数
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
     const userId = session?.user?.id;
 
     // 获取请求信息
-    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
+    const ip = getClientIp(request);
     const userAgent = request.headers.get("user-agent") || "";
     const fingerprint = request.headers.get("x-fingerprint") || "";
 
@@ -178,9 +179,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取客户端 IP 用于频率限制
-    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-      || request.headers.get("x-real-ip")
-      || "unknown";
+    const clientIp = getClientIp(request);
 
     // 订单查询频率限制（防暴力破解）
     const rateLimitKey = `order_query:${clientIp}:${orderNo}`;
