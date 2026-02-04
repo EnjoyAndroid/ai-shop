@@ -60,6 +60,9 @@
 - 公告富文本 XSS 防护（URL协议白名单）
 - 加密安全随机数生成（crypto.randomInt）
 - **商品列表缓存**（Redis 5分钟缓存，更新时自动清除）
+- **安全响应头**（X-Frame-Options, X-Content-Type-Options, Referrer-Policy）
+- **IP 安全获取**（优先 CF-Connecting-IP，防止伪造）
+- **安全日志**（生产环境隐藏错误堆栈，防止信息泄露）
 
 ## 🛠️ 技术栈
 

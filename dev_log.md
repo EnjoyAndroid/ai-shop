@@ -85,6 +85,22 @@ logDebug("Request", { body, headers });
 - 频率限制：连续请求 21 次，第 21 次返回 429
 - 卡密安全：查询 PENDING 订单，cardKeys 应为空数组
 
+### commit - 中危安全问题修复
+
+**安全修复：**
+
+8. **安全响应头** - 添加 X-Frame-Options, X-Content-Type-Options, Referrer-Policy 等
+9. **数据库索引优化** - Order 表添加复合索引 (status, createdAt), (userId, createdAt), expiredAt
+10. **安全日志工具** - 新增 `src/lib/logger.ts`，生产环境隐藏错误堆栈
+11. **IP 安全获取** - 新增 `src/lib/get-client-ip.ts`，优先使用 CF-Connecting-IP
+
+**修改文件：**
+- `next.config.mjs` - 安全响应头配置
+- `prisma/schema.prisma` - 数据库索引
+- `src/lib/logger.ts` - 安全日志工具（新增）
+- `src/lib/get-client-ip.ts` - IP 安全获取（新增）
+- 全部 API 路由文件 - console.error 替换为 logError
+
 ---
 
 ## 2026-02-02 提交记录
