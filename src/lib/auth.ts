@@ -9,7 +9,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   session: {
     strategy: "jwt",
-    maxAge: 7 * 24 * 60 * 60, // 7 天
+    maxAge: 24 * 60 * 60, // 24 小时（安全考虑，缩短会话时间）
+  },
+  cookies: {
+    sessionToken: {
+      name: "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "strict",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: "next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "strict",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
   },
   pages: {
     signIn: "/login",

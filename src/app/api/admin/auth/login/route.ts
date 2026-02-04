@@ -97,11 +97,11 @@ export async function POST(request: NextRequest) {
       .setExpirationTime("24h")
       .sign(JWT_SECRET);
 
-    // 设置 cookie
+    // 设置 cookie（使用 strict 模式增强 CSRF 保护）
     cookies().set("admin_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "strict",
       maxAge: 60 * 60 * 24, // 24 hours
       path: "/",
     });
