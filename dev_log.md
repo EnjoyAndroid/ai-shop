@@ -24,6 +24,29 @@
 - 代码修改后先让用户本地确认，再提交
 - 不要主动提交代码，等用户确认
 
+### 日志规范
+- **禁止使用 `console.error`**，统一使用 `src/lib/logger.ts` 中的日志工具
+- 日志工具会根据 `NODE_ENV` 自动判断环境：
+  - `development`：打印完整错误信息 + 堆栈（便于调试）
+  - `production`：仅打印错误类型和消息（防止敏感信息泄露）
+
+**使用方法：**
+```typescript
+import { logError, logWarn, logInfo, logDebug } from "@/lib/logger";
+
+// 错误日志（生产环境隐藏堆栈）
+logError("Create order", error);
+
+// 警告日志（始终输出）
+logWarn("Payment", "回调签名验证失败");
+
+// 信息日志（仅开发环境）
+logInfo("Cache", "商品缓存已更新");
+
+// 调试日志（仅开发环境）
+logDebug("Request", { body, headers });
+```
+
 ### Redis 缓存隔离
 - 多个项目共用同一个 Redis 时，使用不同的数据库编号隔离
 - ai-shop 使用 `redis://localhost:6379/1`
