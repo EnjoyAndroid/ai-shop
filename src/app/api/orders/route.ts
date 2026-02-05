@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
       ...order,
       items: order.items.map((item) => ({
         ...item,
-        cardKeys: order.status === "PAID" || order.status === "COMPLETED"
+        cardKeys: order.status === "PAID" || order.status === "DELIVERED" || order.status === "COMPLETED"
           ? item.cardKeys.map((ck) => ({
               ...ck,
               content: decryptCardKey(ck),
