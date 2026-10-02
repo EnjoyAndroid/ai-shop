@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handlePaymentSuccess } from "@/lib/services/order.service";
 import { USDTProvider } from "@/lib/payment";
+import { requirePaymentEnabled } from "@/lib/payment/config";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/get-client-ip";
 import prisma from "@/lib/db";
 import { logError } from "@/lib/logger";
 
@@ -10,6 +13,7 @@ import { logError } from "@/lib/logger";
  */
 export async function GET(request: NextRequest) {
   try {
+    if (!await rateLimit("usdt-check", getClientIp(request), 30, 60)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
     const { searchParams } = new URL(request.url);
     const orderNo = searchParams.get("orderNo");
     const password = searchParams.get("password");
@@ -58,32 +62,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    await requirePaymentEnabled(order.paymentMethod);
+
     // 创建 USDT Provider
     const network = order.paymentMethod === "USDT_TRC20" ? "trc20" : "erc20";
     const provider = new USDTProvider(network);
 
     // 查询区块链
-    const result = await provider.queryOrder(orderNo, {
-      expectedAmount: order.payAmount,
-      createdAt: order.createdAt.getTime(),
-    });
-
-    // 记录查询日志
-    await prisma.paymentLog.create({
-      data: {
-        orderId: order.id,
-        method: order.paymentMethod,
-        action: "query",
-        request: JSON.stringify({ orderNo, network }),
-        response: JSON.stringify(result),
-        success: result.success,
-        errorMsg: result.errorMsg,
-      },
-    });
+    const result = await provider.queryOrder(orderNo);
 
     // 如果找到付款，处理订单
     if (result.status === "paid" && result.tradeNo) {
-      await handlePaymentSuccess(orderNo, result.tradeNo);
+      await handlePaymentSuccess(orderNo, result.tradeNo, { method: order.paymentMethod, amount: order.payAmount });
 
       return NextResponse.json({
         success: true,
@@ -103,7 +93,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "查询失败",
+        error: "查询失败，请稍后重试",
       },
       { status: 500 }
     );

@@ -9,12 +9,8 @@ const nextConfig = {
     },
   },
   images: {
-    domains: ['localhost'],
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
     ],
   },
 
@@ -34,7 +30,7 @@ const nextConfig = {
           },
           {
             key: 'Referrer-Policy',
-            value: 'strict-origin-when-cross-origin',  // 控制 Referer 信息
+            value: 'no-referrer',  // 控制 Referer 信息
           },
           {
             key: 'X-XSS-Protection',

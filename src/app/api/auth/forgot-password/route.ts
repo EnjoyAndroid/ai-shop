@@ -3,13 +3,15 @@ import crypto from "crypto";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 import nodemailer from "nodemailer";
+import { getClientIp } from "@/lib/get-client-ip";
+import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
 
 // 创建邮件发送器
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 465,
-  secure: true,
+  secure: Number(process.env.SMTP_PORT || 465) === 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -18,11 +20,14 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(request: NextRequest) {
   try {
-    const { email } = await request.json();
+    const body = await request.json();
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
 
-    if (!email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       return NextResponse.json({ error: "请输入邮箱" }, { status: 400 });
     }
+
+    if (!await rateLimit("reset-ip", getClientIp(request), 10, 3600) || !await rateLimit("reset-email", email, 3, 3600)) return NextResponse.json({ success: true });
 
     // 查找用户
     const user = await prisma.user.findUnique({

@@ -1,3 +1,4 @@
+import { logError } from "@/lib/logger";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
 
@@ -10,10 +11,11 @@ const DEFAULT_SETTINGS = {
   siteUrl: "http://localhost:3000",
   orderExpireMinutes: "10",
   orderAutoDeleteDays: "90",
-  alipayEnabled: "true",
-  wechatEnabled: "true",
+  alipayEnabled: "false",
+  wechatEnabled: "false",
   usdtEnabled: "false",
-  balanceEnabled: "true",
+  balanceEnabled: "false",
+  telegramUrl: "",
 };
 
 /**
@@ -41,7 +43,7 @@ export async function getSettings(): Promise<Record<string, string>> {
 
     return { ...DEFAULT_SETTINGS, ...settings };
   } catch (error) {
-    console.error("getSettings error:", error);
+    logError("getSettings error", error);
     return DEFAULT_SETTINGS;
   }
 }
@@ -59,7 +61,7 @@ export async function getSetting(key: string): Promise<string> {
  */
 export async function getOrderExpireMinutes(): Promise<number> {
   const value = await getSetting("orderExpireMinutes");
-  return parseInt(value) || 30;
+  return parseInt(value) || 10;
 }
 
 /**
@@ -67,7 +69,7 @@ export async function getOrderExpireMinutes(): Promise<number> {
  */
 export async function getOrderAutoDeleteDays(): Promise<number> {
   const value = await getSetting("orderAutoDeleteDays");
-  return parseInt(value) || 7;
+  return parseInt(value) || 90;
 }
 
 /**

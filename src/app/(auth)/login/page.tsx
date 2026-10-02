@@ -11,7 +11,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const registered = searchParams.get("registered");
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const requestedCallback = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = requestedCallback.startsWith("/") && !requestedCallback.startsWith("//") && !requestedCallback.includes("\\") ? requestedCallback : "/dashboard";
 
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
@@ -51,39 +52,19 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      // 先调用自定义登录 API 检查验证码
-      const checkResponse = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account,
-          password,
-          captchaToken: token || captchaToken,
-        }),
-      });
-
-      const checkData = await checkResponse.json();
-
-      if (!checkResponse.ok) {
-        setError(checkData.error || "登录失败");
-        if (checkData.requireCaptcha) {
-          setRequireCaptcha(true);
-          setCaptchaToken(""); // 清除旧 token
-        }
-        setLoading(false);
-        return;
-      }
-
-      // 验证通过，使用 NextAuth 登录
       const result = await signIn("credentials", {
         account,
         password,
+        captchaToken: token || captchaToken,
         redirect: false,
         callbackUrl,
       });
 
       if (result?.error) {
-        setError("账号或密码错误");
+        setError("账号或密码错误，或尝试次数过多，请稍后重试");
+        const status = await fetch("/api/auth/login-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account }) }).then(r => r.json());
+        setRequireCaptcha(Boolean(status.requireCaptcha));
+        setCaptchaToken("");
       } else if (result?.ok) {
         router.push(callbackUrl);
         router.refresh();

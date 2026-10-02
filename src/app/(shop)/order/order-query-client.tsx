@@ -101,6 +101,7 @@ export function OrderQueryClient() {
           {order && (
             <OrderDetail
               order={order}
+              queryPassword={password}
               showQueryPassword={false}
             />
           )}

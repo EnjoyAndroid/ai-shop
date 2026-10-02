@@ -4,6 +4,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-AI Shop}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-}
     container_name: ai-shop-app
     restart: unless-stopped
     environment:
@@ -11,9 +15,12 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEXTAUTH_URL=${NEXTAUTH_URL}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTH_TRUST_HOST=true
+      - TRUST_PROXY=true
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - NEXT_PUBLIC_SITE_NAME=${NEXT_PUBLIC_SITE_NAME}
       - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+      - NEXT_PUBLIC_CONTACT_EMAIL=${NEXT_PUBLIC_CONTACT_EMAIL:-}
       # 支付配置 - 虎皮椒
       - XUNHU_GATEWAY=${XUNHU_GATEWAY}
       - XUNHU_WECHAT_APPID=${XUNHU_WECHAT_APPID}
@@ -22,7 +29,6 @@ services:
       - XUNHU_ALIPAY_APPSECRET=${XUNHU_ALIPAY_APPSECRET}
       # USDT 支付
       - USDT_TRC20_ADDRESS=${USDT_TRC20_ADDRESS}
-      - USDT_ERC20_ADDRESS=${USDT_ERC20_ADDRESS}
       - TRONGRID_API_KEY=${TRONGRID_API_KEY}
       # 通知配置
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -45,6 +51,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - ai-shop-network
 

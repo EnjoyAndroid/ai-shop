@@ -69,7 +69,10 @@ export default function AdminOrderDetailPage() {
   }, [orderId]);
 
   const handleAction = async (action: string) => {
-    if (!confirm(`确定要${action === "deliver" ? "手动发货" : action === "refund" ? "退款" : "取消"}此订单吗？`)) {
+    const prompt = action === "refund" && order?.paymentMethod !== "BALANCE"
+      ? "外部支付不会自动退款。请先在支付平台完成退款，确定将此订单标记为已退款吗？"
+      : `确定要${action === "deliver" ? "手动发货" : action === "refund" ? "退款" : "取消"}此订单吗？`;
+    if (!confirm(prompt)) {
       return;
     }
 

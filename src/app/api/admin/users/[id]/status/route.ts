@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getAdminSession } from "@/lib/admin-auth";
+import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { logError } from "@/lib/logger";
 
 // 更新用户状态（封禁/解封）
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }
 
+  if (!hasAdminPermission(admin, "users")) return NextResponse.json({ error: "无权限" }, { status: 403 });
   try {
     const body = await request.json();
     const { status } = body;
@@ -25,7 +26,7 @@ export async function POST(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     if (!user) {
@@ -36,8 +37,8 @@ export async function POST(
     }
 
     await prisma.user.update({
-      where: { id: params.id },
-      data: { status },
+      where: { id: (await params).id },
+      data: { status, sessionVersion: { increment: 1 } },
     });
 
     return NextResponse.json({ success: true });

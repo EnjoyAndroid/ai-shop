@@ -7,9 +7,8 @@ import { SignJWT } from "jose";
 import { logError } from "@/lib/logger";
 import { getClientIp } from "@/lib/get-client-ip";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "admin-secret-key"
-);
+import { getAdminSecret } from "@/lib/security-config";
+import { rateLimit } from "@/lib/rate-limit";
 
 // 登录失败限制配置
 const FAIL_THRESHOLD = 5; // 5次失败后锁定
@@ -20,11 +19,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { username, password } = body;
 
-    if (!username || !password) {
+    if (typeof username !== "string" || typeof password !== "string" || !username || !password || username.length > 100 || password.length > 128) {
       return NextResponse.json(
         { error: "请输入用户名和密码" },
         { status: 400 }
       );
+    }
+
+    if (!await rateLimit("admin-login", getClientIp(request), 20, 900)) {
+      return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
     }
 
     // 检查登录失败次数
@@ -93,14 +96,15 @@ export async function POST(request: NextRequest) {
       id: admin.id,
       username: admin.username,
       role: admin.role,
+      sessionVersion: admin.sessionVersion,
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("24h")
-      .sign(JWT_SECRET);
+      .sign(getAdminSecret());
 
     // 设置 cookie（使用 strict 模式增强 CSRF 保护）
-    cookies().set("admin_token", token, {
+    (await cookies()).set("admin_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",

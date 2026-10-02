@@ -1,4 +1,5 @@
 import { cancelExpiredOrders } from "./services/order.service";
+import { logError, logInfo } from "./logger";
 
 let isRunning = false;
 
@@ -9,19 +10,17 @@ export function startCronJobs() {
   if (isRunning) return;
   isRunning = true;
 
-  console.log("[Cron] Starting cron jobs...");
+  logInfo("Cron", "Starting cron jobs");
 
   // 每分钟检查过期订单
   setInterval(async () => {
     try {
       const count = await cancelExpiredOrders();
       if (count > 0) {
-        console.log(`[Cron] Cancelled ${count} expired orders`);
+        logInfo("Cron", `Cancelled ${count} expired orders`);
       }
     } catch (error) {
-      console.error("[Cron] Error cancelling expired orders:", error);
+      logError("Cancel expired orders", error);
     }
-  }, 60 * 1000); // 每60秒
-
-  console.log("[Cron] Cron jobs started");
+  }, 60 * 1000).unref();
 }

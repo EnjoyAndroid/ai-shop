@@ -12,7 +12,6 @@ export default function RegisterPage() {
     email: "",
     password: "",
     confirmPassword: "",
-    name: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -63,7 +62,6 @@ export default function RegisterPage() {
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
-          name: formData.name || undefined,
           captchaToken: token,
         }),
       });
@@ -124,20 +122,6 @@ export default function RegisterPage() {
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 autoComplete="off"
                 required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                昵称 <span className="text-gray-400">(可选)</span>
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="您的昵称"
-                className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
             </div>
 

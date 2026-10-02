@@ -66,8 +66,8 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
     if (!order.items) return;
 
     let content = `订单号: ${order.orderNo}\n`;
-    if (order.queryPassword) {
-      content += `查询密码: ${order.queryPassword}\n`;
+    if (queryPassword) {
+      content += `查询密码: ${queryPassword}\n`;
     }
     content += `================================\n\n`;
 

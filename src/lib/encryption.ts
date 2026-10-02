@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { requireSecret } from "./security-config";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -6,10 +7,7 @@ const TAG_LENGTH = 16;
 const SALT = "ai-shop-encryption-salt-v1";
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error("ENCRYPTION_KEY environment variable is not set");
-  }
+  const key = requireSecret("ENCRYPTION_KEY");
   // 使用 PBKDF2 进行密钥派生（更安全）
   return crypto.pbkdf2Sync(key, SALT, 100000, 32, "sha256");
 }

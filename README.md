@@ -1,411 +1,141 @@
-# AI Shop - AI 服务自助充值系统
+# AI Shop
 
-> 一个类似 tehuio.com 的虚拟商品自动发卡平台，支持 ChatGPT、Claude、Cursor 等 AI 服务的自助购买。
+基于 Next.js、TypeScript、PostgreSQL、Prisma 和 Redis 的自托管数字商品商城，支持游客下单、卡密库存、会员余额和后台管理。
 
-![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?logo=tailwind-css)
-![Prisma](https://img.shields.io/badge/Prisma-5.22-2D3748?logo=prisma)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)
+项目代码使用 MIT 许可证。商品、品牌名称只用于演示和描述兼容服务，不表示第三方账号转售授权。实际运营前请自行完成收款联调、数据保护与商品授权核对。
 
-## ✨ 功能特性
+## 功能与边界
 
-### 🛒 商品系统
-- 分类展示（ChatGPT / Claude / Cursor / Midjourney 等）
-- 商品管理（CRUD、排序、上下架、图片上传）
-- 卡密库存管理（批量导入、AES-256-GCM 加密存储）
+- 邮箱注册/登录、会员等级、余额记录。
+- 分类、商品、加密卡密、订单、公告和系统设置管理。
+- 支付宝/微信虎皮椒回调；USDT TRC20 固定报价及已确认交易精确匹配。ERC20 自动收款未开放。
+- 数据库事务保障余额、订单、库存与支付流水认领的一致性；重复回调不会重复入账。
+- 登录、注册、重置邮件、上传等操作限流；滑块图片服务端生成，验证令牌一次性使用。
+- 后台角色分工：OPERATOR 处理商品及发货；ADMIN 可管理用户和财务；SUPER_ADMIN 可修改系统设置。所有角色可修改自己的密码，改密后会话失效。
 
-### 👤 用户系统
-- 注册/登录（邮箱）
-- 滑块验证码（防机器人注册）
-- 登录保护（失败3次后触发验证码）
-- 密码策略（最小8位）
-- 前端表单验证（邮箱格式、密码长度）
-- 会员等级（消费累计自动升级）
-- 折扣价格（不同等级不同折扣）
-- 余额充值与支付
+**订单查询规则**：无需登录即可购买。游客订单需要订单号和查询密码；会员订单按产品设计仅凭订单号即可查询及取卡。请将订单号视为敏感领取凭据。本版本没有强制会员订单归属校验，详见 [SECURITY.md](SECURITY.md)。
 
-### 📦 订单系统
-- 自助下单（游客/会员）
-- 自动发货（支付成功后自动分配卡密）
-- 订单查询（查询密码保护）
-- 订单自动过期与清理
+**退款与通知**：余额退款自动退回站内余额；外部支付退款需先在支付平台人工完成，后台操作只登记退款结果。邮件/Telegram 通知失败不会重新入账，需监控并补发。示例商品不含可售卡密。
 
-### 💳 支付系统
-- 支付宝（虎皮椒聚合支付）
-- 微信支付（虎皮椒聚合支付）
-- USDT TRC20/ERC20
-- 余额支付
+## 环境
 
-### 🔧 后台管理
-- 仪表盘（销售统计、数据概览）
-- 商品管理、分类管理
-- 卡密管理（批量导入、状态查询）
-- 订单管理（查看、手动发货、退款）
-- 用户管理（查看、余额调整、封禁）
-- 公告管理（富文本格式、链接、颜色）
-- 系统设置
+- Node.js 22.14+（推荐 Node.js 22 LTS）
+- PostgreSQL 15+、Redis 7+，二者均为必需服务
+- Docker Compose 2.24.4+（本机覆盖文件使用 `!override`）
 
-### 🔒 安全机制
-- 防刷单（IP / 设备指纹 / 邮箱限流，Lua脚本原子操作）
-- 卡密加密存储（AES-256-GCM + PBKDF2密钥派生）
-- 支付回调签名验证
-- Redis 分布式锁
-- 后台 API 权限验证（middleware + getAdminSession）
-- **中间件 JWT 验证**（无效/过期 token 自动拒绝）
-- **会话安全**（24小时过期，SameSite=Strict 防 CSRF）
-- 管理员登录失败限流（5次锁定30分钟）
-- **订单查询频率限制**（每IP每订单 20次/5分钟）
-- **卡密安全**（未支付订单不返回卡密，单次最多100条）
-- 公告富文本 XSS 防护（URL协议白名单）
-- 加密安全随机数生成（crypto.randomInt）
-- **商品列表缓存**（Redis 5分钟缓存，更新时自动清除）
-- **安全响应头**（X-Frame-Options, X-Content-Type-Options, Referrer-Policy）
-- **IP 安全获取**（优先 CF-Connecting-IP，防止伪造）
-- **安全日志**（生产环境隐藏错误堆栈，防止信息泄露）
+## 本机部署
 
-## 🛠️ 技术栈
-
-| 层级 | 技术选择 |
-|------|----------|
-| 前端框架 | Next.js 14 (App Router) |
-| UI 组件 | Tailwind CSS |
-| 状态管理 | Zustand + React Query |
-| ORM | Prisma |
-| 数据库 | PostgreSQL |
-| 缓存 | Redis |
-| 认证 | NextAuth.js v5 |
-
-## 📁 项目结构
-
-```
-ai-shop/
-├── prisma/
-│   ├── schema.prisma          # 数据库模型
-│   ├── seed.ts                # 种子数据 (TypeScript)
-│   └── seed.sql               # 种子数据 (SQL)
-├── src/
-│   ├── app/
-│   │   ├── (shop)/            # 前台商城
-│   │   │   ├── page.tsx       # 首页
-│   │   │   ├── category/      # 分类页
-│   │   │   ├── product/       # 商品详情
-│   │   │   ├── checkout/      # 结算页
-│   │   │   ├── order/         # 订单查询
-│   │   │   └── help/          # 使用帮助
-│   │   ├── (auth)/            # 认证页面
-│   │   │   ├── login/         # 登录
-│   │   │   └── register/      # 注册
-│   │   ├── (user)/            # 用户中心
-│   │   │   ├── dashboard/     # 个人中心
-│   │   │   ├── orders/        # 我的订单
-│   │   │   └── balance/       # 我的余额
-│   │   ├── admin/             # 后台管理
-│   │   │   ├── dashboard/     # 仪表盘
-│   │   │   ├── products/      # 商品管理
-│   │   │   ├── categories/    # 分类管理
-│   │   │   ├── orders/        # 订单管理
-│   │   │   ├── cardkeys/      # 卡密管理
-│   │   │   ├── users/         # 用户管理
-│   │   │   └── settings/      # 系统设置
-│   │   └── api/               # API 路由
-│   ├── components/
-│   │   ├── shop/              # 商城组件
-│   │   └── admin/             # 后台组件
-│   ├── lib/
-│   │   ├── db.ts              # Prisma 客户端
-│   │   ├── redis.ts           # Redis 客户端
-│   │   ├── auth.ts            # NextAuth 配置
-│   │   ├── encryption.ts      # 加密工具
-│   │   ├── services/          # 业务服务
-│   │   ├── payment/           # 支付集成
-│   │   └── validations/       # Zod 验证
-│   └── stores/
-│       └── cart.ts            # 购物车状态
-├── docker-compose.yml         # Docker 编排配置
-├── Dockerfile                 # Docker 构建文件
-├── nginx.conf                 # Nginx 配置
-├── package.json
-├── tailwind.config.ts
-└── .env.example
-```
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Node.js 18+
-- PostgreSQL 14+
-- Redis 6+（可选，开发环境可不配置）
-
-### 本地开发
-
-1. **克隆项目**
 ```bash
-git clone <repository-url>
-cd ai-shop
-```
-
-2. **安装依赖**
-```bash
-npm install
-```
-
-3. **配置环境变量**
-```bash
+npm ci
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，配置以下必要信息：
+填写 `.env`：数据库密码、`NEXTAUTH_SECRET`、`ENCRYPTION_KEY` 和 `CRON_SECRET` 应分别随机生成；`ADMIN_PASSWORD` 首次初始化必须为 12–72 位。生成单个随机值：
 
-```env
-# 数据库连接
-DATABASE_URL="postgresql://user:password@localhost:5432/ai_shop"
-
-# Redis 连接（可选）
-REDIS_URL="redis://localhost:6379"
-
-# NextAuth 密钥
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-secret-key"
-
-# 卡密加密密钥
-ENCRYPTION_KEY="your-32-bytes-encryption-key"
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-4. **初始化数据库**
+`DATABASE_URL` 中密码与 `DB_PASSWORD` 一致。模板使用 `localhost:55439` 数据库、`localhost:16379/1` Redis 和 `http://localhost:3010` 网站地址。实际 `.env` 不提交到 Git。
+
 ```bash
-# 生成 Prisma 客户端
+# 启动依赖服务
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis
+
+# 生成客户端、建立/升级结构、初始化演示数据和管理员
 npm run db:generate
-
-# 推送数据库结构
-npm run db:push
-
-# 运行种子数据
+npm run db:prepare
 npm run db:seed
+
+# 验证并部署
+npm run build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-5. **启动开发服务器**
-```bash
-npm run dev
-```
+访问：
 
-6. **访问网站**
-- 前台商城: http://localhost:3000
-- 后台管理: http://localhost:3000/admin/login
+- 商城：http://localhost:3010
+- 后台：http://localhost:3010/admin/login
+- 管理员：`admin`，密码为首次初始化时的 `ADMIN_PASSWORD`，不存在内置默认密码。重复初始化不会重置已有密码。
 
-### 测试账号
-
-| 角色 | 账号 | 密码 |
-|------|------|------|
-| 管理员 | admin | admin123 |
-
-## 🐳 Docker 部署 (生产环境)
-
-### 1. 准备服务器
-
-- VPS（推荐 Rocky Linux 9 / Ubuntu 22.04）
-- 已安装 Docker 和 Docker Compose
-- 域名已解析到服务器 IP
-
-### 2. 上传代码
+当前机器如已有 `.env.local` 指向 `.env` 的链接，可以继续使用。Node CLI 的种子脚本读取 `.env`；Next.js 本身也读取 `.env.local`，避免在两处维护冲突配置。
 
 ```bash
-# 克隆项目到服务器
-git clone <repository-url> /home/ai-shop
-cd /home/ai-shop
+# 状态、日志、停止（保留数据卷）
+docker compose -f docker-compose.yml -f docker-compose.local.yml ps
+docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f app
+docker compose -f docker-compose.yml -f docker-compose.local.yml down
 ```
 
-### 3. 配置环境变量
+## 服务器部署
+
+1. 复制 `.env.production.example` 为 `.env`，填写独立随机密钥、数据库密码和真实 HTTPS 域名。
+2. 安装 Docker/Compose，配置域名与 TLS 入口。仓库 Nginx 默认提供 HTTP 80，适用于置于已经配置 TLS 的可信反向代理后；不要把这个默认入口当成已完成公网 HTTPS 部署。
+3. 使用 Cloudflare 时配置源站证书和 **Full (strict)**，限制源站来源；不使用 Flexible。若需真实访客 IP，按 Cloudflare 官方 IP 范围配置 Nginx `set_real_ip_from` / `real_ip_header`，只信任受限来源。
+4. 执行 `docker compose up -d --build`。应用容器会先运行数据库迁移，再启动网站；数据库、Redis 和应用端口仅在内部网络可用。
+5. 首次管理员与演示数据初始化：
 
 ```bash
-cp .env.production .env
-nano .env
+# 将 .env 中的 ADMIN_PASSWORD 安全地传给初始化进程，不写入命令行明文。
+# app 容器运行环境中不持久保存管理员初始密码。
+set -a
+. ./.env
+set +a
+docker compose exec -e ADMIN_PASSWORD app node seed.cjs
+unset ADMIN_PASSWORD
 ```
 
-修改以下配置：
+使用纯赋值格式的可信 `.env`；不要从不可信来源执行该文件。也可以通过宿主机 Node 环境运行 `npm run db:seed`，但 DATABASE_URL 必须可从宿主机访问。
 
-```env
-# 数据库密码
-DB_PASSWORD=YourSecurePassword123
+系统默认仅启用余额支付。启用第三方收款需要同时配置服务端凭据和后台开关；凭据缺失时创建支付和回调会被拒绝。
 
-# 站点配置
-NEXTAUTH_URL=https://your-domain.com
-NEXT_PUBLIC_SITE_URL=https://your-domain.com
-NEXTAUTH_SECRET=your-random-secret-key
+| 功能 | 环境变量 |
+|---|---|
+| 支付宝 | `XUNHU_ALIPAY_APPID`、`XUNHU_ALIPAY_APPSECRET` |
+| 微信 | `XUNHU_WECHAT_APPID`、`XUNHU_WECHAT_APPSECRET` |
+| USDT TRC20 | `USDT_TRC20_ADDRESS`、可选 `TRONGRID_API_KEY` |
+| 邮件 | `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS`、`MAIL_FROM` |
+| Telegram 通知 | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID` |
+| 图片上传 | `CLOUDINARY_CLOUD_NAME`、`CLOUDINARY_API_KEY`、`CLOUDINARY_API_SECRET` |
+| 客服邮箱展示 | `NEXT_PUBLIC_CONTACT_EMAIL` |
+| Telegram 客服 | 后台「系统设置 → 客服设置」，留空隐藏入口 |
+| 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 
-# 加密密钥
-ENCRYPTION_KEY=your-32-bytes-key
+`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。客服邮箱环境变量默认空。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
 
-# 信任域名（重要！）
-AUTH_TRUST_HOST=true
-```
+## 升级、备份与迁移
 
-### 4. 配置 Cloudflare（推荐）
-
-1. 在 Cloudflare DNS 添加 A 记录指向服务器 IP
-2. SSL/TLS 设置选择 "Flexible"
-3. 开启代理（橙色云朵）
-
-### 5. 启动服务
+升级前备份数据库及 `.env`，备份目录不可公开：
 
 ```bash
-# 开放端口
-firewall-cmd --permanent --add-port=80/tcp
-firewall-cmd --reload
-
-# 构建并启动
-docker compose up -d --build
-
-# 查看日志
-docker compose logs -f
+mkdir -p backups
+chmod 700 backups
+docker compose exec -T postgres pg_dump -U aishop -d ai_shop > backups/ai-shop.sql
+chmod 600 backups/ai-shop.sql
 ```
 
-### 6. 初始化数据库
+`npm run db:prepare` 支持新数据库和原来使用 `db push` 建立的数据库：旧库必须与已保存的旧版 schema 一致，才会标记基线并应用新迁移。存在结构差异时停止，由维护者核对。禁止为绕过迁移失败执行 reset 或删除数据卷。
+
+资金完整性迁移为历史已支付订单建立唯一流水记录；发现重复流水或负余额时会失败并回滚，需人工核账后再迁移。历史 USDT 待支付订单没有固定报价时，不自动猜测应付金额。
+
+迁移新增会话版本字段，升级后用户和管理员需重新登录。不要仅回滚镜像而忽略 schema 和历史数据版本。加密密钥继续保持原值，轮换必须先完成旧卡密重新加密。
+
+本版本保留财务记录、支付流水防重记录和已售卡密，不自动删除这些审计数据。过期订单每分钟检查并释放库存；取消/无关联记录的历史订单可由清理逻辑处理。默认订单有效期 10 分钟、清理阈值 90 天。
+
+## 验证与维护
 
 ```bash
-# 推送数据库结构
-docker compose exec app node ./node_modules/prisma/build/index.js db push
-
-# 导入种子数据
-docker compose exec -T postgres psql -U aishop -d ai_shop < prisma/seed.sql
+npm test
+npm run test:integration
+npm run build
+npm run test:http
+npm run check:secrets
+npm audit
 ```
 
-### 7. 验证部署
+集成测试要求独立的 `ai_shop_security_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描及依赖审计；历史停用密钥按项目决定保留，当前扫描不替代历史安全审查。
 
-```bash
-# 检查容器状态
-docker compose ps
-
-# 检查数据
-docker compose exec postgres psql -U aishop -d ai_shop -c "SELECT name FROM \"Category\";"
-```
-
-访问 https://your-domain.com 测试
-
-### 常用运维命令
-
-| 操作 | 命令 |
-|------|------|
-| 查看状态 | `docker compose ps` |
-| 查看日志 | `docker compose logs -f app` |
-| 重启应用 | `docker compose restart app` |
-| 停止所有 | `docker compose down` |
-| 更新部署 | `git pull && docker compose up -d --build` |
-| 备份数据库 | `docker compose exec postgres pg_dump -U aishop ai_shop > backup.sql` |
-
-## 📖 使用指南
-
-### 添加商品
-
-1. 登录后台管理 `/admin/login`
-2. 进入分类管理，创建商品分类
-3. 进入商品管理，点击"添加商品"
-4. 填写商品信息并保存
-
-### 导入卡密
-
-1. 进入卡密管理 `/admin/cardkeys`
-2. 选择商品
-3. 粘贴卡密内容（每行一个）
-4. 点击"导入卡密"
-
-### 配置支付
-
-1. 进入系统设置 `/admin/settings`
-2. 开启需要的支付方式
-3. 在 `.env` 中配置支付参数：
-
-```env
-# 虎皮椒支付
-XUNHU_APPID="your-appid"
-XUNHU_APPSECRET="your-secret"
-
-# USDT 收款地址
-USDT_TRC20_ADDRESS="your-trc20-address"
-USDT_ERC20_ADDRESS="your-erc20-address"
-```
-
-## 🗄️ 数据库模型
-
-```
-User ──< Order ──< OrderItem >── Product >── Category
-                      │
-                      └──< CardKey
-```
-
-主要表：
-- `User` - 用户信息、会员等级、余额
-- `UserLevel` - 会员等级定义
-- `Category` - 商品分类
-- `Product` - 商品信息
-- `CardKey` - 卡密库存（加密存储）
-- `Order` - 订单主表
-- `OrderItem` - 订单明细
-- `BalanceLog` - 余额变动日志
-- `PaymentLog` - 支付日志
-- `Admin` - 管理员
-- `Announcement` - 公告
-- `SystemSetting` - 系统设置
-
-## 🔐 安全说明
-
-### 卡密加密
-
-卡密使用 AES-256-GCM 算法加密存储，确保数据库泄露时卡密内容不会被直接获取。
-
-```typescript
-// 加密存储
-const encrypted = encrypt(cardKeyContent);
-// 存储: encrypted.content, encrypted.iv, encrypted.tag
-
-// 解密读取
-const decrypted = decrypt({ content, iv, tag });
-```
-
-### 防刷单机制
-
-基于 Redis 实现多维度限流（使用 Lua 脚本保证原子性）：
-- IP 限制：每分钟最多 10 次请求
-- 邮箱限制：每小时最多 10 次下单
-- 设备指纹限制：每小时最多 10 次下单
-- 管理员登录：5次失败后锁定30分钟
-
-### 支付安全
-
-- 所有支付回调都验证签名
-- 使用分布式锁防止重复处理
-- 订单状态机保证流程正确
-
-## 📝 开发计划
-
-- [x] Phase 1: MVP（商品展示、订单系统、支付集成）
-- [x] Phase 2: 用户系统（注册/登录、会员等级）
-- [x] Phase 3: Docker 部署支持
-- [x] Phase 4: 滑块验证码、登录保护
-- [x] Phase 5: 商品图片上传、系统配置生效
-- [x] Phase 6: 运营功能（公告系统、富文本格式）
-- [x] Phase 7: 安全加固（API权限验证、限流优化、XSS防护、密钥派生增强）
-- [ ] Phase 8: 数据报表、邮件通知
-- [ ] Phase 9: 监控告警、性能优化
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📄 许可证
-
-MIT License
-
-## 📞 联系方式
-
-如有问题或建议，请通过以下方式联系：
-
-- 提交 Issue
-- 发送邮件
-
----
-
-**⚠️ 免责声明**
-
-本项目仅供学习交流使用，请遵守当地法律法规。使用本系统进行的任何商业行为，开发者不承担任何责任。
+- [安全策略与私密漏洞报告](SECURITY.md)
+- [贡献说明](CONTRIBUTING.md)
+- [第三方许可证说明](THIRD_PARTY_NOTICES.md)
+- [MIT 许可证](LICENSE)

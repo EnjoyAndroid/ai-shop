@@ -5,7 +5,7 @@ import { logError } from "@/lib/logger";
 export async function POST() {
   try {
     // 清除 cookie
-    cookies().delete("admin_token");
+    (await cookies()).delete("admin_token");
 
     return NextResponse.json({ success: true });
   } catch (error) {

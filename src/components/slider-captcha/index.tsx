@@ -9,7 +9,7 @@ interface SliderCaptchaProps {
 
 interface CaptchaState {
   token: string;
-  position: number; // 缺口位置
+  image: string; // 服务端渲染，响应不包含答案坐标
   config: {
     width: number;
     height: number;
@@ -20,6 +20,7 @@ interface CaptchaState {
 export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps) {
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
   const [sliderX, setSliderX] = useState(0);
+  const [renderWidth, setRenderWidth] = useState(300);
   const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -57,9 +58,16 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
   }, [fetchCaptcha]);
 
   useEffect(() => {
-    if (containerRef.current && captcha) {
-      sliderWidthRef.current = captcha.config.width - captcha.config.sliderSize;
-    }
+    if (!containerRef.current || !captcha) return;
+    const updateWidth = () => {
+      const width = Math.max(1, containerRef.current!.clientWidth - 2);
+      setRenderWidth(width);
+      sliderWidthRef.current = width * (1 - captcha.config.sliderSize / captcha.config.width);
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, [captcha]);
 
   const verifyPosition = useCallback(async () => {
@@ -73,7 +81,7 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token: captcha.token,
-          position: Math.round(sliderX),
+          position: Math.round(sliderX * captcha.config.width / renderWidth),
         }),
       });
       const data = await response.json();
@@ -95,7 +103,7 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
       setMessage("验证请求失败");
       onError?.("验证请求失败");
     }
-  }, [captcha, sliderX, onSuccess, onError, fetchCaptcha]);
+  }, [captcha, sliderX, renderWidth, onSuccess, onError, fetchCaptcha]);
 
   const handleDragStart = useCallback((clientX: number) => {
     if (status === "success" || status === "loading") return;
@@ -156,14 +164,14 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-sm">加载验证码...</span>
+          <span className="text-sm">{status === "error" ? message : "加载验证码..."}</span>
+          {status === "error" && <button type="button" onClick={fetchCaptcha} className="text-primary">重试</button>}
         </div>
       </div>
     );
   }
 
   const { config } = captcha;
-  const progressPercent = (sliderX / sliderWidthRef.current) * 100 || 0;
 
   return (
     <div className="w-full max-w-[320px] select-none" ref={containerRef}>
@@ -174,47 +182,9 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
           className="relative overflow-hidden"
           style={{ width: "100%", height: config.height }}
         >
-          {/* 渐变背景 */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)",
-            }}
-          />
-
-          {/* 网格纹理 */}
-          <div
-            className="absolute inset-0 opacity-10"
-            style={{
-              backgroundImage: `
-                linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)
-              `,
-              backgroundSize: "20px 20px",
-            }}
-          />
-
-          {/* 装饰元素 */}
-          <div className="absolute inset-0">
-            <div className="absolute top-3 left-4 w-12 h-12 rounded-full bg-white/10 blur-sm" />
-            <div className="absolute top-8 right-8 w-16 h-16 rounded-full bg-white/8 blur-md" />
-            <div className="absolute bottom-4 left-1/4 w-8 h-8 rounded-lg bg-white/10 rotate-12" />
-            <div className="absolute bottom-6 right-1/4 w-6 h-6 rounded-full bg-white/15" />
-          </div>
-
-          {/* 缺口位置 */}
-          <div
-            className="absolute rounded-lg backdrop-blur-sm"
-            style={{
-              width: config.sliderSize + 4,
-              height: config.sliderSize + 4,
-              left: captcha.position - 2,
-              top: (config.height - config.sliderSize) / 2 - 2,
-              background: "rgba(0,0,0,0.3)",
-              border: "2px dashed rgba(255,255,255,0.5)",
-              boxShadow: "inset 0 2px 8px rgba(0,0,0,0.2)",
-            }}
-          />
+          {/* 验证图包含缺口；位置只保存在服务端 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={captcha.image} alt="拖动滑块到图片缺口" width={config.width} height={config.height} className="absolute inset-0 w-full h-full" draggable={false} />
 
           {/* 可拖动滑块 */}
           <div
@@ -222,7 +192,7 @@ export default function SliderCaptcha({ onSuccess, onError }: SliderCaptchaProps
               isDragging ? "cursor-grabbing" : ""
             } ${status === "success" ? "ring-2 ring-green-400 ring-offset-1" : ""}`}
             style={{
-              width: config.sliderSize,
+              width: config.sliderSize * renderWidth / config.width,
               height: config.sliderSize,
               transform: `translateX(${sliderX}px)`,
               top: (config.height - config.sliderSize) / 2,

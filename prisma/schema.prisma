@@ -17,6 +17,7 @@ model User {
   email         String?   @unique
   phone         String?   @unique
   password      String?
+  sessionVersion Int      @default(0)
   name          String?
   avatar        String?
 
@@ -274,6 +275,8 @@ model Order {
   // 关联
   items         OrderItem[]
   paymentLogs   PaymentLog[]
+  paymentReceipt PaymentReceipt?
+  paymentQuote PaymentQuote?
   balanceLogs   BalanceLog[]
 
   createdAt     DateTime      @default(now())
@@ -367,12 +370,41 @@ model PaymentLog {
   @@index([orderId])
 }
 
+// 流水认领必须与入账在同一事务内；订单清理后仍保留流水防止重放。
+model PaymentReceipt {
+  id            String        @id @default(cuid())
+  orderId       String?       @unique
+  order         Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  method        PaymentMethod
+  transactionId String
+  amount        Int
+  createdAt     DateTime      @default(now())
+
+  @@unique([method, transactionId])
+}
+
+// USDT 报价只生成一次，使用整数微单位精确匹配，禁止查询时重算汇率。
+model PaymentQuote {
+  id            String        @id @default(cuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method        PaymentMethod
+  address       String
+  amountMicros  BigInt
+  exchangeRate  Decimal       @db.Decimal(18, 8)
+  expiresAt     DateTime
+  createdAt     DateTime      @default(now())
+  // 仅有效报价占用该标识；到期后释放，历史流水仍由 PaymentReceipt 防重。
+  reservation   String?       @unique
+}
+
 // ==================== 管理系统 ====================
 
 model Admin {
   id          String      @id @default(cuid())
   username    String      @unique
   password    String
+  sessionVersion Int      @default(0)
   name        String?
   role        AdminRole   @default(OPERATOR)
 

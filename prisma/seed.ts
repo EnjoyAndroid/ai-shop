@@ -1,9 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { logError } from "../src/lib/logger";
 
 const prisma = new PrismaClient();
 
 async function main() {
+  const existingAdmin = await prisma.admin.findUnique({ where: { username: "admin" } });
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!existingAdmin && (!adminPassword || adminPassword.length < 12 || adminPassword.length > 72)) {
+    throw new Error("首次初始化需要配置 12 至 72 位 ADMIN_PASSWORD");
+  }
   console.log("🌱 开始种子数据...");
 
   // 创建会员等级
@@ -197,7 +203,7 @@ async function main() {
 
   // 创建管理员
   console.log("创建管理员账号...");
-  const hashedPassword = await bcrypt.hash("admin123", 12);
+  const hashedPassword = existingAdmin?.password || await bcrypt.hash(adminPassword!, 12);
   const admin = await prisma.admin.upsert({
     where: { username: "admin" },
     update: {},
@@ -208,7 +214,7 @@ async function main() {
       role: "SUPER_ADMIN",
     },
   });
-  console.log(`✓ 创建管理员: ${admin.username} (密码: admin123)`);
+  console.log(`✓ 管理员已初始化: ${admin.username}（已有账号密码保持不变）`);
 
   // 创建公告
   console.log("创建示例公告...");
@@ -225,15 +231,18 @@ async function main() {
   });
   console.log(`✓ 创建公告: ${announcement.title}`);
 
+  for (const [key, value] of Object.entries({ siteName: "AI Shop", siteUrl: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", orderExpireMinutes: "10", orderAutoDeleteDays: "90", alipayEnabled: "false", wechatEnabled: "false", usdtEnabled: "false", balanceEnabled: "true" })) {
+    await prisma.systemSetting.upsert({ where: { key }, update: {}, create: { key, value } });
+  }
   console.log("\n🎉 种子数据完成！");
   console.log("\n📝 测试账号:");
-  console.log("  管理员: admin / admin123");
-  console.log("\n🚀 运行 pnpm dev 启动开发服务器");
+  console.log("  管理员: admin；密码由 ADMIN_PASSWORD 配置，首次初始化必须配置");
+  console.log("\n🚀 运行 npm run dev 启动开发服务器");
 }
 
 main()
   .catch((e) => {
-    console.error(e);
+    logError("Database seed", e);
     process.exit(1);
   })
   .finally(async () => {

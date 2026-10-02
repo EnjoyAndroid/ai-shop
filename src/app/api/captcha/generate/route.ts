@@ -1,38 +1,15 @@
-import { NextResponse } from "next/server";
-import {
-  generateSliderPosition,
-  generateCaptchaToken,
-  storeCaptcha,
-} from "@/lib/captcha";
+import { NextRequest, NextResponse } from "next/server";
+import { createCaptcha } from "@/lib/captcha";
+import { getClientIp } from "@/lib/get-client-ip";
+import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
-
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    // 生成随机滑块位置
-    const position = generateSliderPosition();
-
-    // 生成唯一 token
-    const token = generateCaptchaToken();
-
-    // 存储到 Redis
-    await storeCaptcha(token, position);
-
-    // 返回 token 和缺口位置
-    return NextResponse.json({
-      success: true,
-      token,
-      position, // 返回缺口位置给前端显示
-      config: {
-        width: 300,
-        height: 150,
-        sliderSize: 40,
-      },
-    });
+    const ip = getClientIp(request);
+    if (!await rateLimit("captcha-create", ip, 10, 60)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
+    return NextResponse.json({ success: true, ...await createCaptcha(ip) });
   } catch (error) {
-    logError("Generate captcha", error);
-    return NextResponse.json(
-      { error: "生成验证码失败" },
-      { status: 500 }
-    );
+    logError("Create captcha", error);
+    return NextResponse.json({ error: "验证服务暂不可用" }, { status: 503 });
   }
 }

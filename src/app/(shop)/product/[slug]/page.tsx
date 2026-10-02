@@ -8,11 +8,11 @@ import { Header } from "@/components/shop/header";
 export const dynamic = "force-dynamic";
 
 interface ProductPageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: ProductPageProps) {
-  const product = await getProductBySlug(params.slug);
+  const product = await getProductBySlug((await params).slug);
   if (!product) return { title: "商品不存在" };
 
   return {
@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: ProductPageProps) {
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {
-  const product = await getProductBySlug(params.slug);
+  const product = await getProductBySlug((await params).slug);
 
   if (!product) {
     notFound();

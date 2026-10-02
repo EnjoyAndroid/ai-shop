@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { getAdminSession } from "@/lib/admin-auth";
+import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { logError } from "@/lib/logger";
 
 // 防止构建时预渲染
@@ -13,10 +13,12 @@ export async function GET() {
     return NextResponse.json({ error: "未授权" }, { status: 401 });
   }
 
+  if (!hasAdminPermission(admin, "users")) return NextResponse.json({ error: "无权限" }, { status: 403 });
   try {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
-      include: {
+      select: {
+        id: true, email: true, name: true, status: true, balance: true, totalSpent: true, createdAt: true,
         level: true,
         _count: {
           select: { orders: true },

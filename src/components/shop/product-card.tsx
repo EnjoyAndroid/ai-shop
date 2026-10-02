@@ -19,8 +19,8 @@ export function ProductCard({ product }: ProductCardProps) {
   const hasStock = stock > 0;
 
   return (
-    <Link href={`/product/${product.slug}`} target="_blank">
-      <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
+    <Link href={`/product/${product.slug}`} target="_blank" className="block h-full min-w-0">
+      <div className="flex h-full flex-col bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
         {/* 商品图片区域 */}
         {product.image ? (
           <div className="aspect-square overflow-hidden">
@@ -39,23 +39,21 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
 
         {/* 商品信息 */}
-        <div className="p-4">
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="font-semibold text-gray-800 group-hover:text-primary transition-colors line-clamp-2">
+        <div className="flex flex-1 flex-col p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 title={product.name} className="min-w-0 flex-1 truncate font-semibold text-gray-800 group-hover:text-primary transition-colors">
               {product.name}
             </h3>
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full whitespace-nowrap ml-2">
+            <span className="shrink-0 text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full whitespace-nowrap ml-2">
               {product.category.name}
             </span>
           </div>
 
-          {product.description && (
-            <p className="text-sm text-gray-500 mb-3 line-clamp-2">
-              {product.description}
-            </p>
-          )}
+          <p className="mb-3 h-10 text-sm leading-5 text-gray-500 line-clamp-2" title={product.description || undefined}>
+            {product.description || "\u00a0"}
+          </p>
 
-          <div className="flex items-center justify-between">
+          <div className="mt-auto flex items-center justify-between">
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold text-red-500">
                 ¥{(product.price / 100).toFixed(2)}

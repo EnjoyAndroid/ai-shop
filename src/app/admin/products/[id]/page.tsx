@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminSidebar } from "@/components/admin/sidebar";
 
@@ -26,11 +26,8 @@ interface Product {
   isActive: boolean;
 }
 
-export default function AdminEditProductPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default function AdminEditProductPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);

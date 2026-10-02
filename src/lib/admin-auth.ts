@@ -2,9 +2,7 @@ import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import prisma from "@/lib/db";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "admin-secret-key"
-);
+import { getAdminSecret } from "./security-config";
 
 export interface AdminSession {
   id: string;
@@ -15,13 +13,13 @@ export interface AdminSession {
 
 export async function getAdminSession(): Promise<AdminSession | null> {
   try {
-    const token = cookies().get("admin_token")?.value;
+    const token = (await cookies()).get("admin_token")?.value;
 
     if (!token) {
       return null;
     }
 
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getAdminSecret(), { algorithms: ["HS256"] });
 
     const admin = await prisma.admin.findUnique({
       where: { id: payload.id as string },
@@ -31,10 +29,11 @@ export async function getAdminSession(): Promise<AdminSession | null> {
         name: true,
         role: true,
         status: true,
+        sessionVersion: true,
       },
     });
 
-    if (!admin || admin.status !== "ACTIVE") {
+    if (!admin || admin.status !== "ACTIVE" || payload.sessionVersion !== admin.sessionVersion) {
       return null;
     }
 
@@ -57,4 +56,8 @@ export async function requireAdmin(): Promise<AdminSession> {
   }
 
   return session;
+}
+
+export function hasAdminPermission(admin: AdminSession, permission: "finance" | "settings" | "users"): boolean {
+  return admin.role === "SUPER_ADMIN" || (admin.role === "ADMIN" && permission !== "settings");
 }

@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "admin-secret-key"
-);
+import { getAdminSecret } from "@/lib/security-config";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -25,7 +23,7 @@ export async function middleware(request: NextRequest) {
 
     // 验证 JWT token 有效性
     try {
-      const { payload } = await jwtVerify(adminToken, JWT_SECRET);
+      const { payload } = await jwtVerify(adminToken, getAdminSecret(), { algorithms: ["HS256"] });
 
       // 验证 token 包含必要字段
       if (!payload.id || !payload.username) {
