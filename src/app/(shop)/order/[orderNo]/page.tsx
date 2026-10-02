@@ -11,7 +11,10 @@ function OrderDetailContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const orderNo = params.orderNo as string;
-  const password = searchParams.get("password") || "";
+  const [password, setPassword] = useState(searchParams.get("password") || "");
+  useEffect(() => {
+    if (!password) setPassword(sessionStorage.getItem(`order-password:${orderNo}`) || "");
+  }, [orderNo, password]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

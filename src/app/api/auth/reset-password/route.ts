@@ -8,16 +8,16 @@ export async function POST(request: NextRequest) {
   try {
     const { token, password } = await request.json();
 
-    if (!token || !password) {
+    if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token) || typeof password !== "string") {
       return NextResponse.json({ error: "参数不完整" }, { status: 400 });
     }
 
-    if (password.length < 8) {
+    if (password.length < 8 || password.length > 72) {
       return NextResponse.json({ error: "密码长度不能少于8位" }, { status: 400 });
     }
 
     // 从 Redis 获取用户 ID
-    const userId = await redis.get(`reset_password:${token}`);
+    const userId = await redis.getdel(`reset_password:${token}`);
 
     if (!userId) {
       return NextResponse.json({ error: "重置链接已过期或无效" }, { status: 400 });
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     // 更新密码
     await prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword },
+      data: { password: hashedPassword, sessionVersion: { increment: 1 } },
     });
 
     // 删除重置 token

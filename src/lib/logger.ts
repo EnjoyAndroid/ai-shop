@@ -16,9 +16,9 @@ export function logError(context: string, error: unknown): void {
     console.error(`[${context}]`, error);
   } else {
     // 生产环境：仅记录错误类型和消息，隐藏堆栈
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     const errorType = error instanceof Error ? error.constructor.name : typeof error;
-    console.error(`[${context}] ${errorType}: ${errorMessage}`);
+    // 第三方错误消息也可能包含 URL、SQL、卡密或凭据。
+    console.error(`[${context}] ${errorType}`);
   }
 }
 

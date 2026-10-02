@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Header } from "@/components/shop/header";
+import { HeaderClient as Header } from "@/components/shop/header-client";
 import { useCartStore } from "@/stores/cart";
 
 interface PaymentMethod {
@@ -17,7 +17,6 @@ export default function CheckoutPage() {
   const { items, getTotalAmount, clearCart, removeItem, updateQuantity } =
     useCartStore();
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [paymentMethod, setPaymentMethod] = useState("");
   const [loading, setLoading] = useState(false);
@@ -35,15 +34,9 @@ export default function CheckoutPage() {
         }
       })
       .catch(() => {
-        // 出错时使用默认支付方式
-        const defaultMethods = [
-          { value: "ALIPAY", label: "支付宝", icon: "alipay" },
-          { value: "WECHAT", label: "微信支付", icon: "wechat" },
-          { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "usdt" },
-          { value: "BALANCE", label: "余额支付", icon: "💵" },
-        ];
-        setPaymentMethods(defaultMethods);
-        setPaymentMethod("ALIPAY");
+        setPaymentMethods([]);
+        setPaymentMethod("");
+        setError("支付方式暂不可用，请稍后重试");
       });
   }, []);
 
@@ -52,8 +45,8 @@ export default function CheckoutPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email && !phone) {
-      setError("请填写邮箱或手机号，用于接收卡密");
+    if (!email) {
+      setError("请填写邮箱，用于接收卡密");
       return;
     }
 
@@ -77,7 +70,6 @@ export default function CheckoutPage() {
             quantity: item.quantity,
           })),
           email: email || undefined,
-          phone: phone || undefined,
           paymentMethod,
         }),
       });
@@ -92,6 +84,8 @@ export default function CheckoutPage() {
       clearCart();
 
       // 跳转到支付页面
+      if (data.orderNo && data.queryPassword) sessionStorage.setItem(`order-password:${data.orderNo}`, data.queryPassword);
+
       if (data.payUrl) {
         // USDT 支付跳转到内部支付页
         if (paymentMethod.startsWith("USDT")) {
@@ -215,18 +209,6 @@ export default function CheckoutPage() {
                     className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    手机号 (可选)
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="13800138000"
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
               </div>
 
               {/* 支付方式 */}
@@ -249,9 +231,9 @@ export default function CheckoutPage() {
                       {method.value === "USDT_TRC20" ? (
                         <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
                       ) : method.value === "WECHAT" ? (
-                        <img src="/icons/wechat.png" alt="微信" className="w-5 h-5" />
+                        <img src="/icons/wechat.png" alt="微信" className="w-5 h-5 object-contain shrink-0" />
                       ) : method.value === "ALIPAY" ? (
-                        <img src="/icons/alipay.png" alt="支付宝" className="w-5 h-5" />
+                        <img src="/icons/alipay.png" alt="支付宝" className="w-5 h-5 object-contain shrink-0" />
                       ) : (
                         <span>{method.icon}</span>
                       )}

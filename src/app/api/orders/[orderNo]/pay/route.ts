@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPaymentProvider } from "@/lib/payment";
+import { requirePaymentEnabled } from "@/lib/payment/config";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/get-client-ip";
 import prisma from "@/lib/db";
 import { logError } from "@/lib/logger";
 
 // 重新获取/生成支付信息
 export async function GET(
   request: NextRequest,
-  { params }: { params: { orderNo: string } }
+  { params }: { params: Promise<{ orderNo: string }> }
 ) {
   try {
+    if (!await rateLimit("payment-info", getClientIp(request), 60, 60)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
     const { searchParams } = new URL(request.url);
     const password = searchParams.get("password");
-    const orderNo = params.orderNo;
+    const orderNo = (await params).orderNo;
 
     const order = await prisma.order.findUnique({
       where: { orderNo },
@@ -41,6 +45,8 @@ export async function GET(
       return NextResponse.json({ error: "订单支付方式无效" }, { status: 400 });
     }
 
+    await requirePaymentEnabled(order.paymentMethod);
+
     // 重新生成支付链接
     const paymentProvider = getPaymentProvider(order.paymentMethod);
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -50,7 +56,7 @@ export async function GET(
       amount: order.payAmount,
       subject: `AI Shop 订单 ${order.orderNo}`,
       notifyUrl: `${baseUrl}/api/payment/callback/${order.paymentMethod.toLowerCase()}`,
-      returnUrl: `${baseUrl}/order/${order.orderNo}?password=${order.queryPassword}`,
+      returnUrl: `${baseUrl}/order/${order.orderNo}`,
     });
 
     if (!paymentResult.success) {

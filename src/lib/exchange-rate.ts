@@ -1,3 +1,4 @@
+import { logError } from "@/lib/logger";
 /**
  * 汇率服务
  * 获取 USDT/CNY 实时汇率
@@ -26,6 +27,7 @@ async function fetchBinanceRate(): Promise<number | null> {
       "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search",
       {
         method: "POST",
+        signal: AbortSignal.timeout(5000),
         headers: {
           "Content-Type": "application/json",
         },
@@ -65,7 +67,7 @@ async function fetchBinanceRate(): Promise<number | null> {
     const avgPrice = prices.reduce((a: number, b: number) => a + b, 0) / prices.length;
     return parseFloat(avgPrice.toFixed(4));
   } catch (error) {
-    console.error("Binance rate fetch error:", error);
+    logError("Binance rate fetch error", error);
     return null;
   }
 }
@@ -76,7 +78,7 @@ async function fetchBinanceRate(): Promise<number | null> {
 async function fetchOKXRate(): Promise<number | null> {
   try {
     const response = await fetch(
-      "https://www.okx.com/v3/c2c/tradingOrders/books?quoteCurrency=CNY&baseCurrency=USDT&side=sell&paymentMethod=all&userType=all&showTrade=false&showFollow=false&showAlreadyTraded=false&isAbleFilter=false"
+      "https://www.okx.com/v3/c2c/tradingOrders/books?quoteCurrency=CNY&baseCurrency=USDT&side=sell&paymentMethod=all&userType=all&showTrade=false&showFollow=false&showAlreadyTraded=false&isAbleFilter=false", { signal: AbortSignal.timeout(5000) }
     );
 
     if (!response.ok) {
@@ -103,7 +105,7 @@ async function fetchOKXRate(): Promise<number | null> {
     const avgPrice = prices.reduce((a: number, b: number) => a + b, 0) / prices.length;
     return parseFloat(avgPrice.toFixed(4));
   } catch (error) {
-    console.error("OKX rate fetch error:", error);
+    logError("OKX rate fetch error", error);
     return null;
   }
 }

@@ -23,7 +23,6 @@ interface BuyNowButtonProps {
 export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
   const [quantity, setQuantity] = useState(1);
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,14 +46,8 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       })
       .catch(() => {
         // 失败时使用默认支付方式
-        const defaultMethods = [
-          { value: "WECHAT", label: "微信", icon: "💚" },
-          { value: "ALIPAY", label: "支付宝", icon: "💳" },
-          { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" },
-          { value: "BALANCE", label: "余额", icon: "💵" },
-        ];
-        setPaymentMethods(defaultMethods);
-        setPaymentMethod("WECHAT");
+        setPaymentMethods([]);
+        setPaymentMethod("");
       });
   }, []);
 
@@ -131,7 +124,6 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
             },
           ],
           email: email || undefined,
-          phone: phone || undefined,
           paymentMethod,
         }),
       });
@@ -141,6 +133,8 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       if (!response.ok) {
         throw new Error(data.error || "创建订单失败");
       }
+
+      if (data.orderNo && data.queryPassword) sessionStorage.setItem(`order-password:${data.orderNo}`, data.queryPassword);
 
       // 余额支付成功，直接跳转订单详情
       if (paymentMethod === "BALANCE") {
@@ -301,9 +295,9 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
               {method.value === "USDT_TRC20" ? (
                 <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: "#26A17B" }}>₮</span>
               ) : method.value === "WECHAT" ? (
-                <img src="/icons/wechat.png" alt="微信" className="w-4 h-4" />
+                <img src="/icons/wechat.png" alt="微信" className="w-4 h-4 object-contain shrink-0" />
               ) : method.value === "ALIPAY" ? (
-                <img src="/icons/alipay.png" alt="支付宝" className="w-4 h-4" />
+                <img src="/icons/alipay.png" alt="支付宝" className="w-4 h-4 object-contain shrink-0" />
               ) : (
                 <span>{method.icon}</span>
               )}

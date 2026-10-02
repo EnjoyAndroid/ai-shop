@@ -36,10 +36,7 @@ SELECT gen_random_uuid(), 'Midjourney Standard 1个月', 'midjourney-standard-1m
 FROM "Category" WHERE slug = 'midjourney'
 ON CONFLICT DO NOTHING;
 
--- 创建管理员 (密码: admin123)
-INSERT INTO "Admin" (id, username, password, name, role, "createdAt", "updatedAt") VALUES
-  (gen_random_uuid(), 'admin', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4/AQKUXJ1.dO4pLO', '超级管理员', 'SUPER_ADMIN', NOW(), NOW())
-ON CONFLICT DO NOTHING;
+-- 管理员通过 npm run db:seed 和 ADMIN_PASSWORD 初始化，不分发固定密码哈希。
 
 -- 创建公告
 INSERT INTO "Announcement" (id, title, content, type, "isPinned", "isActive", "createdAt", "updatedAt") VALUES

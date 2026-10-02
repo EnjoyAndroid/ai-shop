@@ -8,7 +8,7 @@ import { logError } from "@/lib/logger";
 // 获取单个商品
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
@@ -17,7 +17,7 @@ export async function GET(
 
   try {
     const product = await prisma.product.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
       include: {
         category: true,
         _count: {
@@ -48,7 +48,7 @@ export async function GET(
 // 更新商品
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
@@ -70,7 +70,7 @@ export async function PUT(
 
     // 检查商品是否存在
     const existing = await prisma.product.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
     if (!existing) {
       return NextResponse.json(
@@ -93,7 +93,7 @@ export async function PUT(
     }
 
     const product = await prisma.product.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: {
         name: data.name,
         slug: data.slug,
@@ -134,7 +134,7 @@ export async function PUT(
 // 删除商品
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
@@ -144,7 +144,7 @@ export async function DELETE(
   try {
     // 检查商品是否存在
     const product = await prisma.product.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
       include: {
         _count: {
           select: {
@@ -172,12 +172,12 @@ export async function DELETE(
 
     // 删除关联的卡密
     await prisma.cardKey.deleteMany({
-      where: { productId: params.id },
+      where: { productId: (await params).id },
     });
 
     // 删除商品
     await prisma.product.delete({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     // 清除商品缓存

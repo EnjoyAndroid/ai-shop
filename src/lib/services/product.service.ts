@@ -1,7 +1,8 @@
+import { logError } from "@/lib/logger";
 import prisma from "@/lib/db";
 import { encrypt, decrypt } from "@/lib/encryption";
 import redis, { CACHE_KEYS } from "@/lib/redis";
-import type { Product, Category, CardKey } from "@prisma/client";
+import type { Prisma, Product, Category, CardKey } from "@prisma/client";
 
 export interface ProductWithCategory extends Product {
   category: Category;
@@ -48,7 +49,7 @@ export async function getCategories(includeInactive = false): Promise<Category[]
 
     return categories;
   } catch (error) {
-    console.error("getCategories error:", error);
+    logError("getCategories error", error);
     return [];
   }
 }
@@ -66,7 +67,7 @@ export async function getCategoryBySlug(slug: string): Promise<Category | null> 
       where: { slug },
     });
   } catch (error) {
-    console.error("getCategoryBySlug error:", error);
+    logError("getCategoryBySlug error", error);
     return null;
   }
 }
@@ -137,7 +138,7 @@ export async function getProducts(options: {
 
     return result;
   } catch (error) {
-    console.error("getProducts error:", error);
+    logError("getProducts error", error);
     return { products: [], total: 0 };
   }
 }
@@ -180,7 +181,7 @@ export async function getProductBySlug(slug: string): Promise<ProductWithCategor
 
     return product as ProductWithCategory | null;
   } catch (error) {
-    console.error("getProductBySlug error:", error);
+    logError("getProductBySlug error", error);
     return null;
   }
 }
@@ -202,7 +203,7 @@ export async function getProductStock(productId: string): Promise<number> {
     });
     return count;
   } catch (error) {
-    console.error("getProductStock error:", error);
+    logError("getProductStock error", error);
     return 0;
   }
 }
@@ -251,91 +252,29 @@ export async function importCardKeys(
 export async function allocateCardKeys(
   productId: string,
   quantity: number,
-  orderItemId: string
+  orderItemId: string,
+  tx: Prisma.TransactionClient
 ): Promise<CardKey[]> {
-  // 使用分布式锁防止并发分配
-  const lockKey = CACHE_KEYS.CARDKEY_LOCK(productId);
-  const lockValue = Date.now().toString();
-
-  // 尝试获取锁
-  const acquired = await redis.set(lockKey, lockValue, "EX", 30, "NX");
-  if (!acquired) {
-    throw new Error("系统繁忙，请稍后再试");
+  const owned = await tx.cardKey.findMany({ where: { productId, orderId: orderItemId, status: { in: ["LOCKED", "SOLD"] } } });
+  if (owned.length === quantity && owned.every(key => key.status === "SOLD")) return owned;
+  if (owned.some(key => key.status === "SOLD")) throw new Error("订单卡密状态异常，请人工核对");
+  let cards = owned;
+  if (cards.length === 0) {
+    // 兼容历史已付款但没有预留库存的订单。
+    const ids = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "CardKey" WHERE "productId" = ${productId} AND status = 'AVAILABLE'
+      ORDER BY "createdAt", id LIMIT ${quantity} FOR UPDATE SKIP LOCKED`;
+    cards = await tx.cardKey.findMany({ where: { id: { in: ids.map(key => key.id) } } });
   }
-
-  try {
-    // 查找已锁定的卡密（下单时已锁定）
-    const lockedCardKeys = await prisma.cardKey.findMany({
-      where: {
-        orderId: orderItemId,
-        status: "LOCKED",
-      },
-    });
-
-    if (lockedCardKeys.length > 0) {
-      // 将 LOCKED 状态更新为 SOLD
-      await prisma.cardKey.updateMany({
-        where: {
-          id: { in: lockedCardKeys.map((k) => k.id) },
-        },
-        data: {
-          status: "SOLD",
-          soldAt: new Date(),
-        },
-      });
-
-      // 更新商品库存和销量
-      await prisma.product.update({
-        where: { id: productId },
-        data: {
-          stock: { decrement: lockedCardKeys.length },
-          salesCount: { increment: lockedCardKeys.length },
-        },
-      });
-
-      return lockedCardKeys;
-    }
-
-    // 兼容旧逻辑：如果没有锁定的卡密，从 AVAILABLE 分配（用于手动发货等场景）
-    const cardKeys = await prisma.cardKey.findMany({
-      where: {
-        productId,
-        status: "AVAILABLE",
-      },
-      take: quantity,
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (cardKeys.length < quantity) {
-      throw new Error("库存不足");
-    }
-
-    // 更新卡密状态
-    await prisma.cardKey.updateMany({
-      where: {
-        id: { in: cardKeys.map((k) => k.id) },
-      },
-      data: {
-        status: "SOLD",
-        orderId: orderItemId,
-        soldAt: new Date(),
-      },
-    });
-
-    // 更新商品库存和销量
-    await prisma.product.update({
-      where: { id: productId },
-      data: {
-        stock: { decrement: quantity },
-        salesCount: { increment: quantity },
-      },
-    });
-
-    return cardKeys;
-  } finally {
-    // 释放锁
-    await redis.del(lockKey);
-  }
+  if (cards.length !== quantity) throw new Error("库存不足");
+  const updated = await tx.cardKey.updateMany({
+    where: { id: { in: cards.map(key => key.id) }, OR: [{ status: "AVAILABLE", orderId: null }, { status: "LOCKED", orderId: orderItemId }] },
+    data: { status: "SOLD", orderId: orderItemId, soldAt: new Date() },
+  });
+  if (updated.count !== quantity) throw new Error("库存已被占用，请重试");
+  const stock = await tx.cardKey.count({ where: { productId, status: "AVAILABLE" } });
+  await tx.product.update({ where: { id: productId }, data: { stock, salesCount: { increment: quantity } } });
+  return tx.cardKey.findMany({ where: { orderId: orderItemId, status: "SOLD" } });
 }
 
 /**

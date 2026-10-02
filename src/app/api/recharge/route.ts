@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getPaymentProvider } from "@/lib/payment";
+import { requirePaymentEnabled } from "@/lib/payment/config";
+import { getClientIp } from "@/lib/get-client-ip";
+import { rateLimit } from "@/lib/rate-limit";
+import type { PaymentMethod } from "@prisma/client";
 import { generateOrderNo, generatePassword } from "@/lib/encryption";
 import prisma from "@/lib/db";
 import { logError } from "@/lib/logger";
@@ -23,7 +27,7 @@ export async function POST(request: NextRequest) {
     const { amount, paymentMethod } = body;
 
     // 验证金额
-    if (!amount || amount < 100) {
+    if (!Number.isSafeInteger(amount) || amount < 100) {
       return NextResponse.json(
         { error: "充值金额不能小于 1 元" },
         { status: 400 }
@@ -38,19 +42,22 @@ export async function POST(request: NextRequest) {
     }
 
     // 验证支付方式
-    if (!paymentMethod || paymentMethod === "BALANCE") {
+    if (!["ALIPAY", "WECHAT", "USDT_TRC20"].includes(paymentMethod)) {
       return NextResponse.json(
         { error: "请选择有效的支付方式" },
         { status: 400 }
       );
     }
 
+    await requirePaymentEnabled(paymentMethod as PaymentMethod);
+    if (!await rateLimit("recharge", session.user.id, 10, 3600)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
+
     // 生成订单号
     const orderNo = "R" + generateOrderNo(); // R 开头表示充值订单
     const queryPassword = generatePassword();
 
     // 获取请求信息
-    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "";
+    const ip = getClientIp(request);
     const userAgent = request.headers.get("user-agent") || "";
 
     // 设置订单过期时间 (10分钟)
@@ -118,7 +125,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logError("Create recharge order", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "创建充值订单失败" },
+      { error: "创建充值订单失败，请检查支付配置" },
       { status: 500 }
     );
   }

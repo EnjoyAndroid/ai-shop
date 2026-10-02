@@ -1,0 +1,16 @@
+# 本机部署：docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# .env 中的数据库地址用于本机 Prisma CLI；容器仍通过内部网络连接数据库。
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:55439:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:16379:6379"
+
+  nginx:
+    image: nginx:latest
+    ports: !override
+      - "127.0.0.1:3010:80"

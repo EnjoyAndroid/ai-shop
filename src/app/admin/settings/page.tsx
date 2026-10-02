@@ -13,6 +13,7 @@ interface Settings {
   wechatEnabled: string;
   usdtEnabled: string;
   balanceEnabled: string;
+  telegramUrl: string;
 }
 
 export default function AdminSettingsPage() {
@@ -25,6 +26,7 @@ export default function AdminSettingsPage() {
     wechatEnabled: "true",
     usdtEnabled: "false",
     balanceEnabled: "true",
+    telegramUrl: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,8 +99,8 @@ export default function AdminSettingsPage() {
       return;
     }
 
-    if (passwordForm.newPassword.length < 8) {
-      setPasswordMessage({ type: "error", text: "新密码至少8位" });
+    if (passwordForm.newPassword.length < 12 || passwordForm.newPassword.length > 72) {
+      setPasswordMessage({ type: "error", text: "新密码需要12至72位" });
       setSavingPassword(false);
       return;
     }
@@ -119,7 +121,8 @@ export default function AdminSettingsPage() {
         throw new Error(data.error || "修改失败");
       }
 
-      setPasswordMessage({ type: "success", text: "密码修改成功" });
+      setPasswordMessage({ type: "success", text: "密码修改成功，请重新登录" });
+      window.location.href = "/admin/login";
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
     } catch (err) {
       setPasswordMessage({ type: "error", text: err instanceof Error ? err.message : "修改失败" });
@@ -176,6 +179,22 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
+            {/* 客服设置 */}
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800 mb-4">客服设置</h2>
+              <label htmlFor="telegramUrl" className="block text-sm text-gray-600 mb-1">Telegram 客服</label>
+              <input
+                id="telegramUrl"
+                type="text"
+                value={settings.telegramUrl}
+                onChange={(e) => handleChange("telegramUrl", e.target.value)}
+                placeholder="@用户名 或 https://t.me/用户名"
+                maxLength={100}
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <p className="text-xs text-gray-500 mt-1">留空时隐藏 Telegram 入口；保存后刷新商城即可生效，无需重新部署。</p>
+            </div>
+
             {/* 订单设置 */}
             <div className="bg-white rounded-xl p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-800 mb-4">订单设置</h2>
@@ -217,7 +236,7 @@ export default function AdminSettingsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <img src="/icons/alipay.png" alt="支付宝" className="w-8 h-8" />
+                    <img src="/icons/alipay.png" alt="支付宝" className="w-8 h-8 object-contain shrink-0" />
                     <div>
                       <p className="font-medium">支付宝</p>
                       <p className="text-sm text-gray-500">通过虎皮椒接入</p>
@@ -238,7 +257,7 @@ export default function AdminSettingsPage() {
 
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <img src="/icons/wechat.png" alt="微信支付" className="w-8 h-8" />
+                    <img src="/icons/wechat.png" alt="微信" className="w-8 h-8 object-contain shrink-0" />
                     <div>
                       <p className="font-medium">微信支付</p>
                       <p className="text-sm text-gray-500">通过虎皮椒接入</p>

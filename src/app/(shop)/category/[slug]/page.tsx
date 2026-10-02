@@ -9,11 +9,11 @@ import { Header } from "@/components/shop/header";
 export const dynamic = "force-dynamic";
 
 interface CategoryPageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: CategoryPageProps) {
-  const category = await getCategoryBySlug(params.slug);
+  const category = await getCategoryBySlug((await params).slug);
   if (!category) return { title: "分类不存在" };
 
   return {
@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: CategoryPageProps) {
 }
 
 export default async function CategoryPage({ params }: CategoryPageProps) {
-  const category = await getCategoryBySlug(params.slug);
+  const category = await getCategoryBySlug((await params).slug);
 
   if (!category) {
     notFound();
@@ -66,7 +66,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
         </div>
 
         {/* 分类导航 */}
-        <CategoryNav categories={categories} activeSlug={params.slug} />
+        <CategoryNav categories={categories} activeSlug={(await params).slug} />
 
         {/* 商品列表 */}
         {products.length > 0 ? (

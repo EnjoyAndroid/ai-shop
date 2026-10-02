@@ -8,7 +8,7 @@ import { logError } from "@/lib/logger";
 // 更新分类
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
@@ -30,7 +30,7 @@ export async function PUT(
 
     // 检查分类是否存在
     const existing = await prisma.category.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
     if (!existing) {
       return NextResponse.json(
@@ -53,7 +53,7 @@ export async function PUT(
     }
 
     const category = await prisma.category.update({
-      where: { id: params.id },
+      where: { id: (await params).id },
       data: {
         name,
         slug,
@@ -80,7 +80,7 @@ export async function PUT(
 // 删除分类
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await getAdminSession();
   if (!admin) {
@@ -90,7 +90,7 @@ export async function DELETE(
   try {
     // 检查分类下是否有商品
     const category = await prisma.category.findUnique({
-      where: { id: params.id },
+      where: { id: (await params).id },
       include: {
         _count: { select: { products: true } },
       },
@@ -111,7 +111,7 @@ export async function DELETE(
     }
 
     await prisma.category.delete({
-      where: { id: params.id },
+      where: { id: (await params).id },
     });
 
     // 清除分类缓存

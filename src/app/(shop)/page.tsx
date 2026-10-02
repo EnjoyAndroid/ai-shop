@@ -1,3 +1,5 @@
+import { getSetting } from "@/lib/services/settings.service";
+import { getSafeTelegramUrl } from "@/lib/contact-settings";
 import Link from "next/link";
 import { Suspense } from "react";
 import { getCategories, getProducts } from "@/lib/services/product.service";
@@ -5,16 +7,17 @@ import { ProductCard } from "@/components/shop/product-card";
 import { Announcement } from "@/components/shop/announcement";
 import { Header } from "@/components/shop/header";
 import { PurchaseSteps } from "@/components/shop/purchase-steps";
-import { CopyEmailLink } from "@/components/shop/contact-buttons";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, { products }] = await Promise.all([
+  const [categories, { products }, savedTelegramUrl] = await Promise.all([
     getCategories(),
     getProducts({ isActive: true, limit: 12 }),
+    getSetting("telegramUrl"),
   ]);
+  const telegramUrl = getSafeTelegramUrl(savedTelegramUrl);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -80,16 +83,16 @@ export default async function HomePage() {
             <div className="md:text-right">
               <h3 className="text-white font-bold mb-4">联系我们</h3>
               <ul className="space-y-2 text-sm">
-                <li>
+                {telegramUrl && <li>
                   <a
-                    href="https://t.me/ai_shop_5"
+                    href={telegramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:text-white"
                   >
                     Telegram
                   </a>
-                </li>
+                </li>}
                 <li>
                   <Link href="/help" className="hover:text-white">
                     使用帮助

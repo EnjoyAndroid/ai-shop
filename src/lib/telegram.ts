@@ -1,3 +1,4 @@
+import { logError } from "@/lib/logger";
 /**
  * Telegram 通知服务
  */
@@ -25,7 +26,6 @@ async function sendTelegramMessage(text: string): Promise<boolean> {
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
   if (!botToken || !chatId) {
-    console.log("Telegram not configured, skipping notification");
     return false;
   }
 
@@ -45,14 +45,12 @@ async function sendTelegramMessage(text: string): Promise<boolean> {
     const result = await response.json();
 
     if (!result.ok) {
-      console.error("Telegram API error:", result);
+      logError("Telegram API error", result);
       return false;
     }
-
-    console.log("Telegram notification sent successfully");
     return true;
   } catch (error) {
-    console.error("Telegram send error:", error);
+    logError("Telegram send error", error);
     return false;
   }
 }

@@ -44,13 +44,9 @@ export default function RechargePage() {
         }
       })
       .catch(() => {
-        const defaultMethods = [
-          { value: "WECHAT", label: "微信", icon: "💚" },
-          { value: "ALIPAY", label: "支付宝", icon: "💳" },
-          { value: "USDT_TRC20", label: "USDT(TRON-TRC20)", icon: "₮" },
-        ];
-        setPaymentMethods(defaultMethods);
-        setPaymentMethod("WECHAT");
+        setPaymentMethods([]);
+        setPaymentMethod("");
+        setError("支付方式暂不可用，请稍后重试");
       });
   }, []);
 
@@ -215,9 +211,9 @@ export default function RechargePage() {
                         ₮
                       </span>
                     ) : method.value === "WECHAT" ? (
-                      <img src="/icons/wechat.png" alt="微信" className="w-6 h-6" />
+                      <img src="/icons/wechat.png" alt="微信" className="w-6 h-6 object-contain shrink-0" />
                     ) : method.value === "ALIPAY" ? (
-                      <img src="/icons/alipay.png" alt="支付宝" className="w-6 h-6" />
+                      <img src="/icons/alipay.png" alt="支付宝" className="w-6 h-6 object-contain shrink-0" />
                     ) : (
                       <span className="text-2xl">{method.icon}</span>
                     )}

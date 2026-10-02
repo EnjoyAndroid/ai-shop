@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createOrder, handlePaymentSuccess } from "@/lib/services/order.service";
+import { createOrder } from "@/lib/services/order.service";
 import { AntiFraudService } from "@/lib/services/anti-fraud.service";
 import { getPaymentProvider } from "@/lib/payment";
+import { requirePaymentEnabled } from "@/lib/payment/config";
 import { createOrderSchema } from "@/lib/validations";
 import { decryptCardKey } from "@/lib/services/product.service";
 import { auth } from "@/lib/auth";
@@ -27,7 +28,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { items, email, phone, paymentMethod } = validationResult.data;
+    const { items, email, paymentMethod } = validationResult.data;
+    await requirePaymentEnabled(paymentMethod);
 
     // 获取当前登录用户
     const session = await auth();
@@ -56,7 +58,6 @@ export async function POST(request: NextRequest) {
     const order = await createOrder({
       userId,
       email,
-      phone,
       paymentMethod: paymentMethod as any,
       items,
       ip,
@@ -66,52 +67,6 @@ export async function POST(request: NextRequest) {
 
     // 余额支付直接处理
     if (paymentMethod === "BALANCE") {
-      if (!userId) {
-        return NextResponse.json(
-          { error: "请先登录后使用余额支付" },
-          { status: 401 }
-        );
-      }
-
-      // 获取用户余额
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { balance: true },
-      });
-
-      if (!user || user.balance < order.payAmount) {
-        return NextResponse.json(
-          { error: `余额不足，当前余额 ¥${((user?.balance || 0) / 100).toFixed(2)}` },
-          { status: 400 }
-        );
-      }
-
-      // 扣除余额并更新订单状态
-      await prisma.$transaction(async (tx) => {
-        // 扣除用户余额
-        await tx.user.update({
-          where: { id: userId },
-          data: {
-            balance: { decrement: order.payAmount },
-          },
-        });
-
-        // 创建余额变动记录
-        await tx.balanceLog.create({
-          data: {
-            userId,
-            type: "CONSUME",
-            amount: -order.payAmount,
-            balance: user.balance - order.payAmount,
-            remark: `购买商品 - 订单${order.orderNo}`,
-            orderId: order.id,
-          },
-        });
-      });
-
-      // 处理支付成功逻辑（更新订单状态、发送通知等）
-      await handlePaymentSuccess(order.orderNo, `BALANCE_${order.orderNo}`);
-
       return NextResponse.json({
         orderNo: order.orderNo,
         queryPassword: order.queryPassword,
@@ -128,7 +83,7 @@ export async function POST(request: NextRequest) {
       amount: order.payAmount,
       subject: `AI Shop 订单 ${order.orderNo}`,
       notifyUrl: `${baseUrl}/api/payment/callback/${paymentMethod.toLowerCase()}`,
-      returnUrl: `${baseUrl}/order/${order.orderNo}?password=${order.queryPassword}`,
+      returnUrl: `${baseUrl}/order/${order.orderNo}`,
     });
 
     // 记录支付日志
@@ -162,7 +117,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logError("Create order", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "创建订单失败" },
+      { error: "创建订单失败，请检查库存、余额和支付方式" },
       { status: 500 }
     );
   }
@@ -223,19 +178,18 @@ export async function GET(request: NextRequest) {
 
     // 仅对已支付订单解密卡密
     const orderWithDecryptedKeys = {
-      ...order,
-      items: order.items.map((item) => ({
-        ...item,
-        cardKeys: order.status === "PAID" || order.status === "DELIVERED" || order.status === "COMPLETED"
-          ? item.cardKeys.map((ck) => ({
-              ...ck,
-              content: decryptCardKey(ck),
-            }))
-          : [], // 未支付订单不返回卡密
+      id: order.id, orderNo: order.orderNo, email: order.email,
+      totalAmount: order.totalAmount, discountAmount: order.discountAmount,
+      payAmount: order.payAmount, paymentMethod: order.paymentMethod,
+      status: order.status, createdAt: order.createdAt, paidAt: order.paidAt, expiredAt: order.expiredAt,
+      items: order.items.map(item => ({
+        id: item.id, productName: item.productName, price: item.price, quantity: item.quantity, product: item.product,
+        cardKeys: ["PAID", "DELIVERED", "COMPLETED"].includes(order.status)
+          ? item.cardKeys.map(ck => ({ id: ck.id, content: decryptCardKey(ck) })) : [],
       })),
     };
 
-    return NextResponse.json({ order: orderWithDecryptedKeys });
+    return NextResponse.json({ order: orderWithDecryptedKeys }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     logError("Query order", error);
     return NextResponse.json({ error: "查询订单失败" }, { status: 500 });

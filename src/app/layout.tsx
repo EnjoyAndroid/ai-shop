@@ -1,9 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = localFont({
+  src: "../../public/fonts/Inter-latin.woff2",
+  weight: "100 900",
+  style: "normal",
+  display: "swap",
+  fallback: ["Arial"],
+});
 
 export const viewport: Viewport = {
   width: "device-width",

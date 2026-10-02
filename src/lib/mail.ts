@@ -1,10 +1,11 @@
+import { logError } from "@/lib/logger";
 import nodemailer from "nodemailer";
 
 // 创建邮件发送器
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 465,
-  secure: true, // 使用 SSL
+  secure: Number(process.env.SMTP_PORT || 465) === 465, // 使用 SSL
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -123,11 +124,9 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
       subject: `【AI Shop】支付成功 - 订单 ${orderNo}`,
       html,
     });
-
-    console.log(`Payment success email sent to ${to}`);
     return true;
   } catch (error) {
-    console.error("Send email error:", error);
+    logError("Send email error", error);
     return false;
   }
 }

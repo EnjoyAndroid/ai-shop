@@ -33,6 +33,12 @@ coverage
 
 # 其他
 *.md
-LICENSE
 docker-compose*.yml
 Dockerfile*
+
+!THIRD_PARTY_NOTICES.md
+tests
+backups
+*.dump
+*.tsbuildinfo
+.github
