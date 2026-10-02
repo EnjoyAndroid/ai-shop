@@ -5,7 +5,7 @@ import { XunhuPayProvider, USDTProvider } from "../src/lib/payment";
 import { requireSecret } from "../src/lib/security-config";
 import { getClientIp } from "../src/lib/get-client-ip";
 import { isMatchingTransfer, USDT_CONTRACT_ADDRESS } from "../src/lib/trongrid";
-import { createOrderSchema, registerSchema } from "../src/lib/validations";
+import { createOrderSchema, registerSchema, productSchema } from "../src/lib/validations";
 
 function signature(data: Record<string, string>, secret: string) {
   return createHash("md5").update(Object.keys(data).sort().map(k => `${k}=${data[k]}`).join("&") + secret).digest("hex");
@@ -61,4 +61,14 @@ test("USDT requires exact atomic amount, contract, recipient and payment window"
 test("fractional quantities and phone-only registrations are rejected", () => {
   assert.equal(createOrderSchema.safeParse({ items: [{ productId: "x", quantity: 1.5 }], email: "test@example.invalid", paymentMethod: "BALANCE" }).success, false);
   assert.equal(registerSchema.safeParse({ phone: "13800138000", password: "test-password" }).success, false);
+});
+
+test("product image edits allow an empty original price while required prices remain validated", () => {
+  const product = { name: "商品", slug: "test-product", categoryId: "test-category", price: 19900, image: "https://res.cloudinary.com/demo/image/upload/test.webp" };
+  assert.equal(productSchema.parse({ ...product, originalPrice: null }).originalPrice, null);
+  assert.equal(productSchema.parse(product).originalPrice, undefined);
+  assert.equal(productSchema.parse({ ...product, originalPrice: 0 }).originalPrice, 0);
+  assert.equal(productSchema.parse({ ...product, originalPrice: 29900 }).originalPrice, 29900);
+  assert.equal(productSchema.safeParse({ ...product, price: null }).success, false);
+  assert.equal(productSchema.safeParse({ ...product, originalPrice: -1 }).success, false);
 });

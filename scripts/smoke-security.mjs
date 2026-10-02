@@ -52,6 +52,19 @@ try {
   assert.equal(users.status,200);
   assert((await users.json()).users.every(u => !('password' in u) && !('sessionVersion' in u)));
   const settings = await request('/api/admin/settings',{headers:{Cookie:cookie()}});assert.equal(settings.status,200);
+  const category = await db.category.create({ data: { name: `smoke-${suffix}`, slug: `smoke-${suffix}` } });
+  const productInput = { name: 'Image save regression', slug: `smoke-product-${suffix}`, categoryId: category.id, price: 19900, originalPrice: 29900, image: null };
+  const createdProduct = await jsonPost('/api/admin/products', productInput, {Cookie:cookie()}); assert.equal(createdProduct.status,200);
+  const productId = (await createdProduct.json()).product.id;
+  const imageUrl = 'https://res.cloudinary.com/demo/image/upload/test.webp';
+  const productUpdate = await request(`/api/admin/products/${productId}`, { method:'PUT', headers:{'Content-Type':'application/json',Cookie:cookie()}, body:JSON.stringify({...productInput, image:imageUrl, originalPrice:null}) });
+  assert.equal(productUpdate.status,200,await productUpdate.clone().text());
+  const updatedProduct = (await productUpdate.json()).product;
+  assert.equal(updatedProduct.originalPrice,null); assert.equal(updatedProduct.image,imageUrl); assert.equal(updatedProduct.price,19900);
+  const storedProduct = await db.product.findUniqueOrThrow({where:{id:productId}});
+  assert.equal(storedProduct.originalPrice,null); assert.equal(storedProduct.image,imageUrl);
+  console.log('Product image update with cleared original price: passed');
+
   const previousContact = (await settings.json()).settings.telegramUrl || '';
   try {
     const publicBefore = await request('/api/settings/contact'); assert.equal(publicBefore.status,200);

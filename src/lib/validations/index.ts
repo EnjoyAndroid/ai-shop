@@ -18,7 +18,7 @@ export const productSchema = z.object({
   image: z.string().nullable().optional(),
   categoryId: z.string().min(1, "请选择分类"),
   price: z.number().int().min(1, "价格必须大于0").max(10000000),
-  originalPrice: z.number().int().min(0).max(10000000).optional(),
+  originalPrice: z.number().int().min(0).max(10000000).nullable().optional(),
   isActive: z.boolean().default(true),
   sort: z.number().default(0),
   minQuantity: z.number().int().min(1).max(100).default(1),

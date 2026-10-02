@@ -75,7 +75,7 @@ export default function AdminEditProductPage() {
           image: product.image || "",
           categoryId: product.categoryId,
           price: (product.price / 100).toString(),
-          originalPrice: product.originalPrice
+          originalPrice: product.originalPrice != null
             ? (product.originalPrice / 100).toString()
             : "",
           sort: product.sort.toString(),

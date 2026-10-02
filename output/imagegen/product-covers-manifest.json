@@ -1,0 +1,49 @@
+{
+  "mode": "fallback CLI",
+  "provider": "image generation service",
+  "model": "gpt-image-2",
+  "quality": "medium",
+  "prompt_set": "product-cover-prompts.md",
+  "assets": [
+    {
+      "product": "midjourney-standard",
+      "png": "output/imagegen/midjourney-standard.png",
+      "webp": "output/imagegen/midjourney-standard.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "webp_bytes": 58288
+    },
+    {
+      "product": "cursor-pro",
+      "png": "output/imagegen/cursor-pro.png",
+      "webp": "output/imagegen/cursor-pro.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "webp_bytes": 43066
+    },
+    {
+      "product": "claude-pro",
+      "png": "output/imagegen/claude-pro.png",
+      "webp": "output/imagegen/claude-pro.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "webp_bytes": 70612
+    },
+    {
+      "product": "chatgpt-plus",
+      "png": "output/imagegen/chatgpt-plus.png",
+      "webp": "output/imagegen/chatgpt-plus.webp",
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "webp_bytes": 56600
+    }
+  ]
+}
