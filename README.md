@@ -1,5 +1,7 @@
 # AI Shop
 
+**简体中文** | [English](README.en.md)
+
 一个可自托管的数字商品商城，提供商品展示、自助购买、自动发货、安全订单查询和完整运营后台。基于 Next.js、TypeScript、PostgreSQL、Prisma 和 Redis，支持桌面与手机访问。
 
 ## 项目预览
@@ -186,7 +188,6 @@ unset ADMIN_PASSWORD
 
 **订单结构变更**：`20261003000000_order_query` 迁移仅支持空订单表，移除旧明文查询密码字段，不提供历史订单转换。已有正式订单的部署不能直接应用此迁移，也不能为通过迁移而删除正式订单。仅演示/测试部署可在核实并备份后定向清理测试订单及关联数据；启动脚本不会自动清理订单。
 
-
 升级前备份数据库及 `.env`，备份目录不可公开：
 
 ```bash
@@ -215,7 +216,7 @@ npm run check:secrets
 npm audit
 ```
 
-集成测试要求独立的 `ai_shop_order_query_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描及依赖审计；历史停用密钥按项目决定保留，当前扫描不替代历史安全审查。
+集成测试要求独立的 `ai_shop_order_query_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描及依赖审计；当前文件扫描不验证所有历史对象或托管平台保留的缓存副本。
 
 - [安全策略与私密漏洞报告](SECURITY.md)
 - [贡献说明](CONTRIBUTING.md)
