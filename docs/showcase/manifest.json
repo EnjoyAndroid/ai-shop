@@ -1,0 +1,111 @@
+{
+  "capturedAt": "2026-10-04",
+  "source": "Independent ai_shop_showcase_test environment",
+  "desktopViewport": {
+    "width": 1440,
+    "height": 1080
+  },
+  "mobileViewport": {
+    "width": 390,
+    "height": 844
+  },
+  "videoKind": "Real-page screenshot slideshow with captions and fade transitions; not continuous screen recording",
+  "videoDurationSeconds": 86,
+  "screenshots": [
+    {
+      "file": "01-storefront.png",
+      "title": "商城首页",
+      "description": "清晰展示商品与购买入口"
+    },
+    {
+      "file": "02-product.png",
+      "title": "直接下单",
+      "description": "选择商品数量，设置查询密码"
+    },
+    {
+      "file": "03-balance-confirm.png",
+      "title": "余额支付",
+      "description": "确认订单后使用站内余额付款"
+    },
+    {
+      "file": "04-delivery.png",
+      "title": "自动发货",
+      "description": "付款完成后即时查看发货内容"
+    },
+    {
+      "file": "05-order-search.png",
+      "title": "订单查询",
+      "description": "通过邮箱或订单号重新查找订单"
+    },
+    {
+      "file": "06-slider-verification.png",
+      "title": "滑块验证",
+      "description": "查询前完成拼图安全验证"
+    },
+    {
+      "file": "07-order-list.png",
+      "title": "订单列表",
+      "description": "展示联系邮箱关联的全部商品订单"
+    },
+    {
+      "file": "07b-order-unlock.png",
+      "title": "详情解锁",
+      "description": "输入订单密码后查看详情"
+    },
+    {
+      "file": "08-member-center.png",
+      "title": "会员中心",
+      "description": "查看账户、会员等级和最近订单"
+    },
+    {
+      "file": "09-balance.png",
+      "title": "余额明细",
+      "description": "查看充值、消费和退款流水"
+    },
+    {
+      "file": "10-admin-dashboard.png",
+      "title": "运营仪表盘",
+      "description": "汇总订单、收入、用户和库存数据"
+    },
+    {
+      "file": "11-admin-products.png",
+      "title": "商品管理",
+      "description": "管理商品、价格和上架状态"
+    },
+    {
+      "file": "12-admin-cardkeys.png",
+      "title": "卡密管理",
+      "description": "按商品批量导入卡密库存"
+    },
+    {
+      "file": "13-admin-orders.png",
+      "title": "订单管理",
+      "description": "按状态筛选并查看订单详情"
+    },
+    {
+      "file": "14-admin-settings.png",
+      "title": "系统设置",
+      "description": "配置站点、订单和支付方式"
+    },
+    {
+      "file": "15-mobile.png",
+      "title": "移动端适配",
+      "description": "手机也能浏览商品与查询订单"
+    },
+    {
+      "file": "16-admin-categories.png",
+      "title": "分类管理",
+      "description": "分类排序、状态与商品数量"
+    },
+    {
+      "file": "17-admin-users.png",
+      "title": "用户管理",
+      "description": "会员等级、余额、消费与账号状态"
+    },
+    {
+      "file": "18-admin-announcements.png",
+      "title": "公告管理",
+      "description": "公告类型、排序与启用状态"
+    }
+  ]
+}
