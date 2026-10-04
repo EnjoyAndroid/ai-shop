@@ -247,8 +247,8 @@ model Order {
   email         String?
   phone         String?
 
-  // 查询密码 (游客查询订单用)
-  queryPassword String?
+  // 商品订单查询密码哈希；充值订单不设置密码
+  queryPasswordHash String?
 
   // 金额 (分)
   totalAmount   Int           // 商品总价
@@ -286,6 +286,7 @@ model Order {
   @@index([orderNo])
   @@index([userId])
   @@index([email])
+  @@index([email, createdAt, id])
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])  // 复合索引：按状态筛选并按时间排序

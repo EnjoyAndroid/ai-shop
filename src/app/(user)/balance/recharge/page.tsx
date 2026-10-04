@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { HeaderClient } from "@/components/shop/header-client";
 
 interface PaymentMethod {
   value: string;
@@ -97,19 +96,11 @@ export default function RechargePage() {
 
       // 跳转到支付页面
       if (data.qrCode) {
-        const params = new URLSearchParams({
-          password: data.queryPassword || "",
-          qrcode: data.qrCode,
-          amount: String(amount),
-          method: paymentMethod,
-          usdt: String(data.usdtAmount || ""),
-          rate: String(data.exchangeRate || ""),
-        });
-        router.push(`/pay/${data.orderNo}?${params.toString()}`);
+        router.push(`/pay/${data.orderNo}`);
       } else if (data.payUrl) {
         window.location.href = data.payUrl;
       } else {
-        router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);
+        router.push(`/order/${data.orderNo}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建充值订单失败");
@@ -119,11 +110,7 @@ export default function RechargePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <HeaderClient />
-
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto">
           {/* 返回链接 */}
           <Link
             href="/balance"
@@ -246,8 +233,6 @@ export default function RechargePage() {
               充值成功后余额将自动到账
             </p>
           </div>
-        </div>
-      </main>
     </div>
   );
 }

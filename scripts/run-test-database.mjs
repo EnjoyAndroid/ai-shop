@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 if (existsSync('.env')) process.loadEnvFile('.env');
 const database = new URL(process.env.TEST_DATABASE_URL || process.env.DATABASE_URL);
-if (!process.env.TEST_DATABASE_URL) database.pathname = '/ai_shop_security_test';
+if (!process.env.TEST_DATABASE_URL) database.pathname = '/ai_shop_order_query_test';
 if (!database.pathname.endsWith('_test')) throw new Error('测试数据库名必须以 _test 结尾');
 const redis = new URL(process.env.TEST_REDIS_URL || process.env.REDIS_URL);
 if (!process.env.TEST_REDIS_URL) redis.pathname = '/15';

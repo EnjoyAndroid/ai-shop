@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { withoutOrderPassword } from "@/lib/order-public";
 import { getAdminSession } from "@/lib/admin-auth";
 import { logError } from "@/lib/logger";
 
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
       prisma.order.count({ where }),
     ]);
 
-    return NextResponse.json({ orders, total });
+    return NextResponse.json({ orders: orders.map(withoutOrderPassword), total }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     logError("Get orders", error);
     return NextResponse.json(

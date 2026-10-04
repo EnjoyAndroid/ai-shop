@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { accessibleOrder, orderError, orderJson } from "@/lib/order-http";
+
+export const dynamic = "force-dynamic";
 import { handlePaymentSuccess } from "@/lib/services/order.service";
 import { USDTProvider } from "@/lib/payment";
 import { requirePaymentEnabled } from "@/lib/payment/config";
-import { rateLimit } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/get-client-ip";
-import prisma from "@/lib/db";
-import { logError } from "@/lib/logger";
 
 /**
  * USDT 支付状态查询 API
@@ -13,41 +12,11 @@ import { logError } from "@/lib/logger";
  */
 export async function GET(request: NextRequest) {
   try {
-    if (!await rateLimit("usdt-check", getClientIp(request), 30, 60)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
-    const { searchParams } = new URL(request.url);
-    const orderNo = searchParams.get("orderNo");
-    const password = searchParams.get("password");
-
-    if (!orderNo) {
-      return NextResponse.json(
-        { success: false, error: "缺少订单号" },
-        { status: 400 }
-      );
-    }
-
-    // 查询订单
-    const order = await prisma.order.findUnique({
-      where: { orderNo },
-    });
-
-    if (!order) {
-      return NextResponse.json(
-        { success: false, error: "订单不存在" },
-        { status: 404 }
-      );
-    }
-
-    // 验证查询密码（游客订单）
-    if (!order.userId && order.queryPassword !== password) {
-      return NextResponse.json(
-        { success: false, error: "查询密码错误" },
-        { status: 403 }
-      );
-    }
-
+    const orderNo = new URL(request.url).searchParams.get("orderNo") || "";
+    const order = await accessibleOrder(request, orderNo, "usdt-check");
     // 如果订单已支付，直接返回成功
     if (order.status !== "PENDING") {
-      return NextResponse.json({
+      return orderJson({
         success: true,
         status: order.status,
         paid: ["PAID", "DELIVERED", "COMPLETED"].includes(order.status),
@@ -56,9 +25,9 @@ export async function GET(request: NextRequest) {
 
     // 检查支付方式
     if (!order.paymentMethod?.startsWith("USDT")) {
-      return NextResponse.json(
+      return orderJson(
         { success: false, error: "非 USDT 订单" },
-        { status: 400 }
+        400
       );
     }
 
@@ -75,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (result.status === "paid" && result.tradeNo) {
       await handlePaymentSuccess(orderNo, result.tradeNo, { method: order.paymentMethod, amount: order.payAmount });
 
-      return NextResponse.json({
+      return orderJson({
         success: true,
         status: "paid",
         paid: true,
@@ -83,19 +52,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    return orderJson({
       success: true,
       status: "pending",
       paid: false,
     });
-  } catch (error) {
-    logError("USDT check", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "查询失败，请稍后重试",
-      },
-      { status: 500 }
-    );
-  }
+  } catch (error) { return orderError("USDT check", error); }
 }

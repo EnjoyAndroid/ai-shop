@@ -1,10 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { accessibleOrder, orderError, orderJson } from "@/lib/order-http";
+
+export const dynamic = "force-dynamic";
 import { getPaymentProvider } from "@/lib/payment";
 import { requirePaymentEnabled } from "@/lib/payment/config";
-import { rateLimit } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/get-client-ip";
-import prisma from "@/lib/db";
-import { logError } from "@/lib/logger";
 
 // 重新获取/生成支付信息
 export async function GET(
@@ -12,37 +11,20 @@ export async function GET(
   { params }: { params: Promise<{ orderNo: string }> }
 ) {
   try {
-    if (!await rateLimit("payment-info", getClientIp(request), 60, 60)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
-    const { searchParams } = new URL(request.url);
-    const password = searchParams.get("password");
-    const orderNo = (await params).orderNo;
-
-    const order = await prisma.order.findUnique({
-      where: { orderNo },
-    });
-
-    if (!order) {
-      return NextResponse.json({ error: "订单不存在" }, { status: 404 });
-    }
-
-    // 验证查询密码
-    if (!order.userId && order.queryPassword !== password) {
-      return NextResponse.json({ error: "查询密码错误" }, { status: 403 });
-    }
-
+    const order = await accessibleOrder(request, (await params).orderNo, "payment-info");
     // 检查订单状态
     if (order.status !== "PENDING") {
-      return NextResponse.json({ error: "订单状态不允许支付" }, { status: 400 });
+      return orderJson({ error: "订单状态不允许支付" }, 400);
     }
 
     // 检查是否过期
     if (order.expiredAt && new Date(order.expiredAt) < new Date()) {
-      return NextResponse.json({ error: "订单已过期" }, { status: 400 });
+      return orderJson({ error: "订单已过期" }, 400);
     }
 
     // 检查支付方式
     if (!order.paymentMethod) {
-      return NextResponse.json({ error: "订单支付方式无效" }, { status: 400 });
+      return orderJson({ error: "订单支付方式无效" }, 400);
     }
 
     await requirePaymentEnabled(order.paymentMethod);
@@ -60,13 +42,13 @@ export async function GET(
     });
 
     if (!paymentResult.success) {
-      return NextResponse.json(
+      return orderJson(
         { error: paymentResult.errorMsg || "获取支付信息失败" },
-        { status: 500 }
+        500
       );
     }
 
-    return NextResponse.json({
+    return orderJson({
       orderNo: order.orderNo,
       payAmount: order.payAmount,
       paymentMethod: order.paymentMethod,
@@ -76,11 +58,5 @@ export async function GET(
       exchangeRate: (paymentResult as any).exchangeRate,
       expiredAt: order.expiredAt,
     });
-  } catch (error) {
-    logError("Get payment info", error);
-    return NextResponse.json(
-      { error: "获取支付信息失败" },
-      { status: 500 }
-    );
-  }
+  } catch (error) { return orderError("Get payment info", error); }
 }

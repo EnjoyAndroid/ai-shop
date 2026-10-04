@@ -10,7 +10,7 @@ const steps = [
   {
     icon: "2️⃣",
     title: "填写信息",
-    description: "填写接收卡密的邮箱",
+    description: "填写邮箱并设置订单查询密码",
     bgColor: "bg-green-100",
   },
   {

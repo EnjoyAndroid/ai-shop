@@ -1,6 +1,8 @@
 import prisma from "@/lib/db";
 import { transaction } from "@/lib/transaction";
-import { generateOrderNo, generatePassword } from "@/lib/encryption";
+import bcrypt from "bcryptjs";
+import { createWithOrderNumber } from "@/lib/order-number";
+import { createOrderSchema, type CreateOrderInput } from "@/lib/validations";
 import { allocateCardKeys, decryptCardKey } from "./product.service";
 import { getOrderExpireMinutes, getOrderAutoDeleteDays } from "./settings.service";
 import { sendPaymentSuccessEmail } from "@/lib/mail";
@@ -11,9 +13,8 @@ import { Prisma, type Order, type PaymentMethod, type OrderStatus } from "@prism
 
 const orderInclude = { items: { include: { cardKeys: true, product: { select: { id: true, name: true, slug: true } } } } } satisfies Prisma.OrderInclude;
 export type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
-export interface CreateOrderParams {
-  userId?: string; email?: string; phone?: string; paymentMethod: PaymentMethod;
-  items: { productId: string; quantity: number }[];
+export interface CreateOrderParams extends CreateOrderInput {
+  userId?: string;
   ip?: string; userAgent?: string; fingerprint?: string;
 }
 export interface PaymentEvidence { method: PaymentMethod; amount: number; }
@@ -55,7 +56,7 @@ async function afterPayment(order: OrderWithItems): Promise<void> {
   // 外部通知不在资金事务内，失败不重新执行入账或发货。
   if (order.email && process.env.SMTP_HOST && process.env.MAIL_FROM) {
     try {
-      await sendPaymentSuccessEmail({ to: order.email, orderNo: order.orderNo, queryPassword: order.queryPassword || "", items: order.items.map(item => ({ productName: item.productName, cardKeys: item.cardKeys.map(decryptCardKey) })), totalAmount: order.payAmount });
+      await sendPaymentSuccessEmail({ to: order.email, orderNo: order.orderNo, items: order.items.map(item => ({ productName: item.productName, cardKeys: item.cardKeys.map(decryptCardKey) })), totalAmount: order.payAmount });
     } catch (error) { logError("Payment email", error); }
   }
   try {
@@ -64,34 +65,22 @@ async function afterPayment(order: OrderWithItems): Promise<void> {
 }
 
 export async function createOrder(params: CreateOrderParams): Promise<OrderWithItems> {
-  const { userId, email, paymentMethod, ip, userAgent, fingerprint } = params;
+  const { userId, ip, userAgent, fingerprint, ...input } = params;
+  const { productId, quantity, email, paymentMethod, queryPassword } = createOrderSchema.parse(input);
   if (paymentMethod === "BALANCE" && !userId) throw new Error("请先登录后使用余额支付");
-  const merged = new Map<string, number>();
-  for (const item of params.items) {
-    if (!Number.isSafeInteger(item.quantity) || item.quantity < 1) throw new Error("无效的商品数量");
-    merged.set(item.productId, (merged.get(item.productId) || 0) + item.quantity);
-  }
-  const items = [...merged].map(([productId, quantity]) => ({ productId, quantity })).sort((a, b) => a.productId.localeCompare(b.productId));
-  if (!items.length || items.length > 50) throw new Error("无效的商品数量");
-  const orderNo = generateOrderNo();
-  const queryPassword = generatePassword();
+  const queryPasswordHash = await bcrypt.hash(queryPassword, 12);
   const expiredAt = new Date(Date.now() + await getOrderExpireMinutes() * 60000);
-  const order = await transaction(async tx => {
+  const order = await createWithOrderNumber(orderNo => transaction(async tx => {
     const user = userId ? await tx.user.findUnique({ where: { id: userId, status: "ACTIVE" }, include: { level: true } }) : null;
     if (userId && !user) throw new Error("用户不可用");
-    const products = await tx.product.findMany({ where: { id: { in: items.map(item => item.productId) }, isActive: true, category: { isActive: true } } });
-    const productMap = new Map(products.map(product => [product.id, product]));
-    let totalAmount = 0;
-    for (const item of items) {
-      const product = productMap.get(item.productId);
-      if (!product || item.quantity < product.minQuantity || item.quantity > product.maxQuantity) throw new Error("商品不可用或购买数量超限");
-      totalAmount += product.price * item.quantity;
-    }
+    const product = await tx.product.findFirst({ where: { id: productId, isActive: true, category: { isActive: true } } });
+    if (!product || quantity < product.minQuantity || quantity > product.maxQuantity) throw new Error("商品不可用或购买数量超限");
+    const totalAmount = product.price * quantity;
     const discount = user?.level?.discount ?? 100;
     const payAmount = totalAmount - Math.floor(totalAmount * (100 - discount) / 100);
     if (!Number.isSafeInteger(payAmount) || payAmount < 1 || payAmount > 10000000) throw new Error("订单金额无效");
-    const created = await tx.order.create({ data: { orderNo, userId, email, paymentMethod, totalAmount, payAmount, discountAmount: totalAmount - payAmount, queryPassword, expiredAt, ip, userAgent, fingerprint,
-      items: { create: items.map(item => ({ ...item, productName: productMap.get(item.productId)!.name, price: productMap.get(item.productId)!.price })) } }, include: orderInclude });
+    const created = await tx.order.create({ data: { orderNo, userId, email, paymentMethod, totalAmount, payAmount, discountAmount: totalAmount - payAmount, queryPasswordHash, expiredAt, ip, userAgent, fingerprint,
+      items: { create: { productId, quantity, productName: product.name, price: product.price } } }, include: orderInclude });
     for (const item of created.items) {
       const selected = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "CardKey" WHERE "productId" = ${item.productId} AND status = 'AVAILABLE'
@@ -110,7 +99,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderWithI
     const paymentNo = `BALANCE_${orderNo}`;
     await tx.paymentReceipt.create({ data: { orderId: created.id, method: "BALANCE", transactionId: paymentNo, amount: payAmount } });
     return fulfill(tx, created, paymentNo);
-  });
+  }));
   if (paymentMethod === "BALANCE") await afterPayment(order); else await invalidateProducts(order);
   return order;
 }
@@ -198,14 +187,6 @@ export async function adjustUserBalance(userId: string, amount: number, remark: 
     await tx.balanceLog.create({ data: { userId, amount, balance: user.balance, type: "ADJUST", remark } });
     return user.balance;
   });
-}
-
-export async function getOrderByNo(orderNo: string, queryPassword?: string): Promise<OrderWithItems | null> {
-  const order = await prisma.order.findUnique({ where: { orderNo }, include: orderInclude });
-  if (!order) return null;
-  // 保留用户明确要求的查询规则。
-  if (!order.userId && order.queryPassword !== queryPassword) throw new Error("查询密码错误");
-  return order;
 }
 
 export async function getUserOrders(userId: string, options: { page?: number; limit?: number; status?: OrderStatus } = {}): Promise<{ orders: Order[]; total: number }> {

@@ -15,7 +15,6 @@ const transporter = nodemailer.createTransport({
 interface OrderEmailParams {
   to: string;
   orderNo: string;
-  queryPassword: string;
   items: {
     productName: string;
     cardKeys: string[];
@@ -27,7 +26,7 @@ interface OrderEmailParams {
  * 发送支付成功邮件（包含卡密）
  */
 export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise<boolean> {
-  const { to, orderNo, queryPassword, items, totalAmount } = params;
+  const { to, orderNo, items, totalAmount } = params;
 
   // 生成卡密列表 HTML
   const cardKeysHtml = items
@@ -75,10 +74,6 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
               <tr>
                 <td style="color: #666; padding: 4px 0;">订单号：</td>
                 <td style="color: #333; font-weight: bold; font-family: monospace;">${orderNo}</td>
-              </tr>
-              <tr>
-                <td style="color: #666; padding: 4px 0;">查询密码：</td>
-                <td style="color: #dc2626; font-weight: bold; font-family: monospace;">${queryPassword}</td>
               </tr>
               <tr>
                 <td style="color: #666; padding: 4px 0;">支付金额：</td>

@@ -10,7 +10,7 @@ interface OrderDetail {
   orderNo: string;
   email: string | null;
   phone: string | null;
-  queryPassword: string;
+  hasQueryPassword: boolean;
   totalAmount: number;
   discountAmount: number;
   payAmount: number;
@@ -212,7 +212,7 @@ export default function AdminOrderDetailPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">查询密码</span>
-                    <span className="font-mono">{order.queryPassword}</span>
+                    <span className="font-mono">{order.hasQueryPassword ? "已设置" : "未设置"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">创建时间</span>

@@ -3,7 +3,6 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { getOrderStatusInfo } from "@/lib/order-status";
-import { Header } from "@/components/shop/header";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -28,39 +27,7 @@ export default async function UserOrdersPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* 侧边栏 */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl p-6 sticky top-24">
-              <nav className="space-y-2">
-                <Link
-                  href="/dashboard"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  个人中心
-                </Link>
-                <Link
-                  href="/orders"
-                  className="block px-4 py-2 bg-primary/10 text-primary rounded-lg"
-                >
-                  我的订单
-                </Link>
-                <Link
-                  href="/balance"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  我的余额
-                </Link>
-              </nav>
-            </div>
-          </aside>
-
-          {/* 主内容 */}
-          <div className="lg:col-span-3">
+    <div>
             <div className="bg-white rounded-xl">
               <div className="p-6 border-b">
                 <h1 className="text-xl font-bold text-gray-800">我的订单</h1>
@@ -147,7 +114,7 @@ export default async function UserOrdersPage() {
                             </span>
                           </span>
                           <Link
-                            href={`/order/${order.orderNo}?password=${order.queryPassword}`}
+                            href={`/order/${order.orderNo}`}
                             className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90"
                           >
                             查看详情
@@ -170,9 +137,6 @@ export default async function UserOrdersPage() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </main>
     </div>
   );
 }

@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+.order-query-masked {
+  -webkit-text-security: disc;
+}
+
+.order-query-masked::placeholder {
+  -webkit-text-security: none;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

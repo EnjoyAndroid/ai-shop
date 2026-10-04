@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { PasswordInput } from "@/components/ui/password-input";
+import { createOrderSchema } from "@/lib/validations";
+import { saveOrderAccess } from "@/lib/order-client";
 
 interface PaymentMethod {
   value: string;
@@ -21,8 +24,9 @@ interface BuyNowButtonProps {
 }
 
 export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(product.minQuantity);
   const [email, setEmail] = useState("");
+  const [queryPassword, setQueryPassword] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,8 +70,9 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
   };
 
   const handleBuyNow = async () => {
-    if (!email) {
-      setError("请填写邮箱，用于接收卡密");
+    const validation = createOrderSchema.safeParse({ productId: product.productId, quantity, email, paymentMethod, queryPassword });
+    if (!validation.success) {
+      setError(validation.error.issues[0].message);
       return;
     }
 
@@ -117,13 +122,10 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          items: [
-            {
-              productId: product.productId,
-              quantity,
-            },
-          ],
-          email: email || undefined,
+          productId: product.productId,
+          quantity,
+          email,
+          queryPassword,
           paymentMethod,
         }),
       });
@@ -134,31 +136,16 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
         throw new Error(data.error || "创建订单失败");
       }
 
-      if (data.orderNo && data.queryPassword) sessionStorage.setItem(`order-password:${data.orderNo}`, data.queryPassword);
-
-      // 余额支付成功，直接跳转订单详情
+      saveOrderAccess(data.orderNo, data.accessToken);
+      setQueryPassword("");
       if (paymentMethod === "BALANCE") {
-        router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);
-        return;
-      }
-
-      // 跳转到支付页面或订单详情
-      if (data.qrCode) {
-        // 跳转到我们自己的支付页面（带倒计时）
-        const params = new URLSearchParams({
-          password: data.queryPassword,
-          qrcode: data.qrCode,
-          amount: String(product.price * quantity),
-          method: paymentMethod,
-          usdt: String(data.usdtAmount || ""),
-          rate: String(data.exchangeRate || ""),
-        });
-        router.push(`/pay/${data.orderNo}?${params.toString()}`);
+        router.push(`/order/${data.orderNo}`);
+      } else if (data.qrCode) {
+        router.push(`/pay/${data.orderNo}`);
       } else if (data.payUrl) {
-        // 没有二维码时直接跳转第三方
         window.location.href = data.payUrl;
       } else {
-        router.push(`/order/${data.orderNo}?password=${data.queryPassword}`);
+        router.push(`/order/${data.orderNo}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建订单失败");
@@ -265,16 +252,30 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
 
       {/* 联系方式 */}
       <div>
-        <label className="block text-sm text-gray-600 mb-1">
+        <label htmlFor="order-contact-email" className="block text-sm text-gray-600 mb-1">
           邮箱 <span className="text-red-500">*</span>
         </label>
         <input
+          id="order-contact-email"
+          name="orderContactEmail"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="接收卡密的邮箱"
+          placeholder="请输入邮箱"
+          autoComplete="off"
           className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
         />
+      </div>
+
+      <div>
+        <label htmlFor="order-query-code" className="block text-sm text-gray-600 mb-1">
+          订单查询密码 <span className="text-red-500">*</span>
+        </label>
+        <PasswordInput id="order-query-code" name="orderLookupCode" value={queryPassword}
+          onChange={event => setQueryPassword(event.target.value)} required minLength={8} avoidPasswordManager
+          placeholder="请设置至少8位的查询密码"
+          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm" />
+        <p className="text-xs text-gray-500 mt-2">请妥善保存，用于查询订单详情和领取卡密。密码不会通过邮件发送。</p>
       </div>
 
       {/* 支付方式 */}
@@ -310,7 +311,7 @@ export function BuyNowButton({ product, disabled }: BuyNowButtonProps) {
       {/* 提交按钮 */}
       <button
         onClick={handleBuyNow}
-        disabled={loading || disabled}
+        disabled={loading || disabled || !paymentMethod}
         className="w-full py-3 mt-4 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50"
       >
         {loading ? "提交中..." : `立即支付 ¥${((product.price * quantity) / 100).toFixed(2)}`}

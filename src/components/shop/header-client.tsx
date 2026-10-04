@@ -6,16 +6,14 @@ import { useSession, signOut } from "next-auth/react";
 
 interface HeaderClientProps {
   isLoggedIn?: boolean;
-  userName?: string;
 }
 
-export function HeaderClient({ isLoggedIn: propIsLoggedIn, userName: propUserName }: HeaderClientProps = {}) {
+export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps = {}) {
   const { data: session } = useSession();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // 使用 props 或 session 数据
   const isLoggedIn = propIsLoggedIn ?? !!session?.user;
-  const userName = propUserName || session?.user?.name || session?.user?.email || "";
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
   const closeMenu = () => setIsMenuOpen(false);
@@ -43,17 +41,12 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn, userName: propUserNam
                     <Link href="/dashboard" className="text-gray-600 hover:text-primary">
                       个人中心
                     </Link>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-600">
-                        {userName}
-                      </span>
-                      <button
+                    <button
                         onClick={() => signOut({ callbackUrl: "/" })}
                         className="text-gray-500 hover:text-red-500 text-sm"
                       >
                         退出
-                      </button>
-                    </div>
+                    </button>
                   </>
                 ) : (
                   <>
@@ -126,25 +119,6 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn, userName: propUserNam
               </svg>
             </button>
           </div>
-
-          {/* 用户信息 */}
-          {isLoggedIn && (
-            <div className="p-4 bg-gray-50 border-b">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <span className="text-blue-600 font-medium">
-                    {userName?.charAt(0)?.toUpperCase() || "U"}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 truncate">
-                    {userName || "用户"}
-                  </p>
-                  <p className="text-xs text-gray-500">已登录</p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* 导航链接 */}
           <nav className="flex-1 p-4 space-y-2">

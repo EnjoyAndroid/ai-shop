@@ -1,45 +1,31 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
+import { orderAccessHeaders, orderAccessUrl } from "@/lib/order-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ContactSupport } from "@/components/shop/contact-support";
 
 function PayContent() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const router = useRouter();
-
   const orderNo = params.orderNo as string;
-  const password = searchParams.get("password") || "";
-  const urlQrCode = searchParams.get("qrcode") || "";
-  const urlAmount = searchParams.get("amount") || "";
-  const urlMethod = searchParams.get("method") || "";
-  const urlUsdtAmount = searchParams.get("usdt") || "";
-
-  // 状态：优先使用 API 数据，URL 参数作为备用
   const [orderData, setOrderData] = useState<{
-    payAmount: number;
-    paymentMethod: string;
-    qrCode: string;
-    usdtAmount: string;
+    payAmount: number; paymentMethod: string; qrCode: string; usdtAmount: string; payUrl?: string;
   } | null>(null);
-
   const [expiredAt, setExpiredAt] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // 使用 API 数据或 URL 参数
-  const amount = orderData?.payAmount || (urlAmount ? parseInt(urlAmount) : 0);
-  const method = orderData?.paymentMethod || urlMethod || "WECHAT";
-  const qrCode = orderData?.qrCode || urlQrCode;
-  const usdtAmount = orderData?.usdtAmount || urlUsdtAmount;
-
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const amount = orderData?.payAmount ?? 0;
+  const method = orderData?.paymentMethod || "";
+  const qrCode = orderData?.qrCode || "";
+  const usdtAmount = orderData?.usdtAmount || "";
   const isUSDT = method.startsWith("USDT");
 
-  // 复制地址到剪贴板
   const copyAddress = async () => {
     if (qrCode) {
       await navigator.clipboard.writeText(qrCode);
@@ -48,149 +34,71 @@ function PayContent() {
     }
   };
 
-  // 获取订单信息（金额、过期时间、二维码等）
   useEffect(() => {
-    const fetchOrderData = async () => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    setOrderData(null);
+    const initialize = async () => {
       try {
-        // 先尝试获取支付信息（包含二维码）
-        const payRes = await fetch(`/api/orders/${orderNo}/pay?password=${password}`);
-        const payData = await payRes.json();
-
-        if (payRes.ok && payData) {
-          setOrderData({
-            payAmount: payData.payAmount,
-            paymentMethod: payData.paymentMethod,
-            qrCode: payData.qrCode || urlQrCode,
-            usdtAmount: payData.usdtAmount || urlUsdtAmount,
-          });
-
-          // 设置过期时间戳
-          if (payData.expiredAt) {
-            setExpiredAt(new Date(payData.expiredAt).getTime());
-            const now = Date.now();
-            const remainingSeconds = Math.max(0, Math.floor((new Date(payData.expiredAt).getTime() - now) / 1000));
-            setCountdown(remainingSeconds);
-          } else {
-            setExpiredAt(Date.now() + 10 * 60 * 1000);
-            setCountdown(10 * 60);
-          }
-        } else {
-          // 如果获取支付信息失败，尝试获取订单基本信息
-          const res = await fetch(`/api/orders?orderNo=${orderNo}&password=${password}`);
-          const data = await res.json();
-
-          if (data.order) {
-            setOrderData({
-              payAmount: data.order.payAmount,
-              paymentMethod: data.order.paymentMethod,
-              qrCode: urlQrCode,
-              usdtAmount: urlUsdtAmount,
-            });
-
-            if (data.order.expiredAt) {
-              setExpiredAt(new Date(data.order.expiredAt).getTime());
-              const now = Date.now();
-              const remainingSeconds = Math.max(0, Math.floor((new Date(data.order.expiredAt).getTime() - now) / 1000));
-              setCountdown(remainingSeconds);
-            } else {
-              setExpiredAt(Date.now() + 10 * 60 * 1000);
-              setCountdown(10 * 60);
-            }
-          } else {
-            setExpiredAt(Date.now() + 10 * 60 * 1000);
-            setCountdown(10 * 60);
-          }
+        const options = { headers: orderAccessHeaders(orderNo), signal: controller.signal, cache: "no-store" as const };
+        const statusRes = await fetch(`/api/orders/${orderNo}/status`, options);
+        const status = await statusRes.json();
+        if (status.code === "ORDER_ACCESS_REQUIRED") { router.replace(orderAccessUrl(orderNo)); return; }
+        if (!statusRes.ok) throw new Error(status.error || "获取订单状态失败");
+        if (status.paid) { router.replace(orderNo.startsWith("R") ? "/balance?recharge=success" : `/order/${orderNo}`); return; }
+        if (status.status === "CANCELLED" || (status.expiredAt && new Date(status.expiredAt).getTime() <= Date.now())) {
+          setCountdown(0); return;
         }
-      } catch (e) {
-        console.error("Fetch order data error:", e);
-        setExpiredAt(Date.now() + 10 * 60 * 1000);
-        setCountdown(10 * 60);
-      } finally {
-        setLoading(false);
-      }
+        if (status.status !== "PENDING") throw new Error("当前订单状态不允许支付");
+        const response = await fetch(`/api/orders/${orderNo}/pay`, options);
+        const data = await response.json();
+        if (data.code === "ORDER_ACCESS_REQUIRED") { router.replace(orderAccessUrl(orderNo)); return; }
+        if (!response.ok) throw new Error(data.error || "获取支付信息失败");
+        if (!data.expiredAt) throw new Error("订单过期时间无效，请联系客服");
+        setOrderData(data);
+        setExpiredAt(new Date(data.expiredAt).getTime());
+        setCountdown(Math.max(0, Math.floor((new Date(data.expiredAt).getTime() - Date.now()) / 1000)));
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "加载支付信息失败");
+      } finally { if (!controller.signal.aborted) setLoading(false); }
     };
+    void initialize();
+    return () => controller.abort();
+  }, [orderNo, router, retry]);
 
-    fetchOrderData();
-  }, [orderNo, password, urlQrCode, urlUsdtAmount]);
-
-  // 倒计时 - 基于过期时间戳实时计算，页面不可见时也能正确计时
   useEffect(() => {
     if (expiredAt === null) return;
-
-    const updateCountdown = () => {
-      const now = Date.now();
-      const remaining = Math.max(0, Math.floor((expiredAt - now) / 1000));
-      setCountdown(remaining);
-    };
-
-    // 立即更新一次
-    updateCountdown();
-
-    const timer = setInterval(updateCountdown, 1000);
-
-    // 页面可见性变化时立即更新
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        updateCountdown();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    const update = () => setCountdown(Math.max(0, Math.floor((expiredAt - Date.now()) / 1000)));
+    update();
+    const timer = setInterval(update, 1000);
+    document.addEventListener("visibilitychange", update);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); };
   }, [expiredAt]);
 
-  // 轮询检查支付状态
+  const canPoll = Boolean(orderData && !loading && !error && countdown !== null && countdown > 0);
   useEffect(() => {
+    if (!canPoll) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
     const checkPayment = async () => {
       try {
-        // USDT 使用专用 API
-        const apiUrl = isUSDT
-          ? `/api/payment/usdt/check?orderNo=${orderNo}&password=${password}`
-          : `/api/orders?orderNo=${orderNo}&password=${password}`;
-
-        const res = await fetch(apiUrl);
-        const data = await res.json();
-
-        // 判断是否为充值订单（订单号以 R 开头）
-        const isRechargeOrder = orderNo.startsWith("R");
-
-        // USDT API 返回 paid: true
-        if (data.paid) {
-          if (isRechargeOrder) {
-            router.push("/balance?recharge=success");
-          } else {
-            router.push(`/order/${orderNo}?password=${password}`);
-          }
-          return;
-        }
-
-        // 检查订单是否已取消
-        if (data.order?.status === "CANCELLED") {
-          setCountdown(0); // 触发超时界面
-          return;
-        }
-
-        // 普通支付 API 返回 order.status（包含 COMPLETED 状态）
-        if (data.order?.status === "DELIVERED" || data.order?.status === "PAID" || data.order?.status === "COMPLETED") {
-          if (isRechargeOrder) {
-            router.push("/balance?recharge=success");
-          } else {
-            router.push(`/order/${orderNo}?password=${password}`);
-          }
-        }
-      } catch (e) {
-        console.error("Check payment error:", e);
+        const url = isUSDT ? `/api/payment/usdt/check?orderNo=${orderNo}` : `/api/orders/${orderNo}/status`;
+        const response = await fetch(url, { headers: orderAccessHeaders(orderNo), signal: controller.signal, cache: "no-store" });
+        const data = await response.json();
+        if (data.code === "ORDER_ACCESS_REQUIRED") { router.replace(orderAccessUrl(orderNo)); return; }
+        if (!response.ok) throw new Error(data.error || "检测支付状态失败");
+        if (data.paid) { router.replace(orderNo.startsWith("R") ? "/balance?recharge=success" : `/order/${orderNo}`); return; }
+        if (data.status === "CANCELLED") { setExpiredAt(Date.now()); setCountdown(0); return; }
+        if (data.status === "REFUNDED") { setError("订单已退款"); return; }
+        if (!controller.signal.aborted) timer = setTimeout(checkPayment, isUSDT ? 5000 : 3000);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "检测支付状态失败");
       }
     };
-
-    // USDT 每 5 秒检查一次（区块链确认需要时间），其他每 3 秒
-    const interval = setInterval(checkPayment, isUSDT ? 5000 : 3000);
-
-    return () => clearInterval(interval);
-  }, [orderNo, password, router, isUSDT]);
+    timer = setTimeout(checkPayment, isUSDT ? 5000 : 3000);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [canPoll, orderNo, router, isUSDT]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -202,6 +110,17 @@ function PayContent() {
   const isAlipay = method === "ALIPAY";
   const methodLabel = isWechat ? "微信" : isAlipay ? "支付宝" : "USDT (TRON-TRC20)";
   const themeColor = isWechat ? "#07C160" : isAlipay ? "#1677FF" : "#26A17B";
+
+  if (error) return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl p-8 max-w-md w-full text-center">
+        <h1 className="text-xl font-bold mb-4">暂时无法加载支付信息</h1>
+        <p role="alert" className="text-red-600 mb-6">{error}</p>
+        <button onClick={() => setRetry(value => value + 1)} className="px-5 py-2 bg-primary text-white rounded-lg">重试</button>
+        <Link href={orderNo.startsWith("R") ? "/orders" : "/order"} className="block mt-4 text-primary">返回订单列表</Link>
+      </div>
+    </div>
+  );
 
   // 加载中状态
   if (loading || countdown === null) {
@@ -442,6 +361,8 @@ function PayContent() {
                     </div>
                   </div>
                 )}
+
+                {!qrCode && orderData?.payUrl && <a href={orderData.payUrl} className="px-6 py-3 mb-4 bg-primary text-white rounded-lg">前往支付</a>}
 
                 {/* 倒计时提示 */}
                 <div className="text-center mb-4">

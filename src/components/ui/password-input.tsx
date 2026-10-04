@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface PasswordInputProps {
   value: string;
@@ -14,6 +14,7 @@ interface PasswordInputProps {
   id?: string;
   name?: string;
   showGenerator?: boolean;
+  avoidPasswordManager?: boolean;
 }
 
 // 生成随机密码
@@ -52,8 +53,19 @@ export function PasswordInput({
   id,
   name,
   showGenerator = false,
+  avoidPasswordManager = false,
 }: PasswordInputProps) {
   const [showPassword, setShowPassword] = useState(false);
+  const [supportsTextMask, setSupportsTextMask] = useState(true);
+
+  useEffect(() => {
+    if (avoidPasswordManager) setSupportsTextMask(CSS.supports("-webkit-text-security", "disc"));
+  }, [avoidPasswordManager]);
+
+  // Order lookup secrets are separate from account credentials. Keep the input
+  // masked without advertising it as a login password to the browser manager.
+  // Older engines without text-security support retain native password masking.
+  const textMask = avoidPasswordManager && supportsTextMask;
 
   const handleGeneratePassword = () => {
     const newPassword = generatePassword(12);
@@ -69,14 +81,20 @@ export function PasswordInput({
   return (
     <div className="relative">
       <input
-        type={showPassword ? "text" : "password"}
+        type={showPassword || textMask ? "text" : "password"}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        className={`w-full ${showGenerator ? "pr-20" : "pr-10"} ${className}`}
+        className={`w-full ${showGenerator ? "pr-20" : "pr-10"} ${textMask && !showPassword ? "order-query-masked" : ""} ${className}`}
         required={required}
         minLength={minLength}
-        autoComplete={autoComplete}
+        autoComplete={avoidPasswordManager ? "off" : autoComplete}
+        autoCorrect={avoidPasswordManager ? "off" : undefined}
+        autoCapitalize={avoidPasswordManager ? "none" : undefined}
+        spellCheck={avoidPasswordManager ? false : undefined}
+        data-1p-ignore={avoidPasswordManager ? "true" : undefined}
+        data-lpignore={avoidPasswordManager ? "true" : undefined}
+        data-bwignore={avoidPasswordManager ? "true" : undefined}
         id={id}
         name={name}
       />
@@ -94,6 +112,7 @@ export function PasswordInput({
         <button
           type="button"
           onClick={() => setShowPassword(!showPassword)}
+          aria-label={showPassword ? "隐藏密码" : "显示密码"}
           className="text-gray-400 hover:text-gray-600"
         >
         {showPassword ? (

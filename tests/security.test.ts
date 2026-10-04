@@ -59,7 +59,7 @@ test("USDT requires exact atomic amount, contract, recipient and payment window"
 });
 
 test("fractional quantities and phone-only registrations are rejected", () => {
-  assert.equal(createOrderSchema.safeParse({ items: [{ productId: "x", quantity: 1.5 }], email: "test@example.invalid", paymentMethod: "BALANCE" }).success, false);
+  assert.equal(createOrderSchema.safeParse({ productId: "x", quantity: 1.5, queryPassword: "test-order-password", email: "test@example.invalid", paymentMethod: "BALANCE" }).success, false);
   assert.equal(registerSchema.safeParse({ phone: "13800138000", password: "test-password" }).success, false);
 });
 

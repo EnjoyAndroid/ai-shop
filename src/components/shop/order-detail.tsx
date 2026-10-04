@@ -6,11 +6,9 @@ import { getOrderStatusInfo } from "@/lib/order-status";
 
 interface OrderDetailProps {
   order: any;
-  showQueryPassword?: boolean;
-  queryPassword?: string;
 }
 
-export function OrderDetail({ order, showQueryPassword = false, queryPassword }: OrderDetailProps) {
+export function OrderDetail({ order }: OrderDetailProps) {
   const router = useRouter();
   const [toast, setToast] = useState("");
   const [countdown, setCountdown] = useState("");
@@ -18,11 +16,7 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
 
   // 继续支付
   const handleContinuePay = () => {
-    const params = new URLSearchParams();
-    if (queryPassword) {
-      params.set("password", queryPassword);
-    }
-    router.push(`/pay/${order.orderNo}?${params.toString()}`);
+    router.push(`/pay/${order.orderNo}`);
   };
 
   // 倒计时
@@ -66,9 +60,6 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
     if (!order.items) return;
 
     let content = `订单号: ${order.orderNo}\n`;
-    if (queryPassword) {
-      content += `查询密码: ${queryPassword}\n`;
-    }
     content += `================================\n\n`;
 
     order.items.forEach((item: any) => {
@@ -112,7 +103,7 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
       <div className="flex items-center justify-between mb-6 pb-6 border-b">
         <div>
           <p className="text-gray-500 text-sm">订单号</p>
-          <p className="font-mono font-bold">{order.orderNo}</p>
+          <p className="font-mono font-bold break-all">{order.orderNo}</p>
         </div>
         <span
           className={`px-4 py-2 rounded-full text-sm font-medium ${
@@ -122,27 +113,6 @@ export function OrderDetail({ order, showQueryPassword = false, queryPassword }:
           {getOrderStatusInfo(order.status).text}
         </span>
       </div>
-
-      {/* 查询密码提示 */}
-      {showQueryPassword && queryPassword && (
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-blue-700">🔑 订单查询密码</p>
-              <p className="font-mono font-bold text-blue-900 text-lg">{queryPassword}</p>
-            </div>
-            <button
-              onClick={() => copyToClipboard(queryPassword, "已复制查询密码")}
-              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
-            >
-              复制
-            </button>
-          </div>
-          <p className="text-xs text-blue-600 mt-2">
-            请保存此密码，用于以后查询订单
-          </p>
-        </div>
-      )}
 
       {/* 订单信息 */}
       <div className="mb-6">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { orderAccessHeaders, orderAccessUrl, orderReturnUrl } from "@/lib/order-client";
 import Link from "next/link";
 import { HeaderClient } from "@/components/shop/header-client";
 import { OrderDetail } from "@/components/shop/order-detail";
@@ -9,43 +10,48 @@ import { ContactSupport } from "@/components/shop/contact-support";
 
 function OrderDetailContent() {
   const params = useParams();
-  const searchParams = useSearchParams();
+  const router = useRouter();
   const orderNo = params.orderNo as string;
-  const [password, setPassword] = useState(searchParams.get("password") || "");
-  useEffect(() => {
-    if (!password) setPassword(sessionStorage.getItem(`order-password:${orderNo}`) || "");
-  }, [orderNo, password]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [order, setOrder] = useState<any>(null);
+  const [returnUrl, setReturnUrl] = useState("/order");
 
   // 判断是否为充值订单
   const isRechargeOrder = orderNo.startsWith("R");
-  const pageTitle = isRechargeOrder ? "余额充值订单详情" : "订单详情";
 
   useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setOrder(null);
+    setError("");
+    setReturnUrl(orderReturnUrl(orderNo));
     const fetchOrder = async () => {
       try {
         const response = await fetch(
-          `/api/orders?orderNo=${encodeURIComponent(orderNo)}&password=${encodeURIComponent(password)}`
+          `/api/orders/${encodeURIComponent(orderNo)}`, { headers: orderAccessHeaders(orderNo), cache: "no-store", signal: controller.signal }
         );
         const data = await response.json();
 
+        if (data.code === "ORDER_ACCESS_REQUIRED") {
+          router.replace(orderAccessUrl(orderNo));
+          return;
+        }
         if (!response.ok) {
           throw new Error(data.error || "查询失败");
         }
 
-        setOrder(data.order);
+        if (!controller.signal.aborted) setOrder(data.order);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "查询失败");
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "查询失败");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    fetchOrder();
-  }, [orderNo, password]);
+    void fetchOrder();
+    return () => controller.abort();
+  }, [orderNo, router]);
 
   return (
     <>
@@ -77,11 +83,8 @@ function OrderDetailContent() {
           <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
             {isRechargeOrder ? "余额充值订单详情" : "商品订单详情"}
           </h1>
-          <OrderDetail
-            order={order}
-            showQueryPassword={true}
-            queryPassword={password}
-          />
+          <div className="mb-4"><Link href={returnUrl} className="text-primary hover:underline">← {returnUrl === "/order" ? "返回订单查询" : "返回订单列表"}</Link></div>
+          <OrderDetail order={order} />
         </>
       )}
     </>

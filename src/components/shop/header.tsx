@@ -26,12 +26,7 @@ export async function Header() {
                 <Link href="/dashboard" className="text-gray-600 hover:text-primary">
                   个人中心
                 </Link>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-600">
-                    {session.user.name || session.user.email}
-                  </span>
-                  <LogoutButton />
-                </div>
+                <LogoutButton />
               </>
             ) : (
               <>
@@ -49,7 +44,7 @@ export async function Header() {
           </nav>
 
           {/* 移动端菜单 */}
-          <HeaderClient isLoggedIn={!!session?.user} userName={session?.user?.name || session?.user?.email || ""} />
+          <HeaderClient isLoggedIn={!!session?.user} />
         </div>
       </div>
     </header>

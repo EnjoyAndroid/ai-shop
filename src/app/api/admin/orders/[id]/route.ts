@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
+import { withoutOrderPassword } from "@/lib/order-public";
 import { decryptCardKey } from "@/lib/services/product.service";
 import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { cancelOrder, manualDeliver, refundOrder } from "@/lib/services/order.service";
@@ -35,7 +36,7 @@ export async function GET(
 
     // 解密卡密
     const orderWithDecryptedKeys = {
-      ...order,
+      ...withoutOrderPassword(order),
       items: order.items.map((item) => ({
         ...item,
         cardKeys: item.cardKeys.map((ck) => ({
@@ -45,7 +46,7 @@ export async function GET(
       })),
     };
 
-    return NextResponse.json({ order: orderWithDecryptedKeys });
+    return NextResponse.json({ order: orderWithDecryptedKeys }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     logError("Get order", error);
     return NextResponse.json({ error: "获取订单失败" }, { status: 500 });
@@ -86,7 +87,7 @@ export async function POST(
 
     // 解密卡密
     const orderWithDecryptedKeys = {
-      ...updatedOrder,
+      ...withoutOrderPassword(updatedOrder),
       items: updatedOrder.items.map((item) => ({
         ...item,
         cardKeys: item.cardKeys.map((ck) => ({
@@ -96,7 +97,7 @@ export async function POST(
       })),
     };
 
-    return NextResponse.json({ order: orderWithDecryptedKeys });
+    return NextResponse.json({ order: orderWithDecryptedKeys }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     logError("Order action", error);
     return NextResponse.json({ error: "操作失败" }, { status: 500 });

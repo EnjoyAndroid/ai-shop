@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { ORDER_ALPHABET } from "./order-rules";
 import { requireSecret } from "./security-config";
 
 const ALGORITHM = "aes-256-gcm";
@@ -55,33 +56,9 @@ export function decrypt(encryptedData: EncryptedData): string {
   return decrypted;
 }
 
-/**
- * 生成随机密码 (用于订单查询密码) - 使用加密安全的随机数
- */
-export function generatePassword(length: number = 8): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    password += chars.charAt(crypto.randomInt(0, chars.length));
-  }
-  return password;
-}
-
-/**
- * 生成订单号 - 使用加密安全的随机数
- */
+/** 20 independent base-32 characters provide 100 bits of random entropy. */
 export function generateOrderNo(): string {
-  const now = new Date();
-  const year = now.getFullYear().toString().slice(-2);
-  const month = (now.getMonth() + 1).toString().padStart(2, "0");
-  const day = now.getDate().toString().padStart(2, "0");
-  const hour = now.getHours().toString().padStart(2, "0");
-  const minute = now.getMinutes().toString().padStart(2, "0");
-  const second = now.getSeconds().toString().padStart(2, "0");
-  // 使用加密安全的随机数，增加到6位
-  const random = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
-
-  return `${year}${month}${day}${hour}${minute}${second}${random}`;
+  return "AS" + Array.from({ length: 20 }, () => ORDER_ALPHABET[crypto.randomInt(ORDER_ALPHABET.length)]).join("");
 }
 
 /**

@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
-import { Header } from "@/components/shop/header";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -42,52 +41,16 @@ export default async function UserDashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
+    <div className="space-y-6">
+      <section aria-label="账户信息" className="flex items-center gap-4 rounded-xl bg-white p-6">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-2xl">👤</div>
+        <div className="min-w-0">
+          <h1 className="font-bold text-gray-800">{user.name || "用户"}</h1>
+          <p className="break-all text-sm text-gray-500">{user.email}</p>
+          {user.level && <span className="mt-2 inline-block rounded-full bg-yellow-100 px-3 py-1 text-xs text-yellow-600">{user.level.name}</span>}
+        </div>
+      </section>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* 侧边栏 */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl p-6 sticky top-24">
-              <div className="text-center mb-6">
-                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-3xl">👤</span>
-                </div>
-                <h2 className="font-bold text-gray-800">{user.name || "用户"}</h2>
-                <p className="text-sm text-gray-500">{user.email}</p>
-                {user.level && (
-                  <span className="inline-block mt-2 px-3 py-1 bg-yellow-100 text-yellow-600 text-xs rounded-full">
-                    {user.level.name}
-                  </span>
-                )}
-              </div>
-
-              <nav className="space-y-2">
-                <Link
-                  href="/dashboard"
-                  className="block px-4 py-2 bg-primary/10 text-primary rounded-lg"
-                >
-                  个人中心
-                </Link>
-                <Link
-                  href="/orders"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  我的订单
-                </Link>
-                <Link
-                  href="/balance"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  我的余额
-                </Link>
-              </nav>
-            </div>
-          </aside>
-
-          {/* 主内容 */}
-          <div className="lg:col-span-3 space-y-6">
             {/* 账户概览 */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white rounded-xl p-6">
@@ -193,9 +156,6 @@ export default async function UserDashboardPage() {
                 <div className="p-8 text-center text-gray-500">暂无订单</div>
               )}
             </div>
-          </div>
-        </div>
-      </main>
     </div>
   );
 }

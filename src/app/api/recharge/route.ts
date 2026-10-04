@@ -5,7 +5,8 @@ import { requirePaymentEnabled } from "@/lib/payment/config";
 import { getClientIp } from "@/lib/get-client-ip";
 import { rateLimit } from "@/lib/rate-limit";
 import type { PaymentMethod } from "@prisma/client";
-import { generateOrderNo, generatePassword } from "@/lib/encryption";
+import { createWithOrderNumber } from "@/lib/order-number";
+import { orderJson } from "@/lib/order-http";
 import prisma from "@/lib/db";
 import { logError } from "@/lib/logger";
 
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const user = session.user;
     const body = await request.json();
     const { amount, paymentMethod } = body;
 
@@ -52,10 +54,6 @@ export async function POST(request: NextRequest) {
     await requirePaymentEnabled(paymentMethod as PaymentMethod);
     if (!await rateLimit("recharge", session.user.id, 10, 3600)) return NextResponse.json({ error: "请求过于频繁" }, { status: 429 });
 
-    // 生成订单号
-    const orderNo = "R" + generateOrderNo(); // R 开头表示充值订单
-    const queryPassword = generatePassword();
-
     // 获取请求信息
     const ip = getClientIp(request);
     const userAgent = request.headers.get("user-agent") || "";
@@ -64,12 +62,11 @@ export async function POST(request: NextRequest) {
     const expiredAt = new Date(Date.now() + 10 * 60 * 1000);
 
     // 创建充值订单
-    const order = await prisma.order.create({
+    const order = await createWithOrderNumber(orderNo => prisma.order.create({
       data: {
         orderNo,
-        userId: session.user.id,
-        email: session.user.email || undefined,
-        queryPassword,
+        userId: user.id,
+        email: user.email?.trim().toLowerCase() || undefined,
         totalAmount: amount,
         discountAmount: 0,
         payAmount: amount,
@@ -80,7 +77,7 @@ export async function POST(request: NextRequest) {
         expiredAt,
         remark: "余额充值",
       },
-    });
+    }), "R");
 
     // 创建支付链接
     const paymentProvider = getPaymentProvider(paymentMethod);
@@ -114,9 +111,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    return orderJson({
       orderNo: order.orderNo,
-      queryPassword: order.queryPassword,
       payUrl: paymentResult.payUrl,
       qrCode: paymentResult.qrCode,
       usdtAmount: (paymentResult as any).usdtAmount,

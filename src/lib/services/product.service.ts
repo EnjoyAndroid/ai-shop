@@ -280,7 +280,7 @@ export async function allocateCardKeys(
 /**
  * 解密卡密内容
  */
-export function decryptCardKey(cardKey: CardKey): string {
+export function decryptCardKey(cardKey: Pick<CardKey, "content" | "iv" | "tag">): string {
   return decrypt({
     content: cardKey.content,
     iv: cardKey.iv,

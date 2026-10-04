@@ -3,7 +3,6 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { Metadata } from "next";
-import { Header } from "@/components/shop/header";
 
 export const metadata: Metadata = {
   title: "我的余额",
@@ -44,39 +43,7 @@ export default async function UserBalancePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* 侧边栏 */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl p-6 sticky top-24">
-              <nav className="space-y-2">
-                <Link
-                  href="/dashboard"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  个人中心
-                </Link>
-                <Link
-                  href="/orders"
-                  className="block px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-                >
-                  我的订单
-                </Link>
-                <Link
-                  href="/balance"
-                  className="block px-4 py-2 bg-primary/10 text-primary rounded-lg"
-                >
-                  我的余额
-                </Link>
-              </nav>
-            </div>
-          </aside>
-
-          {/* 主内容 */}
-          <div className="lg:col-span-3 space-y-6">
+    <div className="space-y-6">
             {/* 余额卡片 */}
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-8 text-white">
               <p className="text-white/80 mb-2">账户余额</p>
@@ -138,9 +105,6 @@ export default async function UserBalancePage() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </main>
     </div>
   );
 }

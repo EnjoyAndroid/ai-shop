@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { orderEmailSchema, orderPasswordSchema } from "../order-rules";
 
 // ==================== 用户验证 ====================
 
@@ -37,18 +38,12 @@ export const categorySchema = z.object({
 // ==================== 订单验证 ====================
 
 export const createOrderSchema = z.object({
-  items: z.array(z.object({
-    productId: z.string().min(1),
-    quantity: z.number().int().min(1).max(100),
-  })).min(1, "请选择商品").max(50),
-  email: z.string().email("请输入有效的邮箱地址").optional(),
+  productId: z.string().min(1, "请选择商品"),
+  quantity: z.number().int().min(1).max(100),
+  email: orderEmailSchema,
+  queryPassword: orderPasswordSchema,
   paymentMethod: z.enum(["ALIPAY", "WECHAT", "USDT_TRC20", "USDT_ERC20", "BALANCE"]),
-}).refine(data => data.email, { message: "请填写邮箱，用于接收卡密" });
-
-export const queryOrderSchema = z.object({
-  orderNo: z.string().min(1, "请输入订单号"),
-  password: z.string().min(1, "请输入查询密码"),
-});
+}).strict();
 
 // ==================== 卡密验证 ====================
 
@@ -87,7 +82,6 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type ProductInput = z.infer<typeof productSchema>;
 export type CategoryInput = z.infer<typeof categorySchema>;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
-export type QueryOrderInput = z.infer<typeof queryOrderSchema>;
 export type ImportCardKeysInput = z.infer<typeof importCardKeysSchema>;
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 export type AdjustBalanceInput = z.infer<typeof adjustBalanceSchema>;
