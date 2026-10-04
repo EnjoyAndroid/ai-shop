@@ -4,6 +4,8 @@
 
 ## 视频
 
+https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
+
 - [1080p 功能导览，86 秒](ai-shop-feature-tour.mp4)
 - [视频封面](cover.png)
 
@@ -35,7 +37,7 @@
 
 ## 使用建议
 
-README 顶部使用商城首页，买家和管理功能使用折叠区。视频可上传 GitHub Release、项目介绍页或演示平台；直接链接仓库内 MP4 在 GitHub 的渲染方式取决于客户端。
+README 顶部使用商城首页，买家和管理功能使用折叠区。视频可上传 GitHub Release、项目介绍页或演示平台；README 使用 GitHub 视频附件链接内嵌播放器，仓库内 MP4 保留为下载副本。
 
 图片保留真实界面，未替换文字或伪造按钮操作。原有商品封面沿用项目现有素材；素材来源见项目第三方说明。第三方支付、邮件和 Telegram 不包含在本次实际操作展示中。
 

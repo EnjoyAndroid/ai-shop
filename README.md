@@ -8,9 +8,9 @@
 
 从买家下单到后台运营，覆盖商品、会员、余额、订单、卡密和系统设置。以下素材来自独立演示环境，所有账号、订单、金额和卡密均为演示数据。
 
-[观看 86 秒功能导览（1080p MP4）](docs/showcase/ai-shop-feature-tour.mp4) · [查看 19 张功能截图](docs/showcase/README.md)
+[下载 86 秒功能导览（1080p MP4）](docs/showcase/ai-shop-feature-tour.mp4) · [查看 19 张功能截图](docs/showcase/README.md)
 
-[![AI Shop 功能导览封面](docs/showcase/cover.png)](docs/showcase/ai-shop-feature-tour.mp4)
+https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 
 导览视频由真实页面截图、字幕与转场合成，非连续操作录屏。演示流程实际完成了一笔余额付款与自动发货；第三方收款、邮件及 Telegram 通知未在采集时调用。
 
