@@ -73,13 +73,13 @@ export function OrderDetail({ order }: OrderDetailProps) {
     });
 
     content += `================================\n`;
-    content += `来自 example.com\n`;
+    content += `来自 AI Shop\n`;
 
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `卡密_example.com.txt`;
+    a.download = `卡密_${order.orderNo}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

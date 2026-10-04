@@ -62,10 +62,6 @@ webpack: (config, { isServer }) => {
 
 ## 项目特定配置
 
-### 联系方式
-- Telegram: https://t.me/example_support
-- 邮箱: user@example.com
-
 ### 系统默认值
 - 订单过期时间: 10 分钟
 - 订单自动删除: 90 天

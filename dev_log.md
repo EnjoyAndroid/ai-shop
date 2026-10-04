@@ -1,11 +1,21 @@
 # 开发日志
 
+## 2026-10-04 可发布内容隐私清理
+
+- 删除 AGENTS.md、claude.md 和 SECURITY.md 中的个人联系方式，旧日志的具体客服标识改为配置说明；卡密下载去除写死店铺域名，文件名改为当前订单号。
+- 商品素材清单不再公开本机图像服务名称和端口；注册邮箱示例改为标准 example.com 地址。
+- 复用 check:secrets 增加个人邮箱、固定 Telegram 联系方式与用户目录路径检查，诊断只显示位置、不打印识别值；本机 .env、备份和临时演示凭据仍在忽略范围。
+- 检查 Git 历史发现旧环境文件凭据及作者邮箱；发现的旧凭据与本机配置不一致。当前文件删除不会清除历史，改写历史需另外明确授权。
+- 检查 618 个历史文本对象、29 张图片的 OCR/元数据及导览视频 43 帧；4 处 OCR 邮箱告警经画面复核均为演示 example.com 地址误识别。审查记录保存于被忽略的 backups/privacy-review-20261004.json，不包含秘密值。
+- 本仓库后续提交使用 GitHub noreply 邮箱，防止新提交继续写入个人邮箱。
+- 当前可发布文件扫描、新增隐私规则正反例和生产构建通过。
+
 ## 2026-10-04 安全策略文档核对
 
 - SECURITY.md 去除重复订单流程与绝对安全承诺，按漏洞报告、订单隐私、认证风控、支付库存、部署数据和验证维护重新组织。
 - 明确邮箱查询不验证所有权；列表凭证绑定 IP/关键词，订单凭证仅绑定订单且退出/改密不立即撤销。
 - 补充 TRUST_PROXY=false 共用 direct 身份、生产代理/TLS 前提、通知数据范围与财务/已售卡密的实际保留规则。
-- 私密漏洞报告入口按仓库功能可用性描述，补充维护者邮箱，不承诺未设置的响应 SLA。
+- 私密漏洞报告入口按仓库功能可用性描述，补充私密联系渠道说明，不承诺未设置的响应 SLA。
 
 ## 2026-10-04 README 视频内嵌播放
 
@@ -259,7 +269,7 @@ logDebug("Request", { body, headers });
 - `src/lib/services/order.service.ts` - createOrder 使用事务锁定卡密，cancelExpiredOrders 释放卡密并清除缓存
 - `src/lib/services/product.service.ts` - allocateCardKeys 支持从 LOCKED 转 SOLD
 - `src/app/(shop)/pay/[orderNo]/page.tsx` - 倒计时改用时间戳计算，支持页面不可见时正确计时；检测订单取消状态
-- `src/components/shop/contact-support.tsx` - Telegram 联系方式更新为 @example_support
+- `src/components/shop/contact-support.tsx` - 更新 Telegram 客服配置
 - `src/components/shop/contact-buttons.tsx` - Telegram 联系方式更新
 - `src/app/(shop)/page.tsx` - 页脚 Telegram 链接更新
 

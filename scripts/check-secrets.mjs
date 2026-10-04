@@ -18,6 +18,18 @@ for (const file of files) {
     for (const [kind, pattern] of patterns) if (pattern.test(line)) failures.push(`${file}:${index + 1}: possible ${kind}`);
     const env = line.match(/^\s*(?:NEXTAUTH_SECRET|ENCRYPTION_KEY|CRON_SECRET|DB_PASSWORD|SMTP_PASS|[A-Z_]+_APPSECRET|[A-Z_]+_API_KEY)\s*=\s*["']?([^"'\r\n]+)["']?\s*$/);
     if (env && !placeholders.test(env[1])) failures.push(`${file}:${index + 1}: non-placeholder secret assignment`);
+    // Publishable files should use example addresses or runtime configuration.
+    // Report locations only: scanning must not print the personal address itself.
+    for (const email of line.matchAll(/[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g)) {
+      const domain = email[1].toLowerCase();
+      if (!/^example\.(?:com|org|net|invalid)$/.test(domain) && domain !== "users.noreply.github.com" && domain !== "github.com") {
+        failures.push(`${file}:${index + 1}: non-example email address; use runtime contact configuration`);
+      }
+    }
+    if (/\bhttps?:\/\/t\.me\/[A-Za-z0-9_]{5,32}/i.test(line) && !/t\.me\/(?:test_[A-Za-z0-9_]*|example[A-Za-z0-9_]*)\b/i.test(line)) {
+      failures.push(`${file}:${index + 1}: embedded Telegram contact; use runtime contact configuration`);
+    }
+    if (/\/(?:Users|home)\/[A-Za-z0-9_.-]+\//.test(line)) failures.push(`${file}:${index + 1}: personal home path`);
   });
 }
 if (failures.length) { process.stderr.write(failures.join('\n') + '\n'); process.exitCode = 1; }
