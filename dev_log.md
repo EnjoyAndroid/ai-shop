@@ -1,5 +1,21 @@
 # 开发日志
 
+## 2026-10-09 后台 Cloudflare Access 保护
+
+- 用户开通 Zero Trust Free 后创建一个后台 Access 应用，保护管理页面、管理 API 和上传接口及其子路径；精确邮箱白名单仅允许账号所有者。
+- 复用 Cloudflare 身份提供商（仅限账号成员），应用会话 8 小时；用户已自行启用 Cloudflare 账号双重验证。商城原有管理员登录继续保留。
+- 验证：匿名后台入口、管理 API、上传接口均转到 Access；首页、买家登录、健康检查和公开支付方式正常，支付回调 GET 保持原响应且未被 Access 拦截。账号所有者 Chrome 现有会话能通过验证并访问管理接口。
+- 本次只调整 Cloudflare 配置，无应用代码变化；配置 ID、受保护路径、验证结果、截图及维护说明记录在被忽略的 backups/cloudflare-local/ 中，未提交个人邮箱或凭据。
+
+## 2026-10-09 本机 Cloudflare Tunnel 上线
+
+- 复用现有本机 Docker 商城、数据库及 Redis，创建具名 Tunnel 并将用户确认的主域名及 www 从旧服务器切换到本机；www 308 跳转主域名。
+- 专用 Nginx 入口保持回环绑定，转发可信 Tunnel 的访客 IP 并设置 HTTPS 代理头；本机 Compose 支持 LOCAL_NGINX_CONFIG，防止后续标准更新丢失代理配置。
+- 环境地址及前端构建地址同步更新；数据库、原环境与镜像已备份，原卡密加密密钥保留。部署配置、凭据、截图和回滚说明保存在被忽略的 backups/cloudflare-local/deployment.md。
+- 隧道用用户 LaunchAgent 登录启动并异常重启；Docker 登录启动和不自动睡眠已确认。未实际重启，启动仍依赖 macOS 用户登录。
+- 验证：本地及 Docker 生产构建、Nginx/ingress/plist 检查通过；公网 TLS 首页与健康接口 200、www 308、认证回调域名、Secure Cookie、匿名后台跳转正常。未执行真实下单付款或第三方通知；异机自动备份尚未设置。
+- Chrome 扩展控制不可用时使用 CUA 原生窗口完成检查；Cloudflare 授权由用户确认。公网 Python 验证因本机 CA 配置失败，改用系统 curl 保持 TLS 校验后通过。
+
 ## 2026-10-04 英文 README
 
 - 新增 README.en.md，完整说明功能、部署、集成配置、备份迁移、验证与许可证；中英文顶部增加相互切换链接。
