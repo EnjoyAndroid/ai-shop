@@ -12,8 +12,6 @@
 
 <a href="https://5aishop.com/community"><img src="docs/community/wechat-entry.png" width="160" height="160" alt="AI Shop 微信交流群固定入口二维码" /></a>
 
-这是固定入口二维码；管理员更新群码后，首页与此入口同步生效。微信群二维码本身仍需在过期或群满时更换。
-
 ## 项目预览
 
 ![AI Shop 商城首页](docs/screenshots/01-storefront.png)
