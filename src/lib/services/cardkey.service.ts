@@ -7,6 +7,7 @@ import { decryptCardKey } from "./product.service";
 import { transaction } from "@/lib/transaction";
 import { OrderRequestError } from "@/lib/order-errors";
 import { logError } from "@/lib/logger";
+import { cardKeyContentSchema, cardKeyBatchSchema } from "@/lib/cardkey-rules";
 
 const listSchema = z.object({
   productId: z.string().min(1, "请选择商品").max(100),
@@ -15,8 +16,8 @@ const listSchema = z.object({
 }).strict();
 const versionSchema = z.string().datetime({ offset: true });
 export const editCardKeySchema = z.object({
-  content: z.string().trim().min(1, "请输入卡密").max(10000, "单条卡密最多10000个字符").refine(value => !/[\r\n]/.test(value), "一次只能编辑一条卡密，请勿输入换行"),
-  batchNo: z.string().trim().max(100, "批次号最多100个字符"),
+  content: cardKeyContentSchema,
+  batchNo: cardKeyBatchSchema,
   updatedAt: versionSchema,
 }).strict();
 const deleteSchema = z.object({ updatedAt: versionSchema }).strict();

@@ -120,7 +120,7 @@ npm ci
 cp .env.example .env
 ```
 
-填写 `.env`：数据库密码、`NEXTAUTH_SECRET`、`ENCRYPTION_KEY` 和 `CRON_SECRET` 应分别随机生成；`ADMIN_PASSWORD` 首次初始化必须为 12–72 位。生成单个随机值：
+填写 `.env`：数据库密码、`NEXTAUTH_SECRET`、`ENCRYPTION_KEY` 和 `CRON_SECRET` 应分别随机生成；`ADMIN_PASSWORD` 首次初始化至少 12 位、最多 72 个 UTF-8 字节。生成单个随机值：
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -191,6 +191,9 @@ unset ADMIN_PASSWORD
 | Telegram 客服 | 后台「系统设置 → 客服设置」，留空隐藏入口 |
 | 微信交流群 | 后台「系统设置 → 微信交流群」，上传最新群二维码并设置可选过期时间 |
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
+| 待付库存额度 | `MAX_PENDING_ORDERS=3`、`MAX_PENDING_QUANTITY=100`，分别限制每个账号、邮箱和可信客户端 IP |
+
+外部支付商品订单的待付库存额度在事务中校验；付款或取消后释放，过期由每分钟任务取消。余额即时购买与充值不占该额度。卡密导入每批最多 500 条、2MB；更大的批次请拆分。密码重置成功或账号封禁后，旧重置链接立即失效；升级前签发的旧格式链接需重新申请。
 
 `NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。客服邮箱环境变量默认空。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
 
@@ -236,10 +239,13 @@ npm run test:integration
 npm run build
 npm run test:http
 npm run check:secrets
-npm audit
+npm run check:history
+npm run audit:security
 ```
 
-集成测试要求独立的 `ai_shop_order_query_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描及依赖审计；当前文件扫描不验证所有历史对象或托管平台保留的缓存副本。
+集成测试要求独立的 `ai_shop_order_query_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描、提交邮箱检查及依赖审计；历史邮箱检查需要完整检出，不代表扫描所有历史文件或托管平台缓存。
+
+`npm audit` 仍会报告尚无上游修复版的 braces 公告；安装脚本应用并校验最小深度限制补丁，`audit:security` 仅接受已验证补丁覆盖的这一条公告，其他漏洞和联网失败均阻断。保留了原依赖版本和许可证，详见 [依赖维护说明](docs/security.md#验证与依赖维护)。
 
 - [安全策略与私密漏洞报告](SECURITY.md)
 - [贡献说明](CONTRIBUTING.md)

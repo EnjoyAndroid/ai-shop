@@ -1,4 +1,5 @@
 import { logMailFailure, sendMail } from "@/lib/smtp";
+import { escapeHtml } from "@/lib/html";
 
 interface OrderEmailParams {
   to: string;
@@ -21,12 +22,12 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
     .map(
       (item) => `
         <div style="margin-bottom: 20px;">
-          <h3 style="color: #333; margin-bottom: 10px;">${item.productName}</h3>
+          <h3 style="color: #333; margin-bottom: 10px;">${escapeHtml(item.productName)}</h3>
           ${item.cardKeys
             .map(
               (key, index) => `
                 <div style="background: #f5f5f5; padding: 12px; border-radius: 6px; margin-bottom: 8px; font-family: monospace; word-break: break-all;">
-                  ${key}
+                  ${escapeHtml(key)}
                 </div>
               `
             )
@@ -61,7 +62,7 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
             <table style="width: 100%; font-size: 14px;">
               <tr>
                 <td style="color: #666; padding: 4px 0;">订单号：</td>
-                <td style="color: #333; font-weight: bold; font-family: monospace;">${orderNo}</td>
+                <td style="color: #333; font-weight: bold; font-family: monospace;">${escapeHtml(orderNo)}</td>
               </tr>
               <tr>
                 <td style="color: #666; padding: 4px 0;">支付金额：</td>
@@ -82,7 +83,7 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
               <strong>💡 温馨提示：</strong><br>
               • 请妥善保管您的卡密和查询密码<br>
               • 如有问题，请访问网站联系客服<br>
-              • 订单查询地址：<a href="${process.env.NEXT_PUBLIC_SITE_URL}/order" style="color: #6366f1;">${process.env.NEXT_PUBLIC_SITE_URL}/order</a>
+              • 订单查询地址：<a href="${escapeHtml(process.env.NEXT_PUBLIC_SITE_URL || "")}/order" style="color: #6366f1;">${escapeHtml(process.env.NEXT_PUBLIC_SITE_URL || "")}/order</a>
             </p>
           </div>
 

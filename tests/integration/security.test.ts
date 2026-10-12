@@ -5,6 +5,9 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import { NextRequest } from "next/server";
 import { POST as requestPasswordReset } from "../../src/app/api/auth/forgot-password/route";
+import { POST as resetPassword } from "../../src/app/api/auth/reset-password/route";
+import { POST as verifyResetToken } from "../../src/app/api/auth/verify-reset-token/route";
+import { resetTokenKey } from "../../src/lib/password-reset";
 import { searchOrders, unlockOrder } from "../../src/lib/services/order-query.service";
 import { canAccessOrder, issueOrderAccess, issueOrderQuery, readOrderQuery } from "../../src/lib/order-access";
 import { createWithOrderNumber } from "../../src/lib/order-number";
@@ -375,12 +378,12 @@ test("failed reset delivery removes its token; successful delivery keeps one exp
     const failed = await requestPasswordReset(request(email));
     assert.equal(failed.status, 503);
     assert(!JSON.stringify(await failed.json()).includes("private-mail-response"));
-    assert.equal(await redis.exists(`reset_password:${resetToken}`), 0);
+    assert.equal(await redis.exists(resetTokenKey(resetToken)), 0);
     fail = false;
     const successful = await requestPasswordReset(request(email));
     assert.equal(successful.status, 200);
-    assert.equal(await redis.get(`reset_password:${resetToken}`), user.id);
-    assert((await redis.ttl(`reset_password:${resetToken}`)) <= 600);
+    assert.deepEqual(JSON.parse((await redis.get(resetTokenKey(resetToken)))!), { userId: user.id, sessionVersion: user.sessionVersion });
+    assert((await redis.ttl(resetTokenKey(resetToken))) <= 600);
     assert.equal(closeCount, 2);
     const tokenCount = (await redis.keys("reset_password:*")).filter(key => !before.has(key)).length;
     assert.equal(tokenCount, 1);
@@ -399,5 +402,135 @@ test("failed reset delivery removes its token; successful delivery keeps one exp
       if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
     }
     for (const key of await redis.keys("reset_password:*")) if (!before.has(key)) await redis.del(key);
+  }
+});
+
+const resetRequest = (token: string, password = "test-new-password") => new NextRequest("http://localhost/api/auth/reset-password", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }),
+});
+async function resetGrant(user: { id: string; sessionVersion: number }) {
+  const token = randomBytes(32).toString("hex");
+  await redis.setex(resetTokenKey(token), 600, JSON.stringify({ userId: user.id, sessionVersion: user.sessionVersion }));
+  return token;
+}
+
+test("resetting a password revokes older links, rejects legacy grants and preserves password byte validation", async () => {
+  const user = await prisma.user.create({ data: { email: `${prefix}-reset-revoke@example.invalid`, password: await bcrypt.hash("test-original", 4) } });
+  const [older, newer] = await Promise.all([resetGrant(user), resetGrant(user)]);
+  const invalid = await resetPassword(resetRequest(newer, "中".repeat(24) + "x"));
+  assert.equal(invalid.status, 400);
+  assert.equal(await redis.exists(resetTokenKey(newer)), 1);
+  assert.equal((await resetPassword(resetRequest(newer))).status, 200);
+  assert.equal((await verifyResetToken(resetRequest(older))).status, 200);
+  assert.equal((await (await verifyResetToken(resetRequest(older))).json()).valid, false);
+  assert.equal((await resetPassword(resetRequest(older, "test-attacker-password"))).status, 400);
+  assert.equal((await resetPassword(resetRequest(newer))).status, 400);
+  const saved = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  assert.equal(saved.sessionVersion, 1);
+  assert(await bcrypt.compare("test-new-password", saved.password!));
+  const legacy = randomBytes(32).toString("hex");
+  await redis.setex(`reset_password:${legacy}`, 600, user.id);
+  assert.equal((await resetPassword(resetRequest(legacy))).status, 400);
+  await redis.del(`reset_password:${legacy}`);
+});
+
+test("concurrent different reset tokens allow only one password update; ban and failures never authorize reset", async context => {
+  const user = await prisma.user.create({ data: { email: `${prefix}-reset-race@example.invalid` } });
+  const tokens = await Promise.all([resetGrant(user), resetGrant(user)]);
+  const results = await Promise.all(tokens.map((token, index) => resetPassword(resetRequest(token, `test-password-${index}`))));
+  assert.deepEqual(results.map(result => result.status).sort(), [200, 400]);
+  const saved = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  assert.equal(saved.sessionVersion, 1);
+  const winner = results.findIndex(result => result.status === 200);
+  assert(await bcrypt.compare(`test-password-${winner}`, saved.password!));
+  const bannedToken = await resetGrant(saved);
+  await prisma.user.update({ where: { id: user.id }, data: { status: "BANNED", sessionVersion: { increment: 1 } } });
+  assert.equal((await resetPassword(resetRequest(bannedToken))).status, 400);
+  const active = await prisma.user.update({ where: { id: user.id }, data: { status: "ACTIVE" } });
+  const failedToken = await resetGrant(active);
+  const originalUpdate = prisma.user.updateMany;
+  prisma.user.updateMany = (async () => { throw new Error("Synthetic database failure"); }) as typeof originalUpdate;
+  context.mock.method(console, "error", () => {});
+  try { assert.equal((await resetPassword(resetRequest(failedToken))).status, 500); }
+  finally { prisma.user.updateMany = originalUpdate; }
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).password, saved.password);
+  assert.equal((await resetPassword(resetRequest(failedToken))).status, 400);
+  const expired = await resetGrant(active);
+  await redis.expire(resetTokenKey(expired), 0);
+  assert.equal((await resetPassword(resetRequest(expired))).status, 400);
+});
+
+test("pending order quota is atomic across different products and releases on payment, cancellation and expiry", async () => {
+  const previous = { orders: process.env.MAX_PENDING_ORDERS, quantity: process.env.MAX_PENDING_QUANTITY };
+  process.env.MAX_PENDING_ORDERS = "3"; process.env.MAX_PENDING_QUANTITY = "100";
+  try {
+    const fixtures = await Promise.all(Array.from({ length: 4 }, () => fixture(4)));
+    const buyer = fixtures[0].user;
+    const input = (index: number) => ({ ...fixtures[index].input, userId: buyer.id, email: `${prefix}-quota-${index}@example.invalid` });
+    await createOrder(input(0)); await createOrder(input(1));
+    const attempts = await Promise.allSettled([createOrder(input(2)), createOrder(input(3))]);
+    assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1);
+    const rejected = attempts.find(result => result.status === "rejected") as PromiseRejectedResult;
+    assert(httpStatus(429)(rejected.reason));
+    assert.equal(rejected.reason.code, "PENDING_ORDER_LIMIT");
+    let orders = await prisma.order.findMany({ where: { userId: buyer.id, status: "PENDING" }, orderBy: { createdAt: "asc" } });
+    assert.equal(orders.length, 3);
+    assert.equal(await prisma.cardKey.count({ where: { productId: { in: fixtures.map(f => f.product.id) }, status: "LOCKED" } }), 3);
+    await cancelOrder(orders[0].id);
+    await createOrder(input(0));
+    await handlePaymentSuccess(orders[1].orderNo, `${prefix}-quota-payment`, { method: "ALIPAY", amount: 100 });
+    const replacement = await createOrder(input(1));
+    await prisma.order.update({ where: { id: replacement.id }, data: { expiredAt: new Date(Date.now() - 1000) } });
+    assert.equal(await cancelOrder(replacement.id, "过期", true), true);
+    await createOrder(input(1));
+    orders = await prisma.order.findMany({ where: { userId: buyer.id, status: "PENDING" } });
+    assert.equal(orders.length, 3);
+  } finally {
+    if (previous.orders === undefined) delete process.env.MAX_PENDING_ORDERS; else process.env.MAX_PENDING_ORDERS = previous.orders;
+    if (previous.quantity === undefined) delete process.env.MAX_PENDING_QUANTITY; else process.env.MAX_PENDING_QUANTITY = previous.quantity;
+  }
+});
+
+test("quantity, email and trusted IP quotas cannot be bypassed by changing accounts; balance purchases remain available", async () => {
+  const names = ["MAX_PENDING_ORDERS", "MAX_PENDING_QUANTITY", "TRUST_PROXY"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  Object.assign(process.env, { MAX_PENDING_ORDERS: "3", MAX_PENDING_QUANTITY: "2", TRUST_PROXY: "true" });
+  try {
+    const ip = `2001:db8:${randomBytes(2).toString("hex")}:${randomBytes(2).toString("hex")}::1`;
+    const f = await fixture(10, 1000);
+    const order = await createOrder({ ...f.input, userId: undefined, quantity: 2, ip });
+    await assert.rejects(createOrder({ ...f.input, ip: "192.0.2.11" }), httpStatus(429)); // Same email, another account/IP.
+    await assert.rejects(createOrder({ ...f.input, email: `${prefix}-different@example.invalid`, ip }), httpStatus(429));
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } })).stock, 8);
+    await createOrder({ ...f.input, paymentMethod: "BALANCE", quantity: 1, ip });
+    await cancelOrder(order.id);
+    const allowed = await createOrder({ ...f.input, quantity: 2, ip });
+    await cancelOrder(allowed.id);
+    // Placeholder IPs must not turn a per-visitor rule into a site-wide quota.
+    const a = await fixture(3); const b = await fixture(3);
+    await createOrder({ ...a.input, quantity: 2, ip: "direct" });
+    await createOrder({ ...b.input, quantity: 2, ip: "direct" });
+  } finally {
+    for (const name of names) if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
+  }
+});
+
+test("concurrent buyers sharing a trusted IP cannot exceed the 100-card reservation quota across products", async () => {
+  const names = ["MAX_PENDING_ORDERS", "MAX_PENDING_QUANTITY", "TRUST_PROXY"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  Object.assign(process.env, { MAX_PENDING_ORDERS: "3", MAX_PENDING_QUANTITY: "100", TRUST_PROXY: "true" });
+  try {
+    const ip = `2001:db8:${randomBytes(2).toString("hex")}:${randomBytes(2).toString("hex")}::2`;
+    const fixtures = await Promise.all([fixture(100), fixture(100)]);
+    for (const f of fixtures) await prisma.product.update({ where: { id: f.product.id }, data: { maxQuantity: 100 } });
+    const results = await Promise.allSettled(fixtures.map(f => createOrder({ ...f.input, quantity: 60, ip })));
+    assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+    assert(httpStatus(429)((results.find(result => result.status === "rejected") as PromiseRejectedResult).reason));
+    const remaining = fixtures[results.findIndex(result => result.status === "rejected")];
+    await createOrder({ ...remaining.input, quantity: 40, ip });
+    assert.equal(await prisma.cardKey.count({ where: { productId: { in: fixtures.map(f => f.product.id) }, status: "LOCKED" } }), 100);
+    await assert.rejects(createOrder({ ...remaining.input, quantity: 1, ip }), httpStatus(429));
+  } finally {
+    for (const name of names) if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
   }
 });

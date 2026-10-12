@@ -291,6 +291,7 @@ model Order {
   @@index([createdAt])
   @@index([status, createdAt])  // 复合索引：按状态筛选并按时间排序
   @@index([userId, createdAt])  // 复合索引：用户订单按时间排序
+  @@index([ip, status])         // 可信客户端 IP 的待付库存额度
   @@index([expiredAt])          // 过期订单查询
 }
 

@@ -6,6 +6,7 @@ import { getSmtpOptions, logMailFailure, MailConfigurationError, sendMail } from
 import { getClientIp } from "@/lib/get-client-ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
+import { resetTokenKey } from "@/lib/password-reset";
 
 export async function POST(request: NextRequest) {
   let resetKey: string | undefined;
@@ -25,10 +26,11 @@ export async function POST(request: NextRequest) {
     // 查找用户
     const user = await prisma.user.findUnique({
       where: { email },
+      select: { id: true, status: true, sessionVersion: true },
     });
 
     // 即使用户不存在也返回成功（防止邮箱枚举攻击）
-    if (!user) {
+    if (!user || user.status !== "ACTIVE") {
       return NextResponse.json({ success: true });
     }
 
@@ -37,8 +39,8 @@ export async function POST(request: NextRequest) {
     const expireTime = 10 * 60; // 10 分钟
 
     // 存储到 Redis
-    resetKey = `reset_password:${token}`;
-    await redis.setex(resetKey, expireTime, user.id);
+    resetKey = resetTokenKey(token);
+    await redis.setex(resetKey, expireTime, JSON.stringify({ userId: user.id, sessionVersion: user.sessionVersion }));
 
     // 发送重置邮件
     const resetUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password?token=${token}`;

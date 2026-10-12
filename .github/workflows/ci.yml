@@ -30,6 +30,8 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -40,8 +42,9 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run check:secrets
+      - run: npm run check:history
       - run: npm test
       - run: npm run test:integration
       - run: npm run build
       - run: npm run test:http
-      - run: npm audit --audit-level=moderate
+      - run: npm run audit:security

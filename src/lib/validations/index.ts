@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { orderEmailSchema, orderPasswordSchema } from "../order-rules";
+import { userPasswordSchema } from "../password-rules";
+import { cardKeyBatchSchema, cardKeyImportTextSchema } from "../cardkey-rules";
 
 // ==================== 用户验证 ====================
 
 export const registerSchema = z.object({
   email: z.string().trim().toLowerCase().email("请输入有效的邮箱地址").max(254),
-  password: z.string().min(8, "密码至少8位").max(72, "密码最多72位"),
+  password: userPasswordSchema,
 });
 export const loginSchema = z.object({ account: z.string().trim().toLowerCase().email(), password: z.string().min(1).max(72) });
 
@@ -49,8 +51,8 @@ export const createOrderSchema = z.object({
 
 export const importCardKeysSchema = z.object({
   productId: z.string().min(1, "请选择商品"),
-  cardKeys: z.string().min(1, "请输入卡密内容"),
-  batchNo: z.string().optional(),
+  cardKeys: cardKeyImportTextSchema,
+  batchNo: cardKeyBatchSchema.optional(),
 });
 
 // ==================== 支付验证 ====================

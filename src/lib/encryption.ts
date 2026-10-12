@@ -4,13 +4,20 @@ import { requireSecret } from "./security-config";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
-const TAG_LENGTH = 16;
 const SALT = "ai-shop-encryption-salt-v1";
+let cachedKey: { secret: string; derived: Buffer } | undefined;
 
 function getEncryptionKey(): Buffer {
   const key = requireSecret("ENCRYPTION_KEY");
-  // 使用 PBKDF2 进行密钥派生（更安全）
-  return crypto.pbkdf2Sync(key, SALT, 100000, 32, "sha256");
+  // Preserve the existing ciphertext format; derive only once per secret.
+  // Read/validate the secret each time so rotation or missing config never uses
+  // a stale cached key. Keep only the current key in memory.
+  if (cachedKey?.secret !== key) {
+    const derived = crypto.pbkdf2Sync(key, SALT, 100000, 32, "sha256");
+    cachedKey?.derived.fill(0);
+    cachedKey = { secret: key, derived };
+  }
+  return cachedKey.derived;
 }
 
 export interface EncryptedData {

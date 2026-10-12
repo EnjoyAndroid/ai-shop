@@ -16,6 +16,9 @@
     "db:migrate": "prisma migrate deploy",
     "db:baseline": "node scripts/prepare-database.mjs --baseline-only",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "check:history": "node scripts/check-commit-metadata.mjs",
+    "postinstall": "node scripts/patch-braces.mjs",
+    "audit:security": "node scripts/audit-dependencies.mjs",
     "db:prepare": "node scripts/prepare-database.mjs",
     "test:http": "node scripts/smoke-security.mjs",
     "mail:check": "node --env-file-if-exists=.env --import tsx scripts/check-mail.ts",
@@ -63,6 +66,7 @@
     "node": ">=22.14.0"
   },
   "overrides": {
+    "postcss-selector-parser": "7.1.6",
     "next-auth": {
       "nodemailer": "$nodemailer"
     },

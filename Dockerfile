@@ -8,6 +8,7 @@ WORKDIR /app
 
 # 安装依赖
 COPY package*.json ./
+COPY scripts/patch-braces.mjs ./scripts/patch-braces.mjs
 RUN npm ci
 
 # 复制源码

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { CardKeyInventory } from "@/components/admin/cardkey-inventory";
+import { CARDKEY_IMPORT_MAX } from "@/lib/cardkey-rules";
 
 interface Product {
   id: string;
@@ -161,7 +162,7 @@ export default function AdminCardKeysPage() {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  每行一个卡密，将自动加密存储
+                  每行一个卡密，每批最多 {CARDKEY_IMPORT_MAX} 条、2MB，将自动加密存储
                 </p>
               </div>
 

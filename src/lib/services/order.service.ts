@@ -10,6 +10,7 @@ import { sendPaymentSuccessTelegram } from "@/lib/telegram";
 import redis, { CACHE_KEYS } from "@/lib/redis";
 import { logError } from "@/lib/logger";
 import { Prisma, type Order, type PaymentMethod, type OrderStatus } from "@prisma/client";
+import { enforcePendingOrderLimits } from "@/lib/pending-orders";
 
 const orderInclude = { items: { include: { cardKeys: true, product: { select: { id: true, name: true, slug: true } } } } } satisfies Prisma.OrderInclude;
 export type OrderWithItems = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
@@ -79,6 +80,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderWithI
     const discount = user?.level?.discount ?? 100;
     const payAmount = totalAmount - Math.floor(totalAmount * (100 - discount) / 100);
     if (!Number.isSafeInteger(payAmount) || payAmount < 1 || payAmount > 10000000) throw new Error("订单金额无效");
+    if (paymentMethod !== "BALANCE") await enforcePendingOrderLimits(tx, { userId, email, ip }, quantity);
     const created = await tx.order.create({ data: { orderNo, userId, email, paymentMethod, totalAmount, payAmount, discountAmount: totalAmount - payAmount, queryPasswordHash, expiredAt, ip, userAgent, fingerprint,
       items: { create: { productId, quantity, productName: product.name, price: product.price } } }, include: orderInclude });
     for (const item of created.items) {

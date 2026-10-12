@@ -1,6 +1,6 @@
 import { existsSync, openSync, closeSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { randomBytes, createCipheriv, pbkdf2Sync } from 'node:crypto';
+import { randomBytes, createCipheriv, pbkdf2Sync, createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 if (existsSync('.env')) process.loadEnvFile('.env');
 const database = new URL(process.env.TEST_DATABASE_URL || process.env.DATABASE_URL);
@@ -40,7 +40,7 @@ const guestOrder = await db.order.create({ data: { orderNo: newOrderNo(), email,
 const rechargeOrder = await db.order.create({ data: { orderNo: 'R' + newOrderNo(), userId: user.id, email, totalAmount: 100, payAmount: 100, status: 'COMPLETED' } });
 const base = 'http://localhost:3011';
 const log = openSync('/tmp/ai-shop-security-smoke-server.log', 'w', 0o600);
-const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-H', '127.0.0.1', '-p', '3011'], { env: { ...process.env, NODE_ENV: 'production', NEXTAUTH_URL: base, NEXT_PUBLIC_SITE_URL: base, TRUST_PROXY: 'true', XUNHU_ALIPAY_APPID: '', XUNHU_ALIPAY_APPSECRET: '', XUNHU_WECHAT_APPID: '', XUNHU_WECHAT_APPSECRET: '' }, stdio: ['ignore', log, log] });
+const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-H', '127.0.0.1', '-p', '3011'], { env: { ...process.env, NODE_ENV: 'production', NEXTAUTH_URL: base, NEXT_PUBLIC_SITE_URL: base, TRUST_PROXY: 'true', MAX_PENDING_ORDERS: '3', MAX_PENDING_QUANTITY: '100', XUNHU_ALIPAY_APPID: '', XUNHU_ALIPAY_APPSECRET: '', XUNHU_WECHAT_APPID: '', XUNHU_WECHAT_APPSECRET: '', USDT_TRC20_ADDRESS: 'T' + '1'.repeat(33) }, stdio: ['ignore', log, log] });
 const jar = new Map();
 function capture(response) { for (const c of response.headers.getSetCookie()) { const pair = c.split(';')[0], index = pair.indexOf('='); jar.set(pair.slice(0,index),pair.slice(index+1)); } }
 function cookie() { return [...jar].map(([k,v]) => `${k}=${v}`).join('; '); }
@@ -81,6 +81,10 @@ try {
   const productInput = { name: 'Image save regression', slug: `smoke-product-${suffix}`, categoryId: category.id, price: 19900, originalPrice: 29900, image: null };
   const createdProduct = await jsonPost('/api/admin/products', productInput, {Cookie:cookie()}); assert.equal(createdProduct.status,200);
   const productId = (await createdProduct.json()).product.id;
+  for (const cardKeys of [Array(501).fill('SYNTHETIC-KEY').join('\n'), 'x'.repeat(10001)]) {
+    assert.equal((await jsonPost('/api/admin/cardkeys/import',{productId,cardKeys},{Cookie:cookie()})).status,400);
+  }
+  assert.equal(await db.cardKey.count({where:{productId}}),0);
   const imageUrl = 'https://res.cloudinary.com/demo/image/upload/test.webp';
   const productUpdate = await request(`/api/admin/products/${productId}`, { method:'PUT', headers:{'Content-Type':'application/json',Cookie:cookie()}, body:JSON.stringify({...productInput, image:imageUrl, originalPrice:null}) });
   assert.equal(productUpdate.status,200,await productUpdate.clone().text());
@@ -231,6 +235,39 @@ try {
   assert(/^AS[0-9A-HJKMNP-TV-Z]{20}$/.test(receipt.orderNo));
   const purchaseView = await request(`/api/orders/${receipt.orderNo}`,{headers:{'x-order-access-token':receipt.accessToken}}); assert.equal(purchaseView.status,200);
   assert.equal((await purchaseView.json()).order.status,'DELIVERED');
+  // HTTP quota failure is checked before a payment provider is invoked. These
+  // synthetic pending orders already exhaust the quota, so no chain or gateway
+  // request is made even though USDT is configured for this isolated server.
+  const quotaEmail = `quota-${suffix}@example.invalid`;
+  for (let i=0;i<3;i++) await db.order.create({data:{orderNo:newOrderNo(),email:quotaEmail,totalAmount:100,payAmount:100,paymentMethod:'USDT_TRC20',status:'PENDING',expiredAt:new Date(Date.now()+600000),items:{create:{productId:orderProduct.id,productName:'Quota smoke',quantity:1,price:100}}}});
+  const priorUsdt = await db.systemSetting.findUnique({where:{key:'usdtEnabled'}});
+  const priorRate = await redis.get('usdt:exchange_rate');
+  await redis.set('usdt:exchange_rate',JSON.stringify({rate:7.2,source:'synthetic-http-test',updatedAt:Date.now()}),'EX',600);
+  await db.systemSetting.upsert({where:{key:'usdtEnabled'},create:{key:'usdtEnabled',value:'true'},update:{value:'true'}});
+  await redis.del('system:settings');
+  try {
+    const rejected = await jsonPost('/api/orders',{productId:orderProduct.id,quantity:1,email:quotaEmail,queryPassword:password,paymentMethod:'USDT_TRC20'});
+    assert.equal(rejected.status,429); assert.equal((await rejected.json()).code,'PENDING_ORDER_LIMIT');
+    assert.equal(await db.order.count({where:{email:quotaEmail}}),3);
+  } finally {
+    if (priorUsdt) await db.systemSetting.update({where:{key:'usdtEnabled'},data:{value:priorUsdt.value}});
+    else await db.systemSetting.delete({where:{key:'usdtEnabled'}});
+    await redis.del('system:settings');
+    if (priorRate) await redis.set('usdt:exchange_rate',priorRate,'EX',300);
+    else await redis.del('usdt:exchange_rate');
+  }
+  const resetUser = await db.user.findUniqueOrThrow({where:{id:user.id}});
+  const resetTokens = [randomBytes(32).toString('hex'),randomBytes(32).toString('hex')];
+  const resetKey = token => 'reset_password:v2:' + createHash('sha256').update(token).digest('hex');
+  for (const token of resetTokens) await redis.setex(resetKey(token),600,JSON.stringify({userId:user.id,sessionVersion:resetUser.sessionVersion}));
+  assert.equal((await (await jsonPost('/api/auth/verify-reset-token',{token:resetTokens[0]})).json()).valid,true);
+  assert.equal((await jsonPost('/api/auth/reset-password',{token:resetTokens[1],password:'中'.repeat(24)+'x'})).status,400);
+  assert.equal((await jsonPost('/api/auth/reset-password',{token:resetTokens[1],password})).status,200);
+  assert.equal((await (await jsonPost('/api/auth/verify-reset-token',{token:resetTokens[0]})).json()).valid,false);
+  assert.equal((await jsonPost('/api/auth/reset-password',{token:resetTokens[0],password})).status,400);
+  assert.equal((await jsonPost('/api/auth/reset-password',{token:resetTokens[1],password})).status,400);
+  assert.equal(await (await request('/api/auth/session',{headers:{Cookie:cookie()}})).json(),null);
+  console.log('HTTP hardening checks passed: import limits, pending order quota, password byte limits, reset-token revocation and session revocation.');
   await db.user.update({where:{id:user.id},data:{sessionVersion:{increment:1}}});
   const revoked=await request('/api/auth/session',{headers:{Cookie:cookie()}});assert.equal(await revoked.json(),null);
   console.log('HTTP smoke checks passed: pages, real user/admin sign-in, session revocation, role restrictions, anonymous upload rejection, disabled payment rejection, and captcha/password/token/ownership order authorization.');

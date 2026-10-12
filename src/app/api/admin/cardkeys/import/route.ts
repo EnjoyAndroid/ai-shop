@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { importCardKeys } from "@/lib/services/product.service";
 import { importCardKeysSchema } from "@/lib/validations";
 import { getAdminSession } from "@/lib/admin-auth";
-import { logError } from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limit";
+import { CARDKEY_IMPORT_BYTES } from "@/lib/cardkey-rules";
+import { readBoundedJson } from "@/lib/request-body";
+import { orderError } from "@/lib/order-http";
 
 export async function POST(request: NextRequest) {
   const admin = await getAdminSession();
@@ -11,7 +14,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
+    if (!await rateLimit("card-import", admin.id, 20, 3600)) return NextResponse.json({ error: "导入过于频繁，请稍后重试" }, { status: 429 });
+    const body = await readBoundedJson(request, CARDKEY_IMPORT_BYTES);
 
     // 验证请求数据
     const validationResult = importCardKeysSchema.safeParse(body);
@@ -24,21 +28,8 @@ export async function POST(request: NextRequest) {
 
     const { productId, cardKeys, batchNo } = validationResult.data;
 
-    // 解析卡密 (每行一个)
-    const cardKeyList = cardKeys
-      .split("\n")
-      .map((k) => k.trim())
-      .filter((k) => k.length > 0);
-
-    if (cardKeyList.length === 0) {
-      return NextResponse.json(
-        { error: "请输入至少一个卡密" },
-        { status: 400 }
-      );
-    }
-
     // 导入卡密
-    const count = await importCardKeys(productId, cardKeyList, batchNo);
+    const count = await importCardKeys(productId, cardKeys, batchNo);
 
     return NextResponse.json({
       success: true,
@@ -46,10 +37,6 @@ export async function POST(request: NextRequest) {
       message: `成功导入 ${count} 条卡密`,
     });
   } catch (error) {
-    logError("Import cardkeys", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "导入失败" },
-      { status: 500 }
-    );
+    return orderError("Import cardkeys", error);
   }
 }

@@ -6,6 +6,7 @@ import { logError } from "@/lib/logger";
 
 import { getAdminSession } from "@/lib/admin-auth";
 import { rateLimit } from "@/lib/rate-limit";
+import { adminPasswordSchema } from "@/lib/password-rules";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,9 +25,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (newPassword.length < 12 || newPassword.length > 72) {
+    const validation = adminPasswordSchema.safeParse(newPassword);
+    if (!validation.success) {
       return NextResponse.json(
-        { error: "新密码需要12至72位" },
+        { error: validation.error.issues[0].message },
         { status: 400 }
       );
     }

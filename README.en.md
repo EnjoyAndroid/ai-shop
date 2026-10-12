@@ -122,7 +122,7 @@ npm ci
 cp .env.example .env
 ```
 
-Configure `.env`. Generate separate random values for the database password, `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET`. The initial `ADMIN_PASSWORD` must be 12–72 characters. To generate one random value:
+Configure `.env`. Generate separate random values for the database password, `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET`. The initial `ADMIN_PASSWORD` must contain at least 12 characters and at most 72 UTF-8 bytes. To generate one random value:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -193,6 +193,9 @@ The seed enables only balance payments by default. External payments require bot
 | Telegram support link | Admin panel → System settings → Support settings; leave blank to hide. |
 | WeChat community | Admin panel → System settings → WeChat community; upload the current group QR code and optionally set its expiry. |
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
+| Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
+
+Pending inventory quotas for externally paid product orders are checked inside the inventory transaction. Payment or cancellation releases the quota; the minute-based expiry job cancels expired orders. Immediate balance purchases and recharges are excluded. Card imports allow up to 500 entries and a 2 MB request per batch; split larger batches. Password resets and account bans invalidate earlier reset links. Links issued before this update must be requested again.
 
 `NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset, and the support email defaults to empty. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
 
@@ -238,10 +241,13 @@ npm run test:integration
 npm run build
 npm run test:http
 npm run check:secrets
-npm audit
+npm run check:history
+npm run audit:security
 ```
 
-Integration tests require a separate `ai_shop_order_query_test` database, or a database configured through `TEST_DATABASE_URL` whose name ends in `_test`, and Redis database 15. They do not call real payment providers or send notifications. See [Contributing](CONTRIBUTING.md) (Chinese) for details. CI covers builds, balance and inventory concurrency regressions, scans of current publishable files, and dependency audits. Current-file scans do not verify every historical object or cached copy held by the hosting service.
+Integration tests require a separate `ai_shop_order_query_test` database, or a database configured through `TEST_DATABASE_URL` whose name ends in `_test`, and Redis database 15. They do not call real payment providers or send notifications. See [Contributing](CONTRIBUTING.md) (Chinese) for details. CI covers builds, balance and inventory concurrency regressions, current-file secret scans, commit email checks, and dependency audits. Commit metadata checks require a full checkout and do not scan every historical file or cached copy held by the hosting service.
+
+Plain `npm audit` still reports the braces advisory for which no upstream fix is available. The installation script applies a minimal nesting limit after verifying the original source checksum. `audit:security` only accepts that advisory when the patch is verified; all other advisories and network failures block the check. Original package versions and licenses are retained. See [security documentation](docs/security.md) for the patch and its retirement conditions.
 
 - [Security policy and private vulnerability reports](SECURITY.md) (Chinese)
 - [Contributing](CONTRIBUTING.md) (Chinese)

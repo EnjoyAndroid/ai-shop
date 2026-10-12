@@ -1,14 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { logError } from "../src/lib/logger";
+import { adminPasswordSchema } from "../src/lib/password-rules";
 
 const prisma = new PrismaClient();
 
 async function main() {
   const existingAdmin = await prisma.admin.findUnique({ where: { username: "admin" } });
   const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!existingAdmin && (!adminPassword || adminPassword.length < 12 || adminPassword.length > 72)) {
-    throw new Error("首次初始化需要配置 12 至 72 位 ADMIN_PASSWORD");
+  if (!existingAdmin && !adminPasswordSchema.safeParse(adminPassword).success) {
+    throw new Error("首次初始化需要配置至少12位、最多72个 UTF-8 字节的 ADMIN_PASSWORD");
   }
   console.log("🌱 开始种子数据...");
 

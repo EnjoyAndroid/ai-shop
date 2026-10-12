@@ -1,4 +1,5 @@
 import { logError } from "@/lib/logger";
+import { cardKeyListSchema, cardKeyBatchSchema } from "@/lib/cardkey-rules";
 import prisma from "@/lib/db";
 import { encrypt, decrypt } from "@/lib/encryption";
 import redis, { CACHE_KEYS } from "@/lib/redis";
@@ -217,14 +218,16 @@ export async function importCardKeys(
   cardKeys: string[],
   batchNo?: string
 ): Promise<number> {
-  const data = cardKeys.map((key) => {
-    const encrypted = encrypt(key.trim());
+  const keys = cardKeyListSchema.parse(cardKeys);
+  const batch = cardKeyBatchSchema.optional().parse(batchNo);
+  const data = keys.map((key) => {
+    const encrypted = encrypt(key);
     return {
       productId,
       content: encrypted.content,
       iv: encrypted.iv,
       tag: encrypted.tag,
-      batchNo,
+      batchNo: batch,
     };
   });
 
