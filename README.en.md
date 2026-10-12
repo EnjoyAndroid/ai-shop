@@ -91,7 +91,7 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 
 - **Dashboard:** order and revenue statistics, user counts, pending orders, and low-stock alerts.
 - **Products and categories:** product descriptions, cover images, prices, quantity limits, sorting, and listing status.
-- **Digital key inventory:** batch imports, batch identifiers, encrypted storage, and stock reservations when orders are created.
+- **Digital key inventory:** batch imports, batch identifiers, and paginated unsold inventory by status. Reveal, edit, or delete individual unallocated keys; reserved and sold keys cannot be changed. Keys are encrypted and reserved when orders are created.
 - **Orders and users:** order details, delivery, cancellation, refunds, membership levels, account status, and balance adjustments.
 - **Announcements and settings:** announcements, site information, order expiry, payment switches, Telegram support links, and WeChat group QR codes.
 - **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.

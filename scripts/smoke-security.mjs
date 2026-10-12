@@ -60,6 +60,8 @@ try {
   assert.equal((await jsonPost('/api/orders', {items:[{productId:orderProduct.id,quantity:1}],email,paymentMethod:'BALANCE'})).status,400);
   assert.equal((await request('/api/admin/users')).status, 401);
   assert.equal((await request('/api/upload', { method: 'POST' })).status, 401);
+  assert.equal((await request('/api/admin/cardkeys?productId='+orderProduct.id)).status,401);
+  for (const method of ['GET','PATCH','DELETE']) assert.equal((await request('/api/admin/cardkeys/test-card',{method})).status,401);
   const disabled = await request('/api/payment/callback/alipay', { method: 'POST', headers: { 'Content-Type':'application/x-www-form-urlencoded' }, body: 'status=OD&hash=invalid' });
   assert.equal(disabled.status,400);
   const leakedKey = await new SignJWT({ id: admin.id, username, sessionVersion: 0 }).setProtectedHeader({alg:'HS256'}).setExpirationTime('5m').sign(new TextEncoder().encode('admin-secret-key'));
@@ -87,6 +89,36 @@ try {
   const storedProduct = await db.product.findUniqueOrThrow({where:{id:productId}});
   assert.equal(storedProduct.originalPrice,null); assert.equal(storedProduct.image,imageUrl);
   console.log('Product image update with cleared original price: passed');
+
+  const imported = await jsonPost('/api/admin/cardkeys/import',{productId,cardKeys:'SYNTHETIC-INVENTORY-A\nSYNTHETIC-INVENTORY-B\nSYNTHETIC-INVENTORY-C',batchNo:'inventory-smoke'},{Cookie:cookie()});
+  assert.equal(imported.status,200); assert.equal((await imported.json()).count,3);
+  const cardsResponse = await request('/api/admin/cardkeys?productId='+productId,{headers:{Cookie:cookie()}});
+  assert.equal(cardsResponse.status,200); assert(cardsResponse.headers.get('cache-control').includes('no-store'));
+  const inventory = await cardsResponse.json(); assert.equal(inventory.total,3);
+  assert(!JSON.stringify(inventory).includes('SYNTHETIC-INVENTORY'));
+  assert(inventory.cards.every(card=>card.canManage && !('content' in card) && !('iv' in card) && !('tag' in card)));
+  const inventoryCard = inventory.cards[0];
+  const revealedResponse = await request('/api/admin/cardkeys/'+inventoryCard.id,{headers:{Cookie:cookie()}});
+  assert(revealedResponse.headers.get('cache-control').includes('no-store'));
+  const revealed = (await revealedResponse.json()).card; assert(revealed.content.startsWith('SYNTHETIC-INVENTORY-'));
+  const editInput = {content:'SYNTHETIC-INVENTORY-EDITED',batchNo:'edited-smoke',updatedAt:revealed.updatedAt};
+  const patchCard = (input)=>request('/api/admin/cardkeys/'+inventoryCard.id,{method:'PATCH',headers:{'Content-Type':'application/json',Cookie:cookie()},body:JSON.stringify(input)});
+  assert.equal((await patchCard({...editInput,status:'SOLD'})).status,400);
+  assert.equal((await patchCard(editInput)).status,200);
+  assert.equal((await patchCard(editInput)).status,409);
+  const savedCard = await db.cardKey.findUniqueOrThrow({where:{id:inventoryCard.id}});
+  assert.notEqual(savedCard.content,editInput.content); assert.equal(savedCard.batchNo,'edited-smoke');
+  const deleteCard = (version)=>request('/api/admin/cardkeys/'+inventoryCard.id,{method:'DELETE',headers:{'Content-Type':'application/json',Cookie:cookie()},body:JSON.stringify({updatedAt:version})});
+  assert.equal((await deleteCard(revealed.updatedAt)).status,409);
+  assert.equal((await deleteCard(savedCard.updatedAt.toISOString())).status,200);
+  assert.equal((await db.product.findUniqueOrThrow({where:{id:productId}})).stock,2);
+  assert.equal((await request('/api/admin/cardkeys/'+inventoryCard.id,{headers:{Cookie:cookie()}})).status,404);
+  const lockedCard = await db.cardKey.findFirstOrThrow({where:{productId:orderProduct.id,status:'LOCKED'}});
+  for (const method of ['GET','PATCH','DELETE']) {
+    const body = method==='GET' ? undefined : JSON.stringify(method==='PATCH'?{content:'SYNTHETIC-TAMPER',batchNo:'',updatedAt:lockedCard.updatedAt.toISOString()}:{updatedAt:lockedCard.updatedAt.toISOString()});
+    assert.equal((await request('/api/admin/cardkeys/'+lockedCard.id,{method,headers:{Cookie:cookie(),'Content-Type':'application/json'},body})).status,409);
+  }
+  console.log('Inventory import/list/reveal/edit/delete, stale version protection, locked card protection, encrypted storage and stock update: passed');
 
   const previousSettings = (await settings.json()).settings;
   const previousContact = previousSettings.telegramUrl || '';

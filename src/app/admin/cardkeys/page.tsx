@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AdminSidebar } from "@/components/admin/sidebar";
+import { CardKeyInventory } from "@/components/admin/cardkey-inventory";
 
 interface Product {
   id: string;
@@ -20,6 +21,7 @@ export default function AdminCardKeysPage() {
   const [loading, setLoading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [inventoryRevision, setInventoryRevision] = useState(0);
 
   useEffect(() => {
     fetchProducts();
@@ -29,9 +31,10 @@ export default function AdminCardKeysPage() {
     try {
       const res = await fetch("/api/admin/products");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "获取商品失败");
       setProducts(data.products || []);
     } catch (err) {
-      console.error("Failed to fetch products:", err);
+      setResult({ success: false, message: err instanceof Error ? err.message : "获取商品失败" });
     } finally {
       setLoadingProducts(false);
     }
@@ -68,6 +71,8 @@ export default function AdminCardKeysPage() {
       setResult({ success: true, message: `成功导入 ${data.count} 条卡密` });
       setCardKeys("");
       setBatchNo("");
+      setInventoryRevision(current => current + 1);
+      void fetchProducts();
     } catch (err) {
       setResult({
         success: false,
@@ -197,13 +202,17 @@ export default function AdminCardKeysPage() {
                 <h3 className="font-semibold text-yellow-800 mb-2">⚠️ 注意事项</h3>
                 <ul className="list-disc list-inside space-y-1">
                   <li>导入前请确认商品正确</li>
-                  <li>已导入的卡密无法修改</li>
+                  <li>可用卡密支持查看、编辑和删除</li>
+                  <li>已被订单占用的卡密不可修改</li>
+                  <li>已售出卡密在订单详情中查看</li>
                   <li>建议使用批次号便于管理</li>
                 </ul>
               </div>
             </div>
           </div>
         </div>
+
+        {productId ? <CardKeyInventory key={productId} productId={productId} revision={inventoryRevision} onChanged={() => { void fetchProducts(); }} /> : <div className="mt-8 rounded-xl bg-white p-8 text-center text-gray-500">选择商品后，可在此查看和管理未售出卡密</div>}
       </main>
     </div>
   );

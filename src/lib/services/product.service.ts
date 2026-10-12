@@ -2,6 +2,7 @@ import { logError } from "@/lib/logger";
 import prisma from "@/lib/db";
 import { encrypt, decrypt } from "@/lib/encryption";
 import redis, { CACHE_KEYS } from "@/lib/redis";
+import { transaction } from "@/lib/transaction";
 import type { Prisma, Product, Category, CardKey } from "@prisma/client";
 
 export interface ProductWithCategory extends Product {
@@ -227,21 +228,15 @@ export async function importCardKeys(
     };
   });
 
-  const result = await prisma.cardKey.createMany({
-    data,
+  const result = await transaction(async tx => {
+    const inserted = await tx.cardKey.createMany({ data });
+    const stock = await tx.cardKey.count({ where: { productId, status: "AVAILABLE" } });
+    const product = await tx.product.update({ where: { id: productId }, data: { stock }, select: { slug: true } });
+    return { count: inserted.count, slug: product.slug };
   });
 
-  // 更新商品库存
-  await updateProductStock(productId);
-
-  // 清除商品缓存
-  const product = await prisma.product.findUnique({
-    where: { id: productId },
-    select: { slug: true },
-  });
-  if (product) {
-    await redis.del(CACHE_KEYS.PRODUCT(product.slug));
-  }
+  try { await redis.del(CACHE_KEYS.PRODUCTS_LIST, CACHE_KEYS.PRODUCT(result.slug)); }
+  catch (error) { logError("Import card inventory cache", error); }
 
   return result.count;
 }
@@ -285,23 +280,6 @@ export function decryptCardKey(cardKey: Pick<CardKey, "content" | "iv" | "tag">)
     content: cardKey.content,
     iv: cardKey.iv,
     tag: cardKey.tag,
-  });
-}
-
-/**
- * 更新商品库存数量
- */
-async function updateProductStock(productId: string): Promise<void> {
-  const count = await prisma.cardKey.count({
-    where: {
-      productId,
-      status: "AVAILABLE",
-    },
-  });
-
-  await prisma.product.update({
-    where: { id: productId },
-    data: { stock: count },
   });
 }
 

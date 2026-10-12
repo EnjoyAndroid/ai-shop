@@ -1,0 +1,18 @@
+{
+  "mode": "fallback CLI",
+  "provider": "Sub2API",
+  "model": "gpt-image-2",
+  "quality": "medium",
+  "prompt": "gemini-prompt.md",
+  "png": "output/imagegen/gemini.png",
+  "webp": "output/imagegen/gemini.webp",
+  "dimensions": [
+    1024,
+    1024
+  ],
+  "generatedDimensions": [
+    1254,
+    1254
+  ],
+  "webpBytes": 49116
+}

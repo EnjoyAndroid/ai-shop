@@ -17,6 +17,8 @@ import { createOrder, handlePaymentSuccess, cancelOrder, cancelExpiredOrders, re
 import { getOrCreateQuote } from "../../src/lib/payment/usdt";
 import { authenticateCredentials } from "../../src/lib/authenticate";
 import { createCaptcha, verifyCaptcha, consumeCaptchaToken } from "../../src/lib/captcha";
+import { listUnsoldCardKeys, readUnsoldCardKey, changeUnsoldCardKey } from "../../src/lib/services/cardkey.service";
+import { importCardKeys } from "../../src/lib/services/product.service";
 
 if (process.env.RUN_DATABASE_TESTS !== "1" || !new URL(process.env.DATABASE_URL!).pathname.endsWith("_test")) throw new Error("Tests require an isolated _test database");
 const prefix = `test-${randomBytes(6).toString("hex")}`;
@@ -37,6 +39,87 @@ before(async () => {
   categoryId = (await prisma.category.create({ data: { name: prefix, slug: prefix } })).id;
 });
 after(async () => { await prisma.$disconnect(); await redis.quit(); });
+
+test("unsold card listing never returns secrets; editing encrypts content and stale edits are rejected", async () => {
+  const f = await fixture(23);
+  const first = await listUnsoldCardKeys({ productId: f.product.id });
+  const second = await listUnsoldCardKeys({ productId: f.product.id, page: 2 });
+  assert.equal(first.cards.length, 20); assert.equal(second.cards.length, 3); assert.equal(first.total, 23);
+  assert(!JSON.stringify(first).includes('SYNTHETIC'));
+  for (const key of ['content', 'iv', 'tag', 'orderId']) assert(!Object.hasOwn(first.cards[0], key));
+  assert(first.cards.every(card => card.canManage));
+  const card = await readUnsoldCardKey(first.cards[0].id);
+  const updated = await changeUnsoldCardKey(card.id, { content: 'SYNTHETIC-EDITED-KEY', batchNo: 'edited-batch', updatedAt: card.updatedAt.toISOString() }, 'edit');
+  assert.equal(updated.stock, 23);
+  const stored = await prisma.cardKey.findUniqueOrThrow({ where: { id: card.id } });
+  assert.notEqual(stored.content, 'SYNTHETIC-EDITED-KEY'); assert.equal(stored.batchNo, 'edited-batch');
+  const reread = await readUnsoldCardKey(card.id); assert.equal(reread.content, 'SYNTHETIC-EDITED-KEY');
+  await assert.rejects(changeUnsoldCardKey(card.id, { content: 'SYNTHETIC-STALE', batchNo: '', updatedAt: card.updatedAt.toISOString() }, 'edit'), httpStatus(409));
+  await assert.rejects(changeUnsoldCardKey(card.id, { updatedAt: card.updatedAt.toISOString() }, 'delete'), httpStatus(409));
+});
+
+test("inventory deletion updates stock and cache; locked and sold cards remain protected", async () => {
+  const f = await fixture(2, 100, 'BALANCE');
+  const available = await prisma.cardKey.findFirstOrThrow({ where: { productId: f.product.id } });
+  await redis.set(`product:${f.product.slug}`, 'stale-cache'); await redis.set('products:list', 'stale-list');
+  assert.equal((await changeUnsoldCardKey(available.id, { updatedAt: available.updatedAt.toISOString() }, 'delete')).stock, 1);
+  assert.equal(await prisma.cardKey.count({ where: { id: available.id } }), 0);
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } })).stock, 1);
+  assert.equal(await redis.exists(`product:${f.product.slug}`), 0); assert.equal(await redis.exists('products:list'), 0);
+  const pending = await createOrder({ ...f.input, paymentMethod: 'ALIPAY' });
+  const locked = await prisma.cardKey.findFirstOrThrow({ where: { productId: f.product.id, status: 'LOCKED' } });
+  const listing = await listUnsoldCardKeys({ productId: f.product.id, status: 'ALL' });
+  assert.equal(listing.cards.length, 1); assert.equal(listing.cards[0].canManage, false);
+  await assert.rejects(readUnsoldCardKey(locked.id), httpStatus(409));
+  for (const action of ['edit', 'delete'] as const) await assert.rejects(changeUnsoldCardKey(locked.id, action === 'edit' ? { content: 'SYNTHETIC-REPLACE', batchNo: '', updatedAt: locked.updatedAt.toISOString() } : { updatedAt: locked.updatedAt.toISOString() }, action), httpStatus(409));
+  await cancelOrder(pending.id);
+  await createOrder(f.input);
+  const sold = await prisma.cardKey.findUniqueOrThrow({ where: { id: locked.id } });
+  assert.equal(sold.status, 'SOLD');
+  assert.equal((await listUnsoldCardKeys({ productId: f.product.id, status: 'ALL' })).total, 0);
+  await assert.rejects(readUnsoldCardKey(sold.id), httpStatus(409));
+  await assert.rejects(changeUnsoldCardKey(sold.id, { updatedAt: sold.updatedAt.toISOString() }, 'delete'), httpStatus(409));
+  const invalid = await prisma.cardKey.create({ data: { productId: f.product.id, status: 'INVALID', ...encrypt('SYNTHETIC-INVALID') } });
+  assert.equal((await readUnsoldCardKey(invalid.id)).content, 'SYNTHETIC-INVALID');
+  await changeUnsoldCardKey(invalid.id, { content: 'SYNTHETIC-INVALID-EDIT', batchNo: '', updatedAt: invalid.updatedAt.toISOString() }, 'edit');
+  const current = await prisma.cardKey.findUniqueOrThrow({ where: { id: invalid.id } });
+  await changeUnsoldCardKey(invalid.id, { updatedAt: current.updatedAt.toISOString() }, 'delete');
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } })).stock, 0);
+});
+
+test("deleting a card concurrently with checkout cannot remove a sold card or debit without delivery", async () => {
+  const f = await fixture(1, 100, 'BALANCE');
+  const card = await prisma.cardKey.findFirstOrThrow({ where: { productId: f.product.id } });
+  const results = await Promise.allSettled([createOrder(f.input), changeUnsoldCardKey(card.id, { updatedAt: card.updatedAt.toISOString() }, 'delete')]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const product = await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: f.user.id } });
+  assert.equal(product.stock, 0);
+  if (results[0].status === 'fulfilled') {
+    assert.equal(user.balance, 0); assert.equal(product.salesCount, 1);
+    assert.equal((await prisma.cardKey.findUniqueOrThrow({ where: { id: card.id } })).status, 'SOLD');
+  } else {
+    assert.equal(user.balance, 100); assert.equal(product.salesCount, 0);
+    assert.equal(await prisma.order.count({ where: { userId: f.user.id } }), 0);
+    assert.equal(await prisma.cardKey.count({ where: { id: card.id } }), 0);
+  }
+});
+
+test("concurrent imports and card deletion keep available inventory consistent and invalidate caches", async () => {
+  const f = await fixture(1);
+  const card = await prisma.cardKey.findFirstOrThrow({ where: { productId: f.product.id } });
+  await redis.set(`product:${f.product.slug}`, 'stale-cache'); await redis.set('products:list', 'stale-list');
+  const results = await Promise.all([
+    importCardKeys(f.product.id, ['SYNTHETIC-NEW-A', 'SYNTHETIC-NEW-B']),
+    importCardKeys(f.product.id, ['SYNTHETIC-NEW-C']),
+    changeUnsoldCardKey(card.id, { updatedAt: card.updatedAt.toISOString() }, 'delete'),
+  ]);
+  assert.equal(results[0], 2); assert.equal(results[1], 1);
+  assert.equal(await prisma.cardKey.count({ where: { productId: f.product.id, status: 'AVAILABLE' } }), 3);
+  const product = await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } });
+  assert.equal(product.stock, 3); assert.equal(product.salesCount, 0);
+  assert.equal(await redis.exists(`product:${f.product.slug}`), 0); assert.equal(await redis.exists('products:list'), 0);
+});
 
 test("concurrent stock reservations never allocate a single card twice", async () => {
   const f = await fixture(1);
