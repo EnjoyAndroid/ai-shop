@@ -29,7 +29,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
-    // 邮箱格式验证
+    // 本地校验提供即时提示；注册接口仍负责最终校验与验证码消费。
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       setError("请输入有效的邮箱地址");
@@ -118,7 +118,7 @@ export default function RegisterPage() {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-              placeholder="user@example.com"
+                placeholder="user@example.com"
                 className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 autoComplete="off"
                 required

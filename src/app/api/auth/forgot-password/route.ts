@@ -2,23 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import prisma from "@/lib/db";
 import redis from "@/lib/redis";
-import nodemailer from "nodemailer";
+import { getSmtpOptions, logMailFailure, MailConfigurationError, sendMail } from "@/lib/smtp";
 import { getClientIp } from "@/lib/get-client-ip";
 import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
 
-// 创建邮件发送器
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 465,
-  secure: Number(process.env.SMTP_PORT || 465) === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
 export async function POST(request: NextRequest) {
+  let resetKey: string | undefined;
   try {
     const body = await request.json();
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -28,6 +18,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (!await rateLimit("reset-ip", getClientIp(request), 10, 3600) || !await rateLimit("reset-email", email, 3, 3600)) return NextResponse.json({ success: true });
+
+    // Site-wide configuration errors must not depend on whether an account exists.
+    getSmtpOptions();
 
     // 查找用户
     const user = await prisma.user.findUnique({
@@ -44,7 +37,8 @@ export async function POST(request: NextRequest) {
     const expireTime = 10 * 60; // 10 分钟
 
     // 存储到 Redis
-    await redis.setex(`reset_password:${token}`, expireTime, user.id);
+    resetKey = `reset_password:${token}`;
+    await redis.setex(resetKey, expireTime, user.id);
 
     // 发送重置邮件
     const resetUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password?token=${token}`;
@@ -96,8 +90,7 @@ export async function POST(request: NextRequest) {
       </html>
     `;
 
-    await transporter.sendMail({
-      from: `"AI Shop" <${process.env.MAIL_FROM}>`,
+    await sendMail({
       to: email,
       subject: "【AI Shop】重置密码",
       html,
@@ -105,7 +98,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    logError("Forgot password", error);
-    return NextResponse.json({ error: "发送失败，请稍后重试" }, { status: 500 });
+    if (resetKey) {
+      try { await redis.del(resetKey); }
+      catch (cleanupError) { logError("Reset token cleanup", cleanupError); }
+    }
+    logMailFailure("Forgot password", error);
+    return NextResponse.json({ error: error instanceof MailConfigurationError
+      ? "邮件服务尚未配置，请联系客服"
+      : "邮件服务暂不可用，请稍后重试或联系客服" }, { status: 503 });
   }
 }

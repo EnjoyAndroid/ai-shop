@@ -7,6 +7,7 @@ import { ProductCard } from "@/components/shop/product-card";
 import { Announcement } from "@/components/shop/announcement";
 import { Header } from "@/components/shop/header";
 import { PurchaseSteps } from "@/components/shop/purchase-steps";
+import { CommunityEntry } from "@/components/shop/community-entry";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
@@ -63,6 +64,10 @@ export default async function HomePage() {
           </div>
         </section>
 
+        <div className="mb-8">
+          <CommunityEntry />
+        </div>
+
         {/* 使用说明 */}
         <section className="bg-white rounded-2xl p-8 mb-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
@@ -70,6 +75,7 @@ export default async function HomePage() {
           </h2>
           <PurchaseSteps />
         </section>
+
       </main>
 
       {/* 页脚 */}

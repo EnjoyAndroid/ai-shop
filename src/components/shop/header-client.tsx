@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
+import { Github } from "lucide-react";
+import { GITHUB_URL } from "@/lib/public-config";
 
 interface HeaderClientProps {
   isLoggedIn?: boolean;
@@ -28,7 +30,8 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
               <Link href="/" className="text-2xl font-bold text-blue-600">
                 AI Shop
               </Link>
-              <nav className="hidden md:flex items-center space-x-6">
+              <div className="hidden md:flex items-center gap-6">
+              <nav className="flex items-center gap-6" aria-label="商城导航">
                 <Link href="/" className="text-gray-600 hover:text-primary">
                   首页
                 </Link>
@@ -62,6 +65,14 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
                   </>
                 )}
               </nav>
+              <div className="border-l border-gray-200 pl-5">
+                <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" title="查看项目源码"
+                  className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-gray-900">
+                  <Github className="h-4 w-4" aria-hidden="true" />
+                  <span>Github</span>
+                </a>
+              </div>
+              </div>
 
               {/* 移动端汉堡菜单按钮 */}
               <button
@@ -144,6 +155,7 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
               <span>订单查询</span>
             </Link>
 
+
             {isLoggedIn ? (
               <>
                 <Link
@@ -206,9 +218,14 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
             )}
           </nav>
 
-          {/* 底部退出按钮 */}
-          {isLoggedIn && (
-            <div className="p-4 border-t">
+          {/* 项目链接与账号操作 */}
+          <div className="p-4 border-t space-y-2">
+            <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" onClick={closeMenu}
+              className="flex items-center justify-between rounded-lg px-4 py-3 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900">
+              <span className="flex items-center gap-2"><Github className="h-4 w-4" aria-hidden="true" />Github</span>
+              <span className="text-xs text-gray-400">项目源码 ↗</span>
+            </a>
+            {isLoggedIn && (
               <button
                 onClick={() => {
                   closeMenu();
@@ -221,8 +238,8 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
                 </svg>
                 <span>退出登录</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </>

@@ -2,7 +2,17 @@
 
 [简体中文](README.md) | **English**
 
+Website: [https://5aishop.com](https://5aishop.com)
+
 A self-hosted digital goods storefront with product listings, self-service purchases, automatic delivery, protected order lookup, and an administration dashboard. Built with Next.js, TypeScript, PostgreSQL, Prisma, and Redis, with responsive layouts for desktop and mobile.
+
+## WeChat community
+
+Discuss deployment, usage, and feature ideas. Scan the QR code or open the [join page](https://5aishop.com/community), then use WeChat to recognize the latest group QR code on that page. The community page is currently in Simplified Chinese.
+
+<a href="https://5aishop.com/community"><img src="docs/community/wechat-entry.png" width="160" height="160" alt="Permanent entry to the AI Shop WeChat community" /></a>
+
+This QR code points to a permanent page. Administrators update the group QR code once for both the storefront and README entry. The underlying WeChat group code still needs replacement when it expires or the group fills up.
 
 ## Preview
 
@@ -83,7 +93,8 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Products and categories:** product descriptions, cover images, prices, quantity limits, sorting, and listing status.
 - **Digital key inventory:** batch imports, batch identifiers, encrypted storage, and stock reservations when orders are created.
 - **Orders and users:** order details, delivery, cancellation, refunds, membership levels, account status, and balance adjustments.
-- **Announcements and settings:** announcements, site information, order expiry, payment switches, and Telegram support links.
+- **Announcements and settings:** announcements, site information, order expiry, payment switches, Telegram support links, and WeChat group QR codes.
+- **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings.
 
 ### Payments and notifications
@@ -180,9 +191,23 @@ The seed enables only balance payments by default. External payments require bot
 | Image uploads | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
 | Public support email | `NEXT_PUBLIC_CONTACT_EMAIL` |
 | Telegram support link | Admin panel → System settings → Support settings; leave blank to hide. |
+| WeChat community | Admin panel → System settings → WeChat community; upload the current group QR code and optionally set its expiry. |
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 
 `NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset, and the support email defaults to empty. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
+
+The permanent community page is `/community`; homepage QR codes use `NEXT_PUBLIC_SITE_URL`. Updating group settings does not require redeployment, but the app cannot automatically renew WeChat group invitations. For a self-hosted instance, change the README join links to your domain and run `npm run community:qr -- https://example.com` to regenerate its QR image. See the [maintenance guide](docs/community/README.md).
+
+### Troubleshooting email delivery
+
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM`, then recreate the app container to apply runtime settings. Port 465 uses implicit TLS; port 587 uses STARTTLS with certificate verification enabled. Gmail typically requires an app password rather than the password used to sign in on the web.
+
+```bash
+# Check connectivity and authentication only; do not send a message or print secrets.
+npm run mail:check
+```
+
+A failure at `CONN` means the connection/TLS handshake did not complete; `EAUTH` means authentication was rejected. Being able to browse webmail does not prove a proxy supports SMTP. Check the mail route if DNS returns a proxy virtual address or connections to ports 465/587 close. Connection waits are bounded, and reset tokens are removed when delivery fails. Failed order notifications do not repeat charges or fulfillment.
 
 ## Upgrades, backups, and migrations
 

@@ -2,7 +2,17 @@
 
 **简体中文** | [English](README.en.md)
 
+官网：[https://5aishop.com](https://5aishop.com)
+
 一个可自托管的数字商品商城，提供商品展示、自助购买、自动发货、安全订单查询和完整运营后台。基于 Next.js、TypeScript、PostgreSQL、Prisma 和 Redis，支持桌面与手机访问。
+
+## 微信交流群
+
+交流项目部署、使用经验和功能建议。扫描下方二维码或点击 [入群页面](https://5aishop.com/community)，在微信中识别页面内的最新群二维码。
+
+<a href="https://5aishop.com/community"><img src="docs/community/wechat-entry.png" width="160" height="160" alt="AI Shop 微信交流群固定入口二维码" /></a>
+
+这是固定入口二维码；管理员更新群码后，首页与此入口同步生效。微信群二维码本身仍需在过期或群满时更换。
 
 ## 项目预览
 
@@ -83,7 +93,8 @@ https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 - **商品与分类**：编辑商品、封面、价格、购买数量限制、排序和上下架状态。
 - **卡密库存**：按商品批量导入卡密，支持批次标记，加密存储并在下单时预留库存。
 - **订单与用户**：查看订单详情，处理发货、取消与退款，管理会员等级、用户状态和余额。
-- **公告与系统设置**：配置公告、站点信息、订单有效期、支付开关及 Telegram 客服。
+- **公告与系统设置**：配置公告、站点信息、订单有效期、支付开关、Telegram 客服及微信群二维码。
+- **微信群固定入口**：首页与 README 共用入群页面；后台更换群二维码和设置有效期，过期后停止展示旧群码。
 - **后台角色分工**：OPERATOR 负责商品及发货，ADMIN 管理用户和财务，SUPER_ADMIN 管理系统设置。
 
 ### 支付与通知
@@ -180,9 +191,23 @@ unset ADMIN_PASSWORD
 | 图片上传 | `CLOUDINARY_CLOUD_NAME`、`CLOUDINARY_API_KEY`、`CLOUDINARY_API_SECRET` |
 | 客服邮箱展示 | `NEXT_PUBLIC_CONTACT_EMAIL` |
 | Telegram 客服 | 后台「系统设置 → 客服设置」，留空隐藏入口 |
+| 微信交流群 | 后台「系统设置 → 微信交流群」，上传最新群二维码并设置可选过期时间 |
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 
 `NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。客服邮箱环境变量默认空。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
+
+微信群固定页面为 `/community`，首页二维码根据 `NEXT_PUBLIC_SITE_URL` 生成。后台更新后无需重新部署；普通微信群二维码不由应用自动续期。自托管时请将本 README 的入群链接改为自己的域名，并运行 `npm run community:qr -- https://example.com` 重新生成 README 固定二维码；[维护说明](docs/community/README.md)。
+
+### 邮件发送排查
+
+配置 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `MAIL_FROM` 后，重新创建应用容器使运行配置生效。465 使用直接 TLS，587 使用 STARTTLS，证书验证保持开启。Gmail 通常需要应用专用密码，不能直接使用网页登录密码。
+
+```bash
+# 只验证连接及认证，不发送邮件，也不打印密码或重置链接。
+npm run mail:check
+```
+
+`CONN` 阶段失败表示连接/TLS 尚未完成；`EAUTH` 表示认证被拒绝。能浏览邮箱网页不代表代理支持 SMTP：出现代理虚拟地址或 465/587 断连时，应检查发信线路。应用限制连接等待，发送失败会撤销未发出的重置令牌；订单通知失败不会重复扣款或发货。
 
 ## 升级、备份与迁移
 

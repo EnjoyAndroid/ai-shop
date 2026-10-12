@@ -4,6 +4,7 @@ import { clearSettingsCache } from "@/lib/services/settings.service";
 import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { logError } from "@/lib/logger";
 import { telegramUrlSchema } from "@/lib/contact-settings";
+import { wechatGroupQrUrlSchema, wechatGroupExpiresAtSchema } from "@/lib/community-settings";
 
 // 获取系统设置
 export async function GET() {
@@ -51,6 +52,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: result.error.errors[0].message }, { status: 400 });
       }
       body.telegramUrl = result.data;
+    }
+    for (const [key, schema] of [
+      ["wechatGroupQrUrl", wechatGroupQrUrlSchema],
+      ["wechatGroupExpiresAt", wechatGroupExpiresAtSchema],
+    ] as const) {
+      if (!Object.hasOwn(body, key)) continue;
+      const result = schema.safeParse(body[key]);
+      if (!result.success) {
+        return NextResponse.json({ error: result.error.errors[0].message }, { status: 400 });
+      }
+      body[key] = result.data;
     }
 
     // 批量更新设置

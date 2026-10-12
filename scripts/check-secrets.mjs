@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
+// Scan tracked and non-ignored untracked files in the current checkout.
+// Git history is outside this check; binary files and files over 2 MB are skipped below.
 const files = [...new Set(execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean))];
 const failures = [];
 const placeholders = /replace_with|your[-_ ]|example|test[-_ ]|ci-test-only|placeholder|^\s*$|\$\{|process\.env/i;

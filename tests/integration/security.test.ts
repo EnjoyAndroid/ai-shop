@@ -2,6 +2,9 @@ import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
+import { NextRequest } from "next/server";
+import { POST as requestPasswordReset } from "../../src/app/api/auth/forgot-password/route";
 import { searchOrders, unlockOrder } from "../../src/lib/services/order-query.service";
 import { canAccessOrder, issueOrderAccess, issueOrderQuery, readOrderQuery } from "../../src/lib/order-access";
 import { createWithOrderNumber } from "../../src/lib/order-number";
@@ -260,4 +263,58 @@ test("Redis errors never grant query or order access", async context => {
     await assert.rejects(readOrderQuery(query, "redis-test"));
     await assert.rejects(canAccessOrder({ id: "test", orderNo: generateOrderNo(), userId: null }, "f".repeat(64)));
   } finally { get.mock.restore(); }
+});
+
+
+test("failed reset delivery removes its token; successful delivery keeps one expiring token", async context => {
+  const names = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "NEXT_PUBLIC_SITE_URL"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const email = `${prefix}-reset@example.invalid`;
+  const user = await prisma.user.create({ data: { email } });
+  const before = new Set(await redis.keys("reset_password:*"));
+  let resetToken = "";
+  let closeCount = 0;
+  let fail = true;
+  const mailMock = context.mock.method(nodemailer, "createTransport", () => ({
+    sendMail: async (message: { html: string }) => {
+      resetToken = message.html.match(/token=([a-f0-9]{64})/)![1];
+      if (fail) throw Object.assign(new Error("private-mail-response"), { code: "ESOCKET", command: "CONN" });
+      return {};
+    },
+    close: () => { closeCount++; },
+  }) as unknown as ReturnType<typeof nodemailer.createTransport>);
+  context.mock.method(console, "warn", () => {});
+  const request = (value: string) => new NextRequest("http://localhost/api/auth/forgot-password", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: value }),
+  });
+  try {
+    Object.assign(process.env, { SMTP_HOST: "smtp.example.com", SMTP_PORT: "465", SMTP_USER: "sender@example.com", SMTP_PASS: "test-only-mail-secret", MAIL_FROM: "sender@example.com", NEXT_PUBLIC_SITE_URL: "http://localhost" });
+    const failed = await requestPasswordReset(request(email));
+    assert.equal(failed.status, 503);
+    assert(!JSON.stringify(await failed.json()).includes("private-mail-response"));
+    assert.equal(await redis.exists(`reset_password:${resetToken}`), 0);
+    fail = false;
+    const successful = await requestPasswordReset(request(email));
+    assert.equal(successful.status, 200);
+    assert.equal(await redis.get(`reset_password:${resetToken}`), user.id);
+    assert((await redis.ttl(`reset_password:${resetToken}`)) <= 600);
+    assert.equal(closeCount, 2);
+    const tokenCount = (await redis.keys("reset_password:*")).filter(key => !before.has(key)).length;
+    assert.equal(tokenCount, 1);
+    const unknown = await requestPasswordReset(request(`${prefix}-absent-reset@example.invalid`));
+    assert.equal(unknown.status, 200);
+    assert.equal(closeCount, 2);
+    process.env.SMTP_HOST = "";
+    const missing = await requestPasswordReset(request(email));
+    const missingUnknown = await requestPasswordReset(request(`${prefix}-absent-reset@example.invalid`));
+    assert.equal(missing.status, 503);
+    assert.equal(missingUnknown.status, 503);
+    assert.deepEqual(await missing.json(), await missingUnknown.json());
+  } finally {
+    mailMock.mock.restore();
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
+    }
+    for (const key of await redis.keys("reset_password:*")) if (!before.has(key)) await redis.del(key);
+  }
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
 import sharp from "sharp";
-import { getAdminSession } from "@/lib/admin-auth";
+import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
 
@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
+    const isCommunityQr = formData.get("purpose") === "community";
+    if (isCommunityQr && !hasAdminPermission(admin, "settings")) return NextResponse.json({ error: "无权限" }, { status: 403 });
     const file = formData.get("file") as File | null;
 
     if (!(file instanceof File)) {
@@ -63,12 +65,12 @@ export async function POST(request: NextRequest) {
     const metadata = await image.metadata();
     if (!["jpeg", "png", "gif", "webp"].includes(metadata.format || "")) return NextResponse.json({ error: "文件内容不是支持的图片" }, { status: 400 });
     // 重新编码以验证解码结果并剥离附加元数据和混入的非图片内容。
-    const sanitized = await image.resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true }).webp().toBuffer();
+    const sanitized = await image.resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true }).webp({ lossless: isCommunityQr }).toBuffer();
     const base64 = `data:image/webp;base64,${sanitized.toString("base64")}`;
 
     // 上传到 Cloudinary
     const result = await cloudinary.uploader.upload(base64, {
-      folder: "products",
+      folder: isCommunityQr ? "community" : "products",
       resource_type: "image",
     });
 

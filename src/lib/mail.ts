@@ -1,16 +1,4 @@
-import { logError } from "@/lib/logger";
-import nodemailer from "nodemailer";
-
-// 创建邮件发送器
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 465,
-  secure: Number(process.env.SMTP_PORT || 465) === 465, // 使用 SSL
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+import { logMailFailure, sendMail } from "@/lib/smtp";
 
 interface OrderEmailParams {
   to: string;
@@ -113,15 +101,14 @@ export async function sendPaymentSuccessEmail(params: OrderEmailParams): Promise
   `;
 
   try {
-    await transporter.sendMail({
-      from: `"AI Shop" <${process.env.MAIL_FROM}>`,
+    await sendMail({
       to,
       subject: `【AI Shop】支付成功 - 订单 ${orderNo}`,
       html,
     });
     return true;
   } catch (error) {
-    logError("Send email error", error);
+    logMailFailure("Send email error", error);
     return false;
   }
 }

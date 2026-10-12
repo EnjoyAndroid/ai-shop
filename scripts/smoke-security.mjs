@@ -88,7 +88,8 @@ try {
   assert.equal(storedProduct.originalPrice,null); assert.equal(storedProduct.image,imageUrl);
   console.log('Product image update with cleared original price: passed');
 
-  const previousContact = (await settings.json()).settings.telegramUrl || '';
+  const previousSettings = (await settings.json()).settings;
+  const previousContact = previousSettings.telegramUrl || '';
   try {
     const publicBefore = await request('/api/settings/contact'); assert.equal(publicBefore.status,200);
     assert.deepEqual(Object.keys(await publicBefore.json()), ['telegramUrl']);
@@ -104,9 +105,37 @@ try {
     await db.systemSetting.deleteMany({where:{key:'privateSmokeSetting'}});
   }
 
+  const previousCommunity = { wechatGroupQrUrl: previousSettings.wechatGroupQrUrl || '', wechatGroupExpiresAt: previousSettings.wechatGroupExpiresAt || '' };
+  try {
+    assert.equal((await request('/community')).status,200);
+    assert((await (await request('/')).text()).includes('href="/community"'));
+    const entryQr = await request('/api/community/entry-qr'); assert.equal(entryQr.status,200);
+    assert(entryQr.headers.get('content-type').startsWith('image/png'));
+    assert.deepEqual([...new Uint8Array(await entryQr.arrayBuffer()).slice(0,8)], [137,80,78,71,13,10,26,10]);
+    const image = 'https://example.com/test-group.png';
+    const future = new Date(Date.now()+60000).toISOString();
+    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'javascript:alert(1)'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:image,wechatGroupExpiresAt:future},{Cookie:cookie()})).status,200);
+    const active = await request('/api/community'); assert.equal(active.status,200);
+    assert(active.headers.get('cache-control').includes('no-store'));
+    assert.deepEqual(await active.json(), {status:'active',qrCodeUrl:image,expiresAt:future});
+    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'https://example.com/rejected.png',wechatGroupExpiresAt:'tomorrow'},{Cookie:cookie()})).status,400);
+    assert.deepEqual(await (await request('/api/community')).json(), {status:'active',qrCodeUrl:image,expiresAt:future});
+    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupExpiresAt:new Date(Date.now()-1000).toISOString()},{Cookie:cookie()})).status,200);
+    const expired = await (await request('/api/community')).json(); assert.equal(expired.status,'expired'); assert.equal(expired.qrCodeUrl,'');
+    const expiredPage = await (await request('/community')).text(); assert(expiredPage.includes('群二维码正在更新')); assert(!expiredPage.includes(image));
+    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'',wechatGroupExpiresAt:''},{Cookie:cookie()})).status,200);
+    assert.deepEqual(await (await request('/api/community')).json(), {status:'unconfigured',qrCodeUrl:'',expiresAt:''});
+    assert((await (await request('/community')).text()).includes('交流群暂未开放'));
+    console.log('Community entry, QR response, configuration validation, cache invalidation, expiry and public settings isolation: passed');
+  } finally {
+    await jsonPost('/api/admin/settings',previousCommunity,{Cookie:cookie()});
+  }
+
   jar.clear();
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
+  assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'https://example.com/test-group.png'},{Cookie:cookie()})).status,403);
   assert.equal((await jsonPost(`/api/admin/users/${user.id}/balance`,{amount:100},{Cookie:cookie()})).status,403);
   jar.clear();
   for (const order of [memberOrder, guestOrder, rechargeOrder]) {

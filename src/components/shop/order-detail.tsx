@@ -55,7 +55,8 @@ export function OrderDetail({ order }: OrderDetailProps) {
     showToast(label);
   };
 
-  // 下载密钥为txt文件
+  // 导出接口已授权返回的卡密，以当前订单号命名 UTF-8 文本文件。
+  // 下载完成后释放临时对象 URL，内容不包含订单查询密码。
   const downloadCardKeys = () => {
     if (!order.items) return;
 
