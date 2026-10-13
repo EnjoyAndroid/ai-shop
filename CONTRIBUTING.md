@@ -24,4 +24,8 @@ npm run audit:security
 
 数据库变更提交 Prisma schema 与 SQL migration；不得通过重置数据库掩盖升级问题。并发、权限和资金变更需要失败重试及回归测试。日志使用 `src/lib/logger.ts`，不记录凭据、明文卡密和完整第三方响应。
 
+Dependabot 将 npm 的 minor/patch 更新合并为一个 PR，GitHub Actions 更新按组提出；Prisma、React 和 Next/ESLint 的 major 更新分别分组，需成套检查兼容性。分组不等于自动合并，仍以当前版本的 CI 和人工审查为准。
+
+PR 的邮箱检查仅排除与 GitHub 事件和两个父提交都匹配的临时测试合并提交元数据，仍检查全部真实提交；构建和测试继续运行在 PR 合并结果上。推送到 main 后不使用该排除规则。
+
 提交贡献即确认有权以项目 MIT 许可证提供贡献；引入第三方素材或代码时附上来源和许可证。安全问题请按 SECURITY.md 私密报告。

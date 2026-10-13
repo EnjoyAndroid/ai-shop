@@ -10,7 +10,7 @@ import { readBoundedJson } from "../src/lib/request-body";
 import { OrderRequestError } from "../src/lib/order-errors";
 import { sendPaymentSuccessEmail } from "../src/lib/mail";
 import { sendPaymentSuccessTelegram } from "../src/lib/telegram";
-import { privateCommitMetadata } from "../scripts/check-commit-metadata.mjs";
+import { privateCommitMetadata, syntheticPullRequestMerge } from "../scripts/check-commit-metadata.mjs";
 
 test("existing AES-GCM ciphertext stays compatible; repeated reads derive once and key changes invalidate the cache", context => {
   const previous = process.env.ENCRYPTION_KEY;
@@ -111,4 +111,22 @@ test("history identity checks reject private author and committer addresses with
   assert(failures.some(value => value.includes('author')));
   assert(failures.some(value => value.includes('committer')));
   assert(failures.every(value => !value.includes(privateAddress)));
+});
+
+test("history ignores only an event-verified temporary PR merge while still checking its parents", () => {
+  const base = 'a'.repeat(40), head = 'b'.repeat(40), merge = 'c'.repeat(40);
+  const event = { pull_request: { merge_commit_sha: merge, base: { sha: base }, head: { sha: head } } };
+  assert.equal(syntheticPullRequestMerge('pull_request', event, merge, [base, head], merge), merge);
+  assert.equal(syntheticPullRequestMerge('pull_request', { pull_request: { ...event.pull_request, merge_commit_sha: null } }, merge, [base, head], merge), merge);
+  for (const [name,sha,parents] of [['push', merge, [base,head]], ['pull_request',head,[base,head]], ['pull_request',merge,[head,base]], ['pull_request',merge,[base]], ['pull_request',merge,[base,head,merge]]] as const) {
+    assert.equal(syntheticPullRequestMerge(name,event,sha,[...parents],merge), null);
+  }
+  assert.equal(syntheticPullRequestMerge('pull_request',{},merge,[base,head],merge),null);
+  assert.equal(syntheticPullRequestMerge('pull_request',event,merge,[base,head],head),null);
+  assert.equal(syntheticPullRequestMerge('pull_request',event,merge,[base,head],undefined),null);
+  const address = 'synthetic-private@' + 'mail.invalid';
+  const log = `${merge}\t${address}\t${address}\n${head}\t${address}\t123+dev@users.noreply.github.com`;
+  const failures = privateCommitMetadata(log, merge);
+  assert.equal(failures.length, 1); assert(failures[0].startsWith(head));
+  assert.equal(privateCommitMetadata(log).length,3);
 });
