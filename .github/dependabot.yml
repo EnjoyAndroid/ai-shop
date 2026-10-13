@@ -4,7 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      prisma-major:
+        patterns: ["prisma", "@prisma/*"]
+        update-types: ["major"]
+      react-major:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
+      next-tooling-major:
+        patterns: ["next", "eslint", "eslint-config-next", "@next/*"]
+        update-types: ["major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
