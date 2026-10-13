@@ -109,7 +109,7 @@ https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 
 订单使用安全随机编号，查询密码以哈希保存、卡密以 AES-256-GCM 加密。公开查询先展示摘要，再验证密码领取发货内容；登录会员只可查看本人订单，充值订单仅本人登录可查。资金、库存和发货由数据库事务保障，重复回调不重复入账。
 
-密码策略、查询凭证与限流规则见 [安全机制与部署边界](docs/security.md)。
+订单隐私、账号权限与部署要求见 [安全与使用边界](docs/security.md)。
 
 ## 环境
 
@@ -197,66 +197,27 @@ unset ADMIN_PASSWORD
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 | 待付库存额度 | `MAX_PENDING_ORDERS=3`、`MAX_PENDING_QUANTITY=100`，分别限制每个账号、邮箱和可信客户端 IP |
 
-外部支付商品订单的待付库存额度在事务中校验；付款或取消后释放，过期由每分钟任务取消。余额即时购买与充值不占该额度。卡密导入每批最多 500 条、2MB；更大的批次请拆分。密码重置成功或账号封禁后，旧重置链接立即失效；升级前签发的旧格式链接需重新申请。
+卡密导入每批最多 500 条、2MB。待付库存额度与密码重置规则见 [安全说明](docs/security.md)。
 
 「客服与社群」位于 `/admin/contact`，需 SUPER_ADMIN 权限；客服和群二维码分别配置，不能互相替代。保存后刷新商城即可生效，无需重新部署。微信客服的启用、隐藏及二维码维护见 [客服与社群维护说明](docs/community/README.md)。
 
-前台已移除「发送邮件」和邮件备用链接，不再使用 `NEXT_PUBLIC_CONTACT_EMAIL`，旧部署可删除这个变量。系统密码重置和付款通知仍使用上表 SMTP 配置；移除前台邮件入口不代表关闭系统发信。
+前台客服使用微信二维码或 Telegram；系统密码重置和付款通知使用上表 SMTP 配置。
 
-`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`，未配置时隐藏入口。商品图片默认允许 Cloudinary 域名，使用其他存储需在 `next.config.mjs` 添加域名；客服与微信群二维码支持直接填写 HTTPS 图片地址。
+`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，未配置时隐藏入口。商品图片默认允许 Cloudinary 域名，使用其他存储需在 `next.config.mjs` 添加域名；客服与微信群二维码支持直接填写 HTTPS 图片地址。
 
-`NEXTAUTH_URL` 必须与浏览器实际访问的协议、域名和端口一致；API 写入要求匹配的 Origin，支付签名回调除外。生产 CSP 为每次请求生成脚本 nonce，HTML 动态渲染且禁止共享缓存；代理/CDN 不应覆盖这些缓存头。详情见 [浏览器安全边界](docs/security.md#登录后台与反滥用)。
+`NEXTAUTH_URL` 必须与浏览器实际访问的协议、域名和端口一致。代理/CDN 应保留应用的安全及缓存响应头，HTML 页面不得使用共享缓存。详情见 [部署要求](docs/security.md#部署密钥与数据保留)。
 
 微信群固定页面为 `/community`，首页二维码根据 `NEXT_PUBLIC_SITE_URL` 生成。后台更新后无需重新部署；普通微信群二维码不由应用自动续期。自托管时请将本 README 的入群链接改为自己的域名，并运行 `npm run community:qr -- https://example.com` 重新生成 README 固定二维码；[维护说明](docs/community/README.md)。
 
-### 邮件发送排查
-
-配置 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `MAIL_FROM` 后，重新创建应用容器使运行配置生效。465 使用直接 TLS，587 使用 STARTTLS，证书验证保持开启。Gmail 通常需要应用专用密码，不能直接使用网页登录密码。
-
-```bash
-# 只验证连接及认证，不发送邮件，也不打印密码或重置链接。
-npm run mail:check
-```
-
-`CONN` 阶段失败表示连接/TLS 尚未完成；`EAUTH` 表示认证被拒绝。能浏览邮箱网页不代表代理支持 SMTP：出现代理虚拟地址或 465/587 断连时，应检查发信线路。应用限制连接等待，发送失败会撤销未发出的重置令牌；订单通知失败不会重复扣款或发货。
-
 ## 升级、备份与迁移
 
-**订单结构变更**：`20261003000000_order_query` 迁移仅支持空订单表，移除旧明文查询密码字段，不提供历史订单转换。已有正式订单的部署不能直接应用此迁移，也不能为通过迁移而删除正式订单。仅演示/测试部署可在核实并备份后定向清理测试订单及关联数据；启动脚本不会自动清理订单。
-
-升级前备份数据库及 `.env`，备份目录不可公开：
-
-```bash
-mkdir -p backups
-chmod 700 backups
-docker compose exec -T postgres pg_dump -U aishop -d ai_shop > backups/ai-shop.sql
-chmod 600 backups/ai-shop.sql
-```
-
-`npm run db:prepare` 支持新数据库和原来使用 `db push` 建立的数据库：旧库必须与已保存的旧版 schema 一致，才会标记基线并应用新迁移。存在结构差异时停止，由维护者核对。禁止为绕过迁移失败执行 reset 或删除数据卷。
-
-资金完整性迁移为历史已支付订单建立唯一流水记录；发现重复流水或负余额时会失败并回滚，需人工核账后再迁移。历史 USDT 待支付订单没有固定报价时，不自动猜测应付金额。
-
-迁移新增会话版本字段，升级后用户和管理员需重新登录。不要仅回滚镜像而忽略 schema 和历史数据版本。加密密钥继续保持原值，轮换必须先完成旧卡密重新加密。
-
-本版本保留财务记录、支付流水防重记录和已售卡密，不自动删除这些审计数据。过期订单每分钟检查并释放库存；取消/无关联记录的历史订单可由清理逻辑处理。默认订单有效期 10 分钟、清理阈值 90 天。
+升级现有实例前，先备份数据库和 `.env`，保留原卡密加密密钥。**尚未应用订单查询迁移的旧实例若已有正式订单，不能直接升级。** 不要删除正式订单来绕过迁移限制。
 
 ## 验证与维护
 
-```bash
-npm test
-npm run test:integration
-npm run build
-npm run test:http
-npm run check:secrets
-npm run check:history
-npm run audit:security
-```
+CI 覆盖生产构建、隔离测试、HTTP 验收及安全扫描。贡献前的完整验证命令见 [贡献说明](CONTRIBUTING.md)；已知依赖告警及临时补丁见 [依赖维护说明](docs/security.md#验证与依赖维护)。
 
-集成测试要求独立的 `ai_shop_order_query_test` 数据库（或 `TEST_DATABASE_URL` 指定的 `_test` 结尾数据库）及专用 Redis 15 库；不会访问真实支付平台或发送通知。具体方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。CI 包含构建、资金/库存并发回归、当前文件秘密扫描、提交邮箱检查及依赖审计；历史邮箱检查需要完整检出，不代表扫描所有历史文件或托管平台缓存。
-
-`npm audit` 仍会报告尚无上游修复版的 braces 公告；安装脚本应用并校验最小深度限制补丁，`audit:security` 仅接受已验证补丁覆盖的这一条公告，其他漏洞和联网失败均阻断。保留了原依赖版本和许可证，详见 [依赖维护说明](docs/security.md#验证与依赖维护)。
-
+- [客服与社群维护](docs/community/README.md)
 - [安全策略与私密漏洞报告](SECURITY.md)
 - [贡献说明](CONTRIBUTING.md)
 - [第三方许可证说明](THIRD_PARTY_NOTICES.md)

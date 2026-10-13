@@ -111,7 +111,7 @@ Email addresses are used for order lookup and optional notifications. Email and 
 
 Orders use cryptographically random identifiers. Lookup passwords are hashed, and digital keys are encrypted with AES-256-GCM. Public lookup shows order summaries first and requires password verification before accessing delivery details. Signed-in members can only access their own orders; balance top-up orders always require the owner's login. Database transactions protect balance changes, inventory, and fulfillment. Duplicate payment callbacks do not credit accounts twice.
 
-See [Security mechanisms and deployment boundaries](docs/security.md) (Chinese) for password policies, access tokens, and rate limits.
+See [Security and usage boundaries](docs/security.md) (Chinese) for order privacy, account permissions, and deployment requirements.
 
 ## Requirements
 
@@ -199,66 +199,27 @@ The seed enables only balance payments by default. External payments require bot
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 | Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
 
-Pending inventory quotas for externally paid product orders are checked inside the inventory transaction. Payment or cancellation releases the quota; the minute-based expiry job cancels expired orders. Immediate balance purchases and recharges are excluded. Card imports allow up to 500 entries and a 2 MB request per batch; split larger batches. Password resets and account bans invalidate earlier reset links. Links issued before this update must be requested again.
+Card imports allow up to 500 entries and a 2 MB request per batch. See [security boundaries](docs/security.md) for pending inventory quotas and password-reset rules.
 
 Support & community is available at `/admin/contact` to SUPER_ADMIN users. Support and group QR codes are configured separately and serve different purposes. Save and refresh the storefront to apply changes; no redeployment is needed. See the [support and community maintenance guide](docs/community/README.md) for visibility rules and QR maintenance.
 
-The storefront no longer provides a send-email button or an email fallback link. `NEXT_PUBLIC_CONTACT_EMAIL` is no longer used and can be removed from existing deployments. Password resets and payment notifications still use the SMTP settings above; removing the storefront email entry does not disable system email.
+Storefront support uses WeChat QR codes or Telegram; password resets and payment notifications use the SMTP settings above.
 
-`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; the app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`, and an empty value hides the entry. Product images allow Cloudinary by default; explicitly add other storage domains to `next.config.mjs`. Support and group QR images can use a directly configured HTTPS URL.
+`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; an empty value hides the entry. Product images allow Cloudinary by default; explicitly add other storage domains to `next.config.mjs`. Support and group QR images can use a directly configured HTTPS URL.
 
-`NEXTAUTH_URL` must match the browser's actual scheme, host, and port. API writes require that exact Origin, except the two signed payment callback endpoints. Production CSP uses a unique script nonce per request; HTML is dynamically rendered and must not be stored in shared caches. Proxies/CDNs must preserve the cache headers. See [browser security boundaries](docs/security.md) for details.
+`NEXTAUTH_URL` must match the browser's actual scheme, host, and port. Proxies/CDNs must preserve the application's security and cache headers; HTML pages must not use shared caches. See [deployment requirements](docs/security.md#部署密钥与数据保留) (Chinese) for details.
 
 The permanent community page is `/community`; homepage QR codes use `NEXT_PUBLIC_SITE_URL`. Updating group settings does not require redeployment, but the app cannot automatically renew WeChat group invitations. For a self-hosted instance, change the README join links to your domain and run `npm run community:qr -- https://example.com` to regenerate its QR image. See the [maintenance guide](docs/community/README.md).
 
-### Troubleshooting email delivery
-
-Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM`, then recreate the app container to apply runtime settings. Port 465 uses implicit TLS; port 587 uses STARTTLS with certificate verification enabled. Gmail typically requires an app password rather than the password used to sign in on the web.
-
-```bash
-# Check connectivity and authentication only; do not send a message or print secrets.
-npm run mail:check
-```
-
-A failure at `CONN` means the connection/TLS handshake did not complete; `EAUTH` means authentication was rejected. Being able to browse webmail does not prove a proxy supports SMTP. Check the mail route if DNS returns a proxy virtual address or connections to ports 465/587 close. Connection waits are bounded, and reset tokens are removed when delivery fails. Failed order notifications do not repeat charges or fulfillment.
-
 ## Upgrades, backups, and migrations
 
-**Order schema change:** migration `20261003000000_order_query` requires an empty order table. It removes the old plaintext lookup password column without converting historical orders. A deployment with real orders cannot directly apply this migration, and deleting real orders to bypass it is not supported. Demo or test deployments may remove specifically verified test orders and their related records after backing up. Startup scripts do not automatically delete orders.
-
-Back up the database and `.env` before an upgrade. Keep backup directories private:
-
-```bash
-mkdir -p backups
-chmod 700 backups
-docker compose exec -T postgres pg_dump -U aishop -d ai_shop > backups/ai-shop.sql
-chmod 600 backups/ai-shop.sql
-```
-
-`npm run db:prepare` supports new databases and databases originally created with `db push`. An existing database must match the saved baseline schema before it can be baselined and migrated. Schema differences stop the process for review. Do not reset the database or delete volumes to bypass migration failures.
-
-The payment integrity migration creates unique receipts for historical paid orders. Duplicate transactions or negative balances cause it to fail. Reconcile the records before retrying. Historical pending USDT orders without stored quotes are not automatically assigned a guessed amount.
-
-Session versioning requires users and admins to sign in again after upgrading from versions that did not support it. Do not roll back only the image while ignoring schema changes. Keep the encryption key unchanged unless you have re-encrypted existing digital keys first.
-
-Financial records, payment receipts used to prevent replay, and sold keys are retained. Expiry checks run every minute and release reserved stock. Historical cancellation cleanup only removes qualifying orders without sensitive related records. Default order expiry is 10 minutes; the cleanup threshold is 90 days.
+Before upgrading an existing instance, back up the database and `.env` and preserve the digital-key encryption key. **Older instances with real orders that have not applied the order-query migration cannot upgrade directly.** Do not delete real orders to bypass migration restrictions.
 
 ## Verification and maintenance
 
-```bash
-npm test
-npm run test:integration
-npm run build
-npm run test:http
-npm run check:secrets
-npm run check:history
-npm run audit:security
-```
+CI covers production builds, isolated tests, HTTP checks, and security scans. See [Contributing](CONTRIBUTING.md) (Chinese) for the full validation commands and [dependency maintenance](docs/security.md#验证与依赖维护) (Chinese) for known advisories and temporary patches.
 
-Integration tests require a separate `ai_shop_order_query_test` database, or a database configured through `TEST_DATABASE_URL` whose name ends in `_test`, and Redis database 15. They do not call real payment providers or send notifications. See [Contributing](CONTRIBUTING.md) (Chinese) for details. CI covers builds, balance and inventory concurrency regressions, current-file secret scans, commit email checks, and dependency audits. Commit metadata checks require a full checkout and do not scan every historical file or cached copy held by the hosting service.
-
-Plain `npm audit` still reports the braces advisory for which no upstream fix is available. The installation script applies a minimal nesting limit after verifying the original source checksum. `audit:security` only accepts that advisory when the patch is verified; all other advisories and network failures block the check. Original package versions and licenses are retained. See [security documentation](docs/security.md) for the patch and its retirement conditions.
-
+- [Support and community maintenance](docs/community/README.md#english)
 - [Security policy and private vulnerability reports](SECURITY.md) (Chinese)
 - [Contributing](CONTRIBUTING.md) (Chinese)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
