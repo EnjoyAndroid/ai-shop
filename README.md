@@ -188,7 +188,6 @@ unset ADMIN_PASSWORD
 | 邮件 | `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS`、`MAIL_FROM` |
 | Telegram 通知 | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID` |
 | 图片上传 | `CLOUDINARY_CLOUD_NAME`、`CLOUDINARY_API_KEY`、`CLOUDINARY_API_SECRET` |
-| 客服邮箱展示 | `NEXT_PUBLIC_CONTACT_EMAIL` |
 | 微信客服 | 后台「客服与社群 → 微信客服」，支持联系文字和二维码，留空隐藏 |
 | Telegram 客服 | 后台「客服与社群 → Telegram 客服」，留空隐藏入口 |
 | 微信交流群 | 后台「客服与社群 → 微信交流群」，上传最新群二维码并设置可选过期时间 |
@@ -197,7 +196,7 @@ unset ADMIN_PASSWORD
 
 外部支付商品订单的待付库存额度在事务中校验；付款或取消后释放，过期由每分钟任务取消。余额即时购买与充值不占该额度。卡密导入每批最多 500 条、2MB；更大的批次请拆分。密码重置成功或账号封禁后，旧重置链接立即失效；升级前签发的旧格式链接需重新申请。
 
-`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。客服邮箱环境变量默认空。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
+`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。前台客服提供微信与 Telegram 联系方式。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
 
 `NEXTAUTH_URL` 必须与浏览器实际访问的协议、域名和端口一致；API 写入要求匹配的 Origin，支付签名回调除外。生产 CSP 为每次请求生成脚本 nonce，HTML 动态渲染且禁止共享缓存；代理/CDN 不应覆盖这些缓存头。详情见 [浏览器安全边界](docs/security.md#登录后台与反滥用)。
 

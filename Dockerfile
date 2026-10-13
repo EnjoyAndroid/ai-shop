@@ -21,10 +21,8 @@ RUN ./node_modules/.bin/esbuild prisma/seed.ts --bundle --platform=node --extern
 # NEXT_PUBLIC_* 必须在构建时传入，运行时配置不会修改前端 bundle
 ARG NEXT_PUBLIC_SITE_NAME="AI Shop"
 ARG NEXT_PUBLIC_SITE_URL="http://localhost:3000"
-ARG NEXT_PUBLIC_CONTACT_EMAIL=""
 ENV NEXT_PUBLIC_SITE_NAME=${NEXT_PUBLIC_SITE_NAME}
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
-ENV NEXT_PUBLIC_CONTACT_EMAIL=${NEXT_PUBLIC_CONTACT_EMAIL}
 
 # 构建应用 - 提供临时 DATABASE_URL 跳过构建时的数据库检查
 ENV DATABASE_URL="postgresql://temp:temp@localhost:5432/temp"

@@ -7,7 +7,6 @@ services:
       args:
         NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-AI Shop}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-}
     container_name: ai-shop-app
     restart: unless-stopped
     environment:
@@ -22,7 +21,6 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - NEXT_PUBLIC_SITE_NAME=${NEXT_PUBLIC_SITE_NAME}
       - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
-      - NEXT_PUBLIC_CONTACT_EMAIL=${NEXT_PUBLIC_CONTACT_EMAIL:-}
       # 支付配置 - 虎皮椒
       - XUNHU_GATEWAY=${XUNHU_GATEWAY}
       - XUNHU_WECHAT_APPID=${XUNHU_WECHAT_APPID}

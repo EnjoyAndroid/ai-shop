@@ -190,7 +190,6 @@ The seed enables only balance payments by default. External payments require bot
 | Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` |
 | Telegram notifications | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Image uploads | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
-| Public support email | `NEXT_PUBLIC_CONTACT_EMAIL` |
 | WeChat support | Admin panel → Support & community → WeChat support; configure text and/or a QR image, or leave blank to hide. |
 | Telegram support link | Admin panel → Support & community → Telegram support; leave blank to hide. |
 | WeChat community | Admin panel → Support & community → WeChat community; upload the current group QR code and optionally set its expiry. |
@@ -199,7 +198,7 @@ The seed enables only balance payments by default. External payments require bot
 
 Pending inventory quotas for externally paid product orders are checked inside the inventory transaction. Payment or cancellation releases the quota; the minute-based expiry job cancels expired orders. Immediate balance purchases and recharges are excluded. Card imports allow up to 500 entries and a 2 MB request per batch; split larger batches. Password resets and account bans invalidate earlier reset links. Links issued before this update must be requested again.
 
-`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset, and the support email defaults to empty. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
+`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset. Storefront support uses WeChat and Telegram. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
 
 `NEXTAUTH_URL` must match the browser's actual scheme, host, and port. API writes require that exact Origin, except the two signed payment callback endpoints. Production CSP uses a unique script nonce per request; HTML is dynamically rendered and must not be stored in shared caches. Proxies/CDNs must preserve the cache headers. See [browser security boundaries](docs/security.md) for details.
 

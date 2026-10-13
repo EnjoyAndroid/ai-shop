@@ -63,7 +63,6 @@ export function ContactSettingsForm() {
       {message && <p role={message.success ? "status" : "alert"} className={`rounded-lg p-4 text-sm ${message.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>{message.text}</p>}
       <section className="rounded-xl bg-white p-6 shadow-sm" aria-labelledby="wechat-support-settings">
         <h2 id="wechat-support-settings" className="mb-2 text-lg font-bold text-gray-800">微信客服</h2>
-        <p className="mb-5 text-sm text-gray-500">可维护微信号、联系说明和二维码。前台“联系客服”弹窗仅展示二维码与扫码提示。</p>
         <label htmlFor="wechatSupportText" className="mb-2 block text-sm text-gray-600">微信号或联系说明</label>
         <textarea id="wechatSupportText" rows={3} value={settings.wechatSupportText} disabled={busy} onChange={event => change("wechatSupportText", event.target.value)} maxLength={300} placeholder="填写微信号、服务时间或联系说明" className="mb-5 w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
         <ContactQrInput id="wechatSupportQrUrl" label="微信客服二维码" value={settings.wechatSupportQrUrl} purpose="support" disabled={saving} onChange={value => change("wechatSupportQrUrl", value)} onBusyChange={value => setUploads(current => ({ ...current, support: value }))} />
