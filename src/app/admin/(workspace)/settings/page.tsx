@@ -1,10 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AdminSidebar } from "@/components/admin/sidebar";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 import { PasswordInput } from "@/components/ui/password-input";
-import Link from "next/link";
-import { getCommunityEntryUrl } from "@/lib/community-settings";
 
 interface Settings {
   siteName: string;
@@ -15,15 +13,6 @@ interface Settings {
   wechatEnabled: string;
   usdtEnabled: string;
   balanceEnabled: string;
-  telegramUrl: string;
-  wechatGroupQrUrl: string;
-  wechatGroupExpiresAt: string;
-}
-
-function toLocalDateTime(value: string) {
-  if (!value || !Number.isFinite(Date.parse(value))) return "";
-  const date = new Date(value);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
 export default function AdminSettingsPage() {
@@ -36,15 +25,9 @@ export default function AdminSettingsPage() {
     wechatEnabled: "true",
     usdtEnabled: "false",
     balanceEnabled: "true",
-    telegramUrl: "",
-    wechatGroupQrUrl: "",
-    wechatGroupExpiresAt: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploadingGroupQr, setUploadingGroupQr] = useState(false);
-  const [groupQrError, setGroupQrError] = useState("");
-  const [communityEntryUrl, setCommunityEntryUrl] = useState("/community");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // 修改密码相关状态
@@ -58,7 +41,6 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     fetchSettings();
-    setCommunityEntryUrl(getCommunityEntryUrl(window.location.origin));
   }, []);
 
   const fetchSettings = async () => {
@@ -102,25 +84,6 @@ export default function AdminSettingsPage() {
 
   const handleChange = (key: keyof Settings, value: string) => {
     setSettings((current) => ({ ...current, [key]: value }));
-  };
-
-  const handleGroupQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setUploadingGroupQr(true);
-    setGroupQrError("");
-    try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("purpose", "community");
-      const response = await fetch("/api/upload", { method: "POST", body: form });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "上传失败");
-      setSettings((current) => ({ ...current, wechatGroupQrUrl: result.url, wechatGroupExpiresAt: "" }));
-    } catch (error) {
-      setGroupQrError(error instanceof Error ? error.message : "上传失败，请稍后重试");
-    } finally { setUploadingGroupQr(false); }
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -167,14 +130,11 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <h1 className="text-2xl font-bold text-gray-800 mb-8">系统设置</h1>
 
         {loading ? (
-          <div className="text-center text-gray-500">加载中...</div>
+          <AdminContentLoading />
         ) : (
           <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
             {message && (
@@ -210,55 +170,6 @@ export default function AdminSettingsPage() {
                     onChange={(e) => handleChange("siteUrl", e.target.value)}
                     className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
-                </div>
-              </div>
-            </div>
-
-            {/* 客服设置 */}
-            <div className="bg-white rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">客服设置</h2>
-              <label htmlFor="telegramUrl" className="block text-sm text-gray-600 mb-1">Telegram 客服</label>
-              <input
-                id="telegramUrl"
-                type="text"
-                value={settings.telegramUrl}
-                onChange={(e) => handleChange("telegramUrl", e.target.value)}
-                placeholder="@用户名 或 https://t.me/用户名"
-                maxLength={100}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-              <p className="text-xs text-gray-500 mt-1">留空时隐藏 Telegram 入口；保存后刷新商城即可生效，无需重新部署。</p>
-            </div>
-
-            {/* 微信交流群 */}
-            <div className="bg-white rounded-xl p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-800 mb-2">微信交流群</h2>
-              <p className="text-sm text-gray-500 mb-5">首页和 README 使用固定入口；更换群二维码后保存设置即可生效，无需重新部署。</p>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="wechatGroupQrUpload" className="block text-sm text-gray-600 mb-2">上传最新群二维码</label>
-                  <input id="wechatGroupQrUpload" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleGroupQrUpload} disabled={uploadingGroupQr || saving} className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-4 file:py-2 file:text-emerald-700 disabled:opacity-50" />
-                  <p className="text-xs text-gray-500 mt-2">支持 PNG、JPG、WebP，最大 2MB。上传成功后请设置过期时间并保存。</p>
-                  {uploadingGroupQr && <p role="status" className="mt-2 text-sm text-gray-500">正在上传...</p>}
-                  {groupQrError && <p role="alert" className="mt-2 text-sm text-red-600">{groupQrError}</p>}
-                </div>
-                <div>
-                  <label htmlFor="wechatGroupQrUrl" className="block text-sm text-gray-600 mb-1">二维码图片地址</label>
-                  <input id="wechatGroupQrUrl" type="url" value={settings.wechatGroupQrUrl} onChange={(e) => { handleChange("wechatGroupQrUrl", e.target.value); setGroupQrError(""); }} placeholder="上传后自动填写，也可粘贴 HTTPS 图片地址" maxLength={2048} className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                </div>
-                {settings.wechatGroupQrUrl.startsWith("https://") && <div className="flex items-start gap-4 rounded-lg border border-gray-100 p-3">
-                  <img src={settings.wechatGroupQrUrl} alt="待保存的微信群二维码预览" className="max-h-48 w-32 object-contain" referrerPolicy="no-referrer" />
-                  <button type="button" onClick={() => { setSettings((current) => ({ ...current, wechatGroupQrUrl: "", wechatGroupExpiresAt: "" })); setGroupQrError(""); }} className="text-sm text-red-600 hover:text-red-700">移除二维码</button>
-                </div>}
-                <div>
-                  <label htmlFor="wechatGroupExpiresAt" className="block text-sm text-gray-600 mb-1">过期时间（可选，使用当前设备时区）</label>
-                  <input id="wechatGroupExpiresAt" type="datetime-local" value={toLocalDateTime(settings.wechatGroupExpiresAt)} onChange={(e) => handleChange("wechatGroupExpiresAt", e.target.value ? new Date(e.target.value).toISOString() : "")} className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                  <p className="text-xs text-gray-500 mt-1">按微信显示的有效期填写；到期后不展示旧群码。固定入口不会过期，但群码仍需人工更新；群满或邀请受限时也需更换。</p>
-                </div>
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm font-medium text-gray-700">固定入群页面</p>
-                  <Link href="/community" target="_blank" rel="noopener noreferrer" className="mt-1 block break-all text-sm text-primary hover:underline">{communityEntryUrl}</Link>
-                  <a href="/api/community/entry-qr" download="ai-shop-wechat-entry.png" className="mt-3 inline-block text-sm text-primary hover:underline">下载固定入口二维码</a>
                 </div>
               </div>
             </div>
@@ -391,7 +302,7 @@ export default function AdminSettingsPage() {
             {/* 提交按钮 */}
             <button
               type="submit"
-              disabled={saving || uploadingGroupQr}
+              disabled={saving}
               className="w-full py-3 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? "保存中..." : "保存设置"}
@@ -468,7 +379,6 @@ export default function AdminSettingsPage() {
             </div>
           </form>
         )}
-      </main>
-    </div>
+      </>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 import Link from "next/link";
-import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface Product {
   id: string;
@@ -39,10 +39,7 @@ export default function AdminProductsPage() {
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">商品管理</h1>
           <Link
@@ -55,7 +52,7 @@ export default function AdminProductsPage() {
 
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">加载中...</div>
+            <AdminContentLoading />
           ) : products.length === 0 ? (
             <div className="p-8 text-center text-gray-500">暂无商品</div>
           ) : (
@@ -156,7 +153,6 @@ export default function AdminProductsPage() {
             </table>
           )}
         </div>
-      </main>
-    </div>
+      </>
   );
 }

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import prisma from "@/lib/db";
-import { AdminSidebar } from "@/components/admin/sidebar";
 import { getAdminSession } from "@/lib/admin-auth";
 import { getOrderStatusInfo } from "@/lib/order-status";
 
@@ -120,10 +119,7 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">仪表盘</h1>
           <div className="text-sm text-gray-500">
@@ -233,7 +229,6 @@ export default async function AdminDashboardPage() {
             </table>
           </div>
         </div>
-      </main>
-    </div>
+      </>
   );
 }

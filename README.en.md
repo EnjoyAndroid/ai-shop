@@ -93,9 +93,10 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Products and categories:** product descriptions, cover images, prices, quantity limits, sorting, and listing status.
 - **Digital key inventory:** batch imports, batch identifiers, and paginated unsold inventory by status. Reveal, edit, or delete individual unallocated keys; reserved and sold keys cannot be changed. Keys are encrypted and reserved when orders are created.
 - **Orders and users:** order details, delivery, cancellation, refunds, membership levels, account status, and balance adjustments.
-- **Announcements and settings:** announcements, site information, order expiry, payment switches, Telegram support links, and WeChat group QR codes.
+- **Announcements and settings:** announcements, site information, order expiry, payment switches, with a separate Support & community page for WeChat support text/QR images, Telegram links, and group QR codes.
 - **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings.
+- **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
 
 ### Payments and notifications
 
@@ -190,8 +191,9 @@ The seed enables only balance payments by default. External payments require bot
 | Telegram notifications | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Image uploads | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
 | Public support email | `NEXT_PUBLIC_CONTACT_EMAIL` |
-| Telegram support link | Admin panel → System settings → Support settings; leave blank to hide. |
-| WeChat community | Admin panel → System settings → WeChat community; upload the current group QR code and optionally set its expiry. |
+| WeChat support | Admin panel → Support & community → WeChat support; configure text and/or a QR image, or leave blank to hide. |
+| Telegram support link | Admin panel → Support & community → Telegram support; leave blank to hide. |
+| WeChat community | Admin panel → Support & community → WeChat community; upload the current group QR code and optionally set its expiry. |
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 | Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
 

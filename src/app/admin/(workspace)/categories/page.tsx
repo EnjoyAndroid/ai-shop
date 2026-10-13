@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 import Link from "next/link";
-import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface Category {
   id: string;
@@ -131,10 +131,7 @@ export default function AdminCategoriesPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">分类管理</h1>
           <button
@@ -147,7 +144,7 @@ export default function AdminCategoriesPage() {
 
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">加载中...</div>
+            <AdminContentLoading />
           ) : categories.length === 0 ? (
             <div className="p-8 text-center text-gray-500">暂无分类</div>
           ) : (
@@ -410,7 +407,6 @@ export default function AdminCategoriesPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </>
   );
 }

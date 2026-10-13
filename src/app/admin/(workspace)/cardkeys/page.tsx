@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AdminSidebar } from "@/components/admin/sidebar";
 import { CardKeyInventory } from "@/components/admin/cardkey-inventory";
 import { CARDKEY_IMPORT_MAX } from "@/lib/cardkey-rules";
 
@@ -85,10 +84,7 @@ export default function AdminCardKeysPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <h1 className="text-2xl font-bold text-gray-800 mb-8">卡密管理</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -214,7 +210,6 @@ export default function AdminCardKeysPage() {
         </div>
 
         {productId ? <CardKeyInventory key={productId} productId={productId} revision={inventoryRevision} onChanged={() => { void fetchProducts(); }} /> : <div className="mt-8 rounded-xl bg-white p-8 text-center text-gray-500">选择商品后，可在此查看和管理未售出卡密</div>}
-      </main>
-    </div>
+      </>
   );
 }

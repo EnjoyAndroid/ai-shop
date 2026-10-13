@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface OrderDetail {
   id: string;
@@ -123,10 +123,7 @@ export default function AdminOrderDetailPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         {/* 顶部导航 */}
         <div className="flex items-center gap-4 mb-8">
           <Link
@@ -138,7 +135,7 @@ export default function AdminOrderDetailPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-500">加载中...</div>
+          <AdminContentLoading />
         ) : error ? (
           <div className="bg-white rounded-xl p-8 text-center">
             <p className="text-red-500 mb-4">{error}</p>
@@ -373,7 +370,6 @@ export default function AdminOrderDetailPage() {
             )}
           </div>
         ) : null}
-      </main>
-    </div>
+      </>
   );
 }

@@ -1,5 +1,5 @@
-import { getSetting } from "@/lib/services/settings.service";
-import { getSafeTelegramUrl } from "@/lib/contact-settings";
+import { getSettings } from "@/lib/services/settings.service";
+import { getPublicContactSettings } from "@/lib/contact-settings";
 import Link from "next/link";
 import { Suspense } from "react";
 import { getCategories, getProducts } from "@/lib/services/product.service";
@@ -8,17 +8,18 @@ import { Announcement } from "@/components/shop/announcement";
 import { Header } from "@/components/shop/header";
 import { PurchaseSteps } from "@/components/shop/purchase-steps";
 import { CommunityEntry } from "@/components/shop/community-entry";
+import { WechatSupport } from "@/components/shop/wechat-support";
 
 // 强制动态渲染，避免构建时访问数据库
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [categories, { products }, savedTelegramUrl] = await Promise.all([
+  const [categories, { products }, savedSettings] = await Promise.all([
     getCategories(),
     getProducts({ isActive: true, limit: 12 }),
-    getSetting("telegramUrl"),
+    getSettings(),
   ]);
-  const telegramUrl = getSafeTelegramUrl(savedTelegramUrl);
+  const { telegramUrl, wechatSupportText, wechatSupportQrUrl } = getPublicContactSettings(savedSettings);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -89,6 +90,7 @@ export default async function HomePage() {
             <div className="md:text-right">
               <h3 className="text-white font-bold mb-4">联系我们</h3>
               <ul className="space-y-2 text-sm">
+                {(wechatSupportText || wechatSupportQrUrl) && <li><WechatSupport text={wechatSupportText} qrUrl={wechatSupportQrUrl} className="hover:text-white" /></li>}
                 {telegramUrl && <li>
                   <a
                     href={telegramUrl}

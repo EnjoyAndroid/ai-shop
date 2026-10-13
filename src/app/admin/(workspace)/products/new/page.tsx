@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface Category {
   id: string;
@@ -126,10 +125,7 @@ export default function AdminNewProductPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">添加商品</h1>
           <Link
@@ -364,7 +360,6 @@ export default function AdminNewProductPage() {
             </button>
           </div>
         </form>
-      </main>
-    </div>
+      </>
   );
 }

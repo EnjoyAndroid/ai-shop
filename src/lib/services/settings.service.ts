@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
   usdtEnabled: "false",
   balanceEnabled: "false",
   telegramUrl: "",
+  wechatSupportText: "",
+  wechatSupportQrUrl: "",
   wechatGroupQrUrl: "",
   wechatGroupExpiresAt: "",
 };

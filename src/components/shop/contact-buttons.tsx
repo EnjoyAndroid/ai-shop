@@ -2,10 +2,12 @@
 import { useState } from "react";
 import { CONTACT_EMAIL } from "@/lib/public-config";
 import { useContactSettings } from "./use-contact-settings";
+import { WechatSupport } from "./wechat-support";
 
 export function ContactButtons() {
-  const { telegramUrl } = useContactSettings();
-  return <div className="flex justify-center gap-4">
+  const { telegramUrl, wechatSupportText, wechatSupportQrUrl } = useContactSettings();
+  return <div className="flex flex-wrap justify-center gap-4">
+    <WechatSupport text={wechatSupportText} qrUrl={wechatSupportQrUrl} className="rounded-lg bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700" />
     {CONTACT_EMAIL && <a href={`mailto:${CONTACT_EMAIL}`} className="px-6 py-3 bg-primary text-white rounded-lg">📧 发送邮件</a>}
     {telegramUrl && <a href={telegramUrl} target="_blank" rel="noopener noreferrer" className="px-6 py-3 bg-blue-500 text-white rounded-lg">💬 Telegram</a>}
   </div>;

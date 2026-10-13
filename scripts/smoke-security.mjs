@@ -63,6 +63,10 @@ try {
   assert.equal((await request('/api/orders?orderNo=anything')).status, 405);
   assert.equal((await jsonPost('/api/orders', {items:[{productId:orderProduct.id,quantity:1}],email,paymentMethod:'BALANCE'})).status,400);
   assert.equal((await request('/api/admin/users')).status, 401);
+  const anonymousAdminPage = await request('/admin/dashboard'); assert.equal(anonymousAdminPage.status,307); assert(anonymousAdminPage.headers.get('location').endsWith('/admin/login'));
+  const adminLoginHtml = await (await request('/admin/login')).text(); assert(!adminLoginHtml.includes('aria-label="后台侧栏"'));
+  assert.equal((await request('/api/admin/contact')).status,401);
+  assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'})).status,401);
   assert.equal((await request('/api/upload', { method: 'POST' })).status, 401);
   assert.equal((await request('/api/admin/cardkeys?productId='+orderProduct.id)).status,401);
   for (const method of ['GET','PATCH','DELETE']) assert.equal((await request('/api/admin/cardkeys/test-card',{method})).status,401);
@@ -97,6 +101,15 @@ try {
   assert(!(await adminOrders.text()).includes('queryPasswordHash'));
   const adminOrder = await request(`/api/admin/orders/${memberOrder.id}`,{headers:{Cookie:cookie()}}); assert.equal(adminOrder.status,200);
   assert(!(await adminOrder.text()).includes('queryPasswordHash'));
+  for (const path of ['/admin/dashboard','/admin/orders','/admin/products','/admin/products/new','/admin/categories','/admin/cardkeys','/admin/users','/admin/announcements','/admin/settings','/admin/contact',`/admin/orders/${memberOrder.id}`]) {
+    const page = await request(path,{headers:{Cookie:cookie()}}); assert.equal(page.status,200);
+    const html = await page.text();
+    assert.equal((html.match(/aria-label="后台侧栏"/g)||[]).length,1,path);
+    assert.equal((html.match(/aria-label="后台管理导航"/g)||[]).length,1,path);
+    assert.equal((html.match(/<main\b/g)||[]).length,1,path);
+    assert(html.includes('id="admin-content"'),path);
+  }
+  console.log('Admin shared layout: all menu pages and order details render one sidebar/main, anonymous pages redirect, login has no sidebar: passed');
 
   const category = await db.category.create({ data: { name: `smoke-${suffix}`, slug: `smoke-${suffix}` } });
   const productInput = { name: 'Image save regression', slug: `smoke-product-${suffix}`, categoryId: category.id, price: 19900, originalPrice: 29900, image: null };
@@ -146,23 +159,45 @@ try {
   console.log('Inventory import/list/reveal/edit/delete, stale version protection, locked card protection, encrypted storage and stock update: passed');
 
   const previousSettings = (await settings.json()).settings;
-  const previousContact = previousSettings.telegramUrl || '';
+  const contactResponse = await request('/api/admin/contact',{headers:{Cookie:cookie()}}); assert.equal(contactResponse.status,200);
+  const previousContactSettings = (await contactResponse.json()).settings;
+  assert(!Object.keys(previousSettings).some(key=>key in previousContactSettings));
+  assert.equal((await request('/admin/contact',{headers:{Cookie:cookie()}})).status,200);
+  const systemPage = await (await request('/admin/settings',{headers:{Cookie:cookie()}})).text();
+  assert(!systemPage.includes('id="telegramUrl"')); assert(!systemPage.includes('id="wechatGroupQrUrl"'));
+  const emptyContact = {telegramUrl:'',wechatSupportText:'',wechatSupportQrUrl:''};
   try {
     const publicBefore = await request('/api/settings/contact'); assert.equal(publicBefore.status,200);
-    assert.deepEqual(Object.keys(await publicBefore.json()), ['telegramUrl']);
-    const invalidContact = await jsonPost('/api/admin/settings', { telegramUrl: 'javascript:alert(1)' }, {Cookie:cookie()});
-    assert.equal(invalidContact.status,400);
-    const updatedContact = await jsonPost('/api/admin/settings', { telegramUrl: '@test_support', privateSmokeSetting: 'not-for-public-view' }, {Cookie:cookie()});
-    assert.equal(updatedContact.status,200);
-    assert.deepEqual(await (await request('/api/settings/contact')).json(), {telegramUrl:'https://t.me/test_support'});
-    const clearedContact = await jsonPost('/api/admin/settings', {telegramUrl:''}, {Cookie:cookie()}); assert.equal(clearedContact.status,200);
-    assert.deepEqual(await (await request('/api/settings/contact')).json(), {telegramUrl:''});
+    assert(publicBefore.headers.get('cache-control').includes('no-store'));
+    assert.deepEqual(Object.keys(await publicBefore.json()), Object.keys(emptyContact));
+    const invalidContact = await jsonPost('/api/admin/contact', { telegramUrl: 'javascript:alert(1)' }, {Cookie:cookie()}); assert.equal(invalidContact.status,400);
+    assert.equal((await jsonPost('/api/admin/contact',{privateSmokeSetting:'not-for-public-view'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/settings',{wechatSupportText:'do-not-overwrite'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/settings',{privateSmokeSetting:'not-for-public-view'},{Cookie:cookie()})).status,200);
+    assert.equal((await jsonPost('/api/admin/contact', {...emptyContact,telegramUrl:'@test_support'}, {Cookie:cookie()})).status,200);
+    assert.deepEqual(await (await request('/api/settings/contact')).json(), {...emptyContact,telegramUrl:'https://t.me/test_support'});
+    const text='demo_support\n服务时间：09:00–18:00'; const qr='https://example.com/support.png';
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:text,wechatSupportQrUrl:qr},{Cookie:cookie()})).status,200);
+    const configured={telegramUrl:'https://t.me/test_support',wechatSupportText:text,wechatSupportQrUrl:qr};
+    assert.deepEqual(await (await request('/api/settings/contact')).json(),configured);
+    assert((await (await request('/')).text()).includes('微信客服'));
+    for(const bad of ['javascript:alert(1)','http://example.com/qr.png','https://user:password@example.com/qr.png']) assert.equal((await jsonPost('/api/admin/contact',{wechatSupportQrUrl:bad},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'x'.repeat(301)},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'cross-origin-change'},{Cookie:cookie(),Origin:'https://untrusted.example.invalid'})).status,403);
+    assert.deepEqual(await (await request('/api/settings/contact')).json(),configured);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportQrUrl:''},{Cookie:cookie()})).status,200);
+    assert.deepEqual(await (await request('/api/settings/contact')).json(),{...configured,wechatSupportQrUrl:''});
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'',wechatSupportQrUrl:qr},{Cookie:cookie()})).status,200);
+    assert.deepEqual(await (await request('/api/settings/contact')).json(),{...configured,wechatSupportText:''});
+    assert.equal((await jsonPost('/api/admin/contact',emptyContact,{Cookie:cookie()})).status,200);
+    assert.deepEqual(await (await request('/api/settings/contact')).json(),emptyContact);
+    console.log('Standalone contact settings, existing values, public allowlist, WeChat text/QR, validation, clearing and origin protection: passed');
   } finally {
-    await jsonPost('/api/admin/settings', {telegramUrl:previousContact}, {Cookie:cookie()});
+    await jsonPost('/api/admin/contact',previousContactSettings,{Cookie:cookie()});
     await db.systemSetting.deleteMany({where:{key:'privateSmokeSetting'}});
   }
 
-  const previousCommunity = { wechatGroupQrUrl: previousSettings.wechatGroupQrUrl || '', wechatGroupExpiresAt: previousSettings.wechatGroupExpiresAt || '' };
+  const previousCommunity = { wechatGroupQrUrl: previousContactSettings.wechatGroupQrUrl || '', wechatGroupExpiresAt: previousContactSettings.wechatGroupExpiresAt || '' };
   try {
     assert.equal((await request('/community')).status,200);
     assert((await (await request('/')).text()).includes('href="/community"'));
@@ -171,27 +206,33 @@ try {
     assert.deepEqual([...new Uint8Array(await entryQr.arrayBuffer()).slice(0,8)], [137,80,78,71,13,10,26,10]);
     const image = 'https://example.com/test-group.png';
     const future = new Date(Date.now()+60000).toISOString();
-    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'javascript:alert(1)'},{Cookie:cookie()})).status,400);
-    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:image,wechatGroupExpiresAt:future},{Cookie:cookie()})).status,200);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'javascript:alert(1)'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:image,wechatGroupExpiresAt:future},{Cookie:cookie()})).status,200);
     const active = await request('/api/community'); assert.equal(active.status,200);
     assert(active.headers.get('cache-control').includes('no-store'));
     assert.deepEqual(await active.json(), {status:'active',qrCodeUrl:image,expiresAt:future});
-    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'https://example.com/rejected.png',wechatGroupExpiresAt:'tomorrow'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'https://example.com/rejected.png',wechatGroupExpiresAt:'tomorrow'},{Cookie:cookie()})).status,400);
     assert.deepEqual(await (await request('/api/community')).json(), {status:'active',qrCodeUrl:image,expiresAt:future});
-    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupExpiresAt:new Date(Date.now()-1000).toISOString()},{Cookie:cookie()})).status,200);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupExpiresAt:new Date(Date.now()-1000).toISOString()},{Cookie:cookie()})).status,200);
     const expired = await (await request('/api/community')).json(); assert.equal(expired.status,'expired'); assert.equal(expired.qrCodeUrl,'');
     const expiredPage = await (await request('/community')).text(); assert(expiredPage.includes('群二维码正在更新')); assert(!expiredPage.includes(image));
-    assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'',wechatGroupExpiresAt:''},{Cookie:cookie()})).status,200);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'',wechatGroupExpiresAt:''},{Cookie:cookie()})).status,200);
     assert.deepEqual(await (await request('/api/community')).json(), {status:'unconfigured',qrCodeUrl:'',expiresAt:''});
     assert((await (await request('/community')).text()).includes('交流群暂未开放'));
     console.log('Community entry, QR response, configuration validation, cache invalidation, expiry and public settings isolation: passed');
   } finally {
-    await jsonPost('/api/admin/settings',previousCommunity,{Cookie:cookie()});
+    await jsonPost('/api/admin/contact',previousCommunity,{Cookie:cookie()});
   }
 
   jar.clear();
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
+  assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
+  for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
+  assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'},{Cookie:cookie()})).status,403);
+  const operatorContactPage = await request('/admin/contact',{headers:{Cookie:cookie()}});
+  const operatorContactHtml = await operatorContactPage.text();
+  assert(operatorContactPage.status === 307 && operatorContactPage.headers.get('location')?.endsWith('/admin/dashboard') || operatorContactPage.status === 200 && operatorContactHtml.includes('url=/admin/dashboard') && !operatorContactHtml.includes('微信号或联系说明'));
   assert.equal((await jsonPost('/api/admin/settings',{wechatGroupQrUrl:'https://example.com/test-group.png'},{Cookie:cookie()})).status,403);
   assert.equal((await jsonPost(`/api/admin/users/${user.id}/balance`,{amount:100},{Cookie:cookie()})).status,403);
   jar.clear();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AdminSidebar } from "@/components/admin/sidebar";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 
 interface User {
   id: string;
@@ -106,10 +106,7 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">用户管理</h1>
           <div className="text-sm text-gray-500">共 {users.length} 位用户</div>
@@ -117,7 +114,7 @@ export default function AdminUsersPage() {
 
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">加载中...</div>
+            <AdminContentLoading />
           ) : users.length === 0 ? (
             <div className="p-8 text-center text-gray-500">暂无用户</div>
           ) : (
@@ -285,7 +282,6 @@ export default function AdminUsersPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </>
   );
 }

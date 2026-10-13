@@ -5,7 +5,7 @@
 ## 更新群二维码
 
 1. 在微信中获取当前有效的群二维码。
-2. 在后台「系统设置 → 微信交流群」上传图片，或粘贴 HTTPS 图片地址。
+2. 在后台「客服与社群 → 微信交流群」上传图片，或粘贴 HTTPS 图片地址。
 3. 按微信显示的有效期填写过期时间，点击「保存设置」。时间输入使用当前设备时区，公开页面显示北京时间。
 4. 打开固定入群页面，确认二维码能识别；入群仍受微信的群人数和邀请规则限制。
 
@@ -31,7 +31,7 @@ README 使用仓库内的固定入口图片，避免依赖 GitHub 图片代理�
 
 ## English
 
-The homepage and README QR codes open `/community`, which displays the latest group invitation configured by a super administrator. Replace the group QR image and optionally set its expiry under System settings → WeChat community, then save. Existing pages check for updates every minute and offer a manual refresh button.
+The homepage and README QR codes open `/community`, which displays the latest group invitation configured by a super administrator. Replace the group QR image and optionally set its expiry under Support & community → WeChat community, then save. Existing pages check for updates every minute and offer a manual refresh button.
 
 Expired images are hidden, but WeChat invitations are not automatically renewed. Joining remains subject to WeChat group and invitation limits. Uploaded QR images use lossless compression through the existing Cloudinary integration.
 

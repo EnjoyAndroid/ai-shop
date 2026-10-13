@@ -22,17 +22,11 @@ export async function POST(request: NextRequest) {
   if (!admin) return NextResponse.json({ error: "未授权" }, { status: 401 });
   try {
     if (!await rateLimit("upload-user", admin.id, 20, 3600) || !await rateLimit("upload-total", "site", 200, 86400)) return NextResponse.json({ error: "上传额度已用完，请稍后重试" }, { status: 429 });
-    // 检查 Cloudinary 配置
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      return NextResponse.json(
-        { error: "服务器配置错误" },
-        { status: 500 }
-      );
-    }
-
     const formData = await request.formData();
-    const isCommunityQr = formData.get("purpose") === "community";
-    if (isCommunityQr && !hasAdminPermission(admin, "settings")) return NextResponse.json({ error: "无权限" }, { status: 403 });
+    const purpose = formData.get("purpose");
+    if (purpose !== null && !["products", "community", "support"].includes(String(purpose))) return NextResponse.json({ error: "上传用途无效" }, { status: 400 });
+    const isContactQr = purpose === "community" || purpose === "support";
+    if (isContactQr && !hasAdminPermission(admin, "settings")) return NextResponse.json({ error: "无权限" }, { status: 403 });
     const file = formData.get("file") as File | null;
 
     if (!(file instanceof File)) {
@@ -58,6 +52,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 检查 Cloudinary 配置
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return NextResponse.json(
+        { error: "服务器配置错误" },
+        { status: 500 }
+      );
+    }
+
     // 将文件转换为 base64
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -65,12 +67,12 @@ export async function POST(request: NextRequest) {
     const metadata = await image.metadata();
     if (!["jpeg", "png", "gif", "webp"].includes(metadata.format || "")) return NextResponse.json({ error: "文件内容不是支持的图片" }, { status: 400 });
     // 重新编码以验证解码结果并剥离附加元数据和混入的非图片内容。
-    const sanitized = await image.resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true }).webp({ lossless: isCommunityQr }).toBuffer();
+    const sanitized = await image.resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true }).webp({ lossless: isContactQr }).toBuffer();
     const base64 = `data:image/webp;base64,${sanitized.toString("base64")}`;
 
     // 上传到 Cloudinary
     const result = await cloudinary.uploader.upload(base64, {
-      folder: isCommunityQr ? "community" : "products",
+      folder: isContactQr ? String(purpose) : "products",
       resource_type: "image",
     });
 

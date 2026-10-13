@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AdminContentLoading } from "@/components/admin/content-loading";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { AdminSidebar } from "@/components/admin/sidebar";
 
 interface Category {
   id: string;
@@ -178,36 +178,27 @@ export default function AdminEditProductPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen bg-gray-100">
-        <AdminSidebar />
-        <main className="flex-1 p-8">
-          <div className="text-center text-gray-500">加载中...</div>
-        </main>
-      </div>
+      <>
+          <AdminContentLoading />
+        </>
     );
   }
 
   if (error && !formData.name) {
     return (
-      <div className="flex min-h-screen bg-gray-100">
-        <AdminSidebar />
-        <main className="flex-1 p-8">
+      <>
           <div className="text-center">
             <p className="text-red-500 mb-4">{error}</p>
             <Link href="/admin/products" className="text-primary hover:underline">
               返回商品列表
             </Link>
           </div>
-        </main>
-      </div>
+        </>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <AdminSidebar />
-
-      <main className="flex-1 p-8">
+    <>
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-gray-800">编辑商品</h1>
           <div className="flex items-center gap-4">
@@ -476,7 +467,6 @@ export default function AdminEditProductPage() {
             </button>
           </div>
         </form>
-      </main>
-    </div>
+      </>
   );
 }
