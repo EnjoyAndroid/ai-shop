@@ -6,10 +6,12 @@ import { resolve } from 'node:path';
 const allowedDomain = /^(?:users\.noreply\.github\.com|github\.com|example\.(?:com|org|net|invalid))$/i;
 // GitHub's ephemeral PR test merge is not a authored source commit. Exclude its
 // metadata only when the checkout and BOTH parents match the trusted event.
-export function syntheticPullRequestMerge(eventName, event, head, parents) {
+export function syntheticPullRequestMerge(eventName, event, head, parents, eventSha) {
   if (eventName !== 'pull_request' || !/^[a-f0-9]{40}$/.test(head)) return null;
   const pr = event?.pull_request;
-  return pr?.merge_commit_sha === head && parents.length === 2 &&
+  // The PR payload's merge_commit_sha may precede a synchronize event. GITHUB_SHA
+  // identifies the exact test merge selected for this run.
+  return eventSha === head && parents.length === 2 &&
     parents[0] === pr?.base?.sha && parents[1] === pr?.head?.sha ? head : null;
 }
 
@@ -35,7 +37,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (process.env.GITHUB_EVENT_NAME === 'pull_request' && process.env.GITHUB_EVENT_PATH) {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
     const [head, ...parents] = execFileSync('git', ['rev-list', '--parents', '-n', '1', 'HEAD'], { encoding: 'utf8' }).trim().split(' ');
-    excludedCommit = syntheticPullRequestMerge(process.env.GITHUB_EVENT_NAME, event, head, parents);
+    excludedCommit = syntheticPullRequestMerge(process.env.GITHUB_EVENT_NAME, event, head, parents, process.env.GITHUB_SHA);
   }
   const log = execFileSync('git', ['log', '--all', '--format=%H%x09%ae%x09%ce'], { encoding: 'utf8' });
   const failures = privateCommitMetadata(log, excludedCommit);

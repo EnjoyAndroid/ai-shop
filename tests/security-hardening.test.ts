@@ -116,11 +116,14 @@ test("history identity checks reject private author and committer addresses with
 test("history ignores only an event-verified temporary PR merge while still checking its parents", () => {
   const base = 'a'.repeat(40), head = 'b'.repeat(40), merge = 'c'.repeat(40);
   const event = { pull_request: { merge_commit_sha: merge, base: { sha: base }, head: { sha: head } } };
-  assert.equal(syntheticPullRequestMerge('pull_request', event, merge, [base, head]), merge);
+  assert.equal(syntheticPullRequestMerge('pull_request', event, merge, [base, head], merge), merge);
+  assert.equal(syntheticPullRequestMerge('pull_request', { pull_request: { ...event.pull_request, merge_commit_sha: null } }, merge, [base, head], merge), merge);
   for (const [name,sha,parents] of [['push', merge, [base,head]], ['pull_request',head,[base,head]], ['pull_request',merge,[head,base]], ['pull_request',merge,[base]], ['pull_request',merge,[base,head,merge]]] as const) {
-    assert.equal(syntheticPullRequestMerge(name,event,sha,[...parents]), null);
+    assert.equal(syntheticPullRequestMerge(name,event,sha,[...parents],merge), null);
   }
-  assert.equal(syntheticPullRequestMerge('pull_request',{},merge,[base,head]),null);
+  assert.equal(syntheticPullRequestMerge('pull_request',{},merge,[base,head],merge),null);
+  assert.equal(syntheticPullRequestMerge('pull_request',event,merge,[base,head],head),null);
+  assert.equal(syntheticPullRequestMerge('pull_request',event,merge,[base,head],undefined),null);
   const address = 'synthetic-private@' + 'mail.invalid';
   const log = `${merge}\t${address}\t${address}\n${head}\t${address}\t123+dev@users.noreply.github.com`;
   const failures = privateCommitMetadata(log, merge);
