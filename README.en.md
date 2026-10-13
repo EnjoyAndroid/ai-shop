@@ -20,6 +20,8 @@ This QR code points to a permanent page. Administrators update the group QR code
 
 From customer purchases to store operations: products, memberships, account balances, orders, digital keys, and settings. These screenshots use an isolated demo environment with synthetic accounts, orders, amounts, and digital keys. The current interface and the shared video captions are in Simplified Chinese.
 
+Screenshots and video were captured on 2026-10-04. They predate the separate Support & community page, unsold-key management, and persistent admin sidebar. Use the current feature and configuration descriptions below for those additions.
+
 [Download the 86-second feature tour (1080p MP4)](docs/showcase/ai-shop-feature-tour.mp4) · [Browse all 19 screenshots](docs/showcase/README.md)
 
 https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
@@ -83,6 +85,7 @@ The tour combines real page screenshots, captions, and transitions; it is not a 
 - **Email and order number lookup:** complete slider verification to open a separate order list with status filters and pagination. Viewing an order's details requires its lookup password.
 - **Recent email history:** successful searches save up to three recent email addresses in the current browser. Click an address to fill the field or remove it; order numbers are not saved.
 - **Member center:** view account details, recent orders, and balance history. Navigation stays visible when switching between the dashboard, orders, and balance pages.
+- **Contact support:** use a WeChat support QR code or Telegram. The WeChat dialog shows only the QR image and scanning instructions.
 - **Mobile layouts:** responsive product pages, order cards, navigation, and touch support for slider verification.
 
 Purchase flow: **Choose a product → Enter email and lookup password → Pay → Automatic delivery → View order details**.
@@ -92,10 +95,10 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Dashboard:** order and revenue statistics, user counts, pending orders, and low-stock alerts.
 - **Products and categories:** product descriptions, cover images, prices, quantity limits, sorting, and listing status.
 - **Digital key inventory:** batch imports, batch identifiers, and paginated unsold inventory by status. Reveal, edit, or delete individual unallocated keys; reserved and sold keys cannot be changed. Keys are encrypted and reserved when orders are created.
-- **Orders and users:** order details, delivery, cancellation, refunds, membership levels, account status, and balance adjustments.
-- **Announcements and settings:** announcements, site information, order expiry, payment switches, with a separate Support & community page for WeChat support text/QR images, Telegram links, and group QR codes.
+- **Orders and users:** view order details and membership levels; manage delivery, cancellation, refunds, account status, and balances. Membership levels upgrade automatically based on total spending.
+- **Announcements and settings:** announcements, site information, order expiry, and payment switches, with a separate Support & community page for WeChat support, Telegram links, and group QR codes.
 - **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.
-- **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings.
+- **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings and Support & community configuration.
 - **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
 
 ### Payments and notifications
@@ -187,10 +190,10 @@ The seed enables only balance payments by default. External payments require bot
 | Alipay | `XUNHU_ALIPAY_APPID`, `XUNHU_ALIPAY_APPSECRET` |
 | WeChat Pay | `XUNHU_WECHAT_APPID`, `XUNHU_WECHAT_APPSECRET` |
 | USDT TRC20 | `USDT_TRC20_ADDRESS`, optional `TRONGRID_API_KEY` |
-| Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` |
+| System email (password resets and payment notifications) | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` |
 | Telegram notifications | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` |
 | Image uploads | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
-| WeChat support | Admin panel → Support & community → WeChat support; configure text and/or a QR image, or leave blank to hide. |
+| WeChat support | Admin panel → Support & community → WeChat support; upload a support QR image. The storefront dialog shows only the QR image and scanning instructions. |
 | Telegram support link | Admin panel → Support & community → Telegram support; leave blank to hide. |
 | WeChat community | Admin panel → Support & community → WeChat community; upload the current group QR code and optionally set its expiry. |
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
@@ -198,7 +201,11 @@ The seed enables only balance payments by default. External payments require bot
 
 Pending inventory quotas for externally paid product orders are checked inside the inventory transaction. Payment or cancellation releases the quota; the minute-based expiry job cancels expired orders. Immediate balance purchases and recharges are excluded. Card imports allow up to 500 entries and a 2 MB request per batch; split larger batches. Password resets and account bans invalidate earlier reset links. Links issued before this update must be requested again.
 
-`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset. Storefront support uses WeChat and Telegram. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
+Support & community is available at `/admin/contact` to SUPER_ADMIN users. Support and group QR codes are configured separately and serve different purposes. Save and refresh the storefront to apply changes; no redeployment is needed. See the [support and community maintenance guide](docs/community/README.md) for visibility rules and QR maintenance.
+
+The storefront no longer provides a send-email button or an email fallback link. `NEXT_PUBLIC_CONTACT_EMAIL` is no longer used and can be removed from existing deployments. Password resets and payment notifications still use the SMTP settings above; removing the storefront email entry does not disable system email.
+
+`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; the app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`, and an empty value hides the entry. Product images allow Cloudinary by default; explicitly add other storage domains to `next.config.mjs`. Support and group QR images can use a directly configured HTTPS URL.
 
 `NEXTAUTH_URL` must match the browser's actual scheme, host, and port. API writes require that exact Origin, except the two signed payment callback endpoints. Production CSP uses a unique script nonce per request; HTML is dynamically rendered and must not be stored in shared caches. Proxies/CDNs must preserve the cache headers. See [browser security boundaries](docs/security.md) for details.
 

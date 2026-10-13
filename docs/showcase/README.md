@@ -2,6 +2,10 @@
 
 采集日期：2026-10-04。所有素材来自独立演示环境；邮箱使用 example.com，卡密带 DEMO-ONLY 标记，金额与运营统计均为合成演示数据。
 
+这些素材保留采集时的界面。后续新增的未售出卡密管理、独立「客服与社群」页面、微信客服二维码弹窗及后台固定侧栏尚未出现在图集中；当前配置入口以 [项目 README](../../README.md) 和 [客服与社群维护说明](../community/README.md) 为准。图中的旧设置布局与联系方式不作为当前部署操作步骤。
+
+The media reflects the interface captured on 2026-10-04. Later additions such as unsold-key management, Support & community settings, the WeChat support dialog, and the persistent admin sidebar are not shown. See the [English README](../../README.en.md) for current features and configuration.
+
 ## 视频
 
 https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
