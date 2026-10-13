@@ -13,6 +13,7 @@ export function syntheticPullRequestMerge(eventName, event, head, parents) {
     parents[0] === pr?.base?.sha && parents[1] === pr?.head?.sha ? head : null;
 }
 
+/** @param {string} log @param {string | null} excludedCommit */
 export function privateCommitMetadata(log, excludedCommit = null) {
   const failures = [];
   for (const line of log.trim().split('\n').filter(Boolean)) {
