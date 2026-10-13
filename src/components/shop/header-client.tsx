@@ -31,29 +31,29 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
                 AI Shop
               </Link>
               <div className="hidden md:flex items-center gap-6">
-              <nav className="flex items-center gap-6" aria-label="商城导航">
-                <Link href="/" className="text-gray-600 hover:text-primary">
+              <nav className="flex items-center gap-6 text-base leading-6" aria-label="商城导航">
+                <Link href="/" className="inline-flex h-10 items-center text-gray-600 hover:text-primary">
                   首页
                 </Link>
-                <Link href="/order" className="text-gray-600 hover:text-primary">
+                <Link href="/order" className="inline-flex h-10 items-center text-gray-600 hover:text-primary">
                   订单查询
                 </Link>
 
                 {isLoggedIn ? (
                   <>
-                    <Link href="/dashboard" className="text-gray-600 hover:text-primary">
+                    <Link href="/dashboard" className="inline-flex h-10 items-center text-gray-600 hover:text-primary">
                       个人中心
                     </Link>
                     <button
                         onClick={() => signOut({ callbackUrl: "/" })}
-                        className="text-gray-500 hover:text-red-500 text-sm"
+                        className="inline-flex h-10 items-center text-base leading-6 text-gray-500 hover:text-red-500"
                       >
                         退出
                     </button>
                   </>
                 ) : (
                   <>
-                    <Link href="/login" className="text-gray-600 hover:text-primary">
+                    <Link href="/login" className="inline-flex h-10 items-center text-gray-600 hover:text-primary">
                       登录
                     </Link>
                     <Link
@@ -65,9 +65,9 @@ export function HeaderClient({ isLoggedIn: propIsLoggedIn }: HeaderClientProps =
                   </>
                 )}
               </nav>
-              <div className="border-l border-gray-200 pl-5">
+              <div className="flex items-center border-l border-gray-200 pl-5">
                 <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" title="查看项目源码"
-                  className="inline-flex items-center gap-2 text-sm text-gray-500 transition-colors hover:text-gray-900">
+                  className="flex items-center gap-2 text-base leading-6 text-gray-500 transition-colors hover:text-gray-900">
                   <Github className="h-4 w-4" aria-hidden="true" />
                   <span>Github</span>
                 </a>
