@@ -197,18 +197,6 @@ unset ADMIN_PASSWORD
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 | 待付库存额度 | `MAX_PENDING_ORDERS=3`、`MAX_PENDING_QUANTITY=100`，分别限制每个账号、邮箱和可信客户端 IP |
 
-卡密导入每批最多 500 条、2MB。待付库存额度与密码重置规则见 [安全说明](docs/security.md)。
-
-「客服与社群」位于 `/admin/contact`，需 SUPER_ADMIN 权限；客服和群二维码分别配置，不能互相替代。保存后刷新商城即可生效，无需重新部署。微信客服的启用、隐藏及二维码维护见 [客服与社群维护说明](docs/community/README.md)。
-
-前台客服使用微信二维码或 Telegram；系统密码重置和付款通知使用上表 SMTP 配置。
-
-`NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，未配置时隐藏入口。商品图片默认允许 Cloudinary 域名，使用其他存储需在 `next.config.mjs` 添加域名；客服与微信群二维码支持直接填写 HTTPS 图片地址。
-
-`NEXTAUTH_URL` 必须与浏览器实际访问的协议、域名和端口一致。代理/CDN 应保留应用的安全及缓存响应头，HTML 页面不得使用共享缓存。详情见 [部署要求](docs/security.md#部署密钥与数据保留)。
-
-微信群固定页面为 `/community`，首页二维码根据 `NEXT_PUBLIC_SITE_URL` 生成。后台更新后无需重新部署；普通微信群二维码不由应用自动续期。自托管时请将本 README 的入群链接改为自己的域名，并运行 `npm run community:qr -- https://example.com` 重新生成 README 固定二维码；[维护说明](docs/community/README.md)。
-
 ## 验证与维护
 
 更新已部署的实例前，备份数据库和 `.env`，保留原卡密加密密钥。

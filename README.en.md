@@ -199,18 +199,6 @@ The seed enables only balance payments by default. External payments require bot
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 | Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
 
-Card imports allow up to 500 entries and a 2 MB request per batch. See [security boundaries](docs/security.md) for pending inventory quotas and password-reset rules.
-
-Support & community is available at `/admin/contact` to SUPER_ADMIN users. Support and group QR codes are configured separately and serve different purposes. Save and refresh the storefront to apply changes; no redeployment is needed. See the [support and community maintenance guide](docs/community/README.md) for visibility rules and QR maintenance.
-
-Storefront support uses WeChat QR codes or Telegram; password resets and payment notifications use the SMTP settings above.
-
-`NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; an empty value hides the entry. Product images allow Cloudinary by default; explicitly add other storage domains to `next.config.mjs`. Support and group QR images can use a directly configured HTTPS URL.
-
-`NEXTAUTH_URL` must match the browser's actual scheme, host, and port. Proxies/CDNs must preserve the application's security and cache headers; HTML pages must not use shared caches. See [deployment requirements](docs/security.md#部署密钥与数据保留) (Chinese) for details.
-
-The permanent community page is `/community`; homepage QR codes use `NEXT_PUBLIC_SITE_URL`. Updating group settings does not require redeployment, but the app cannot automatically renew WeChat group invitations. For a self-hosted instance, change the README join links to your domain and run `npm run community:qr -- https://example.com` to regenerate its QR image. See the [maintenance guide](docs/community/README.md).
-
 ## Verification and maintenance
 
 Before updating a deployed instance, back up the database and `.env` and preserve the digital-key encryption key.
