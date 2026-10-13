@@ -44,7 +44,11 @@ const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start
 const jar = new Map();
 function capture(response) { for (const c of response.headers.getSetCookie()) { const pair = c.split(';')[0], index = pair.indexOf('='); jar.set(pair.slice(0,index),pair.slice(index+1)); } }
 function cookie() { return [...jar].map(([k,v]) => `${k}=${v}`).join('; '); }
-async function request(path, opts = {}) { return fetch(base + path, { redirect: 'manual', ...opts }); }
+async function request(path, opts = {}) {
+  const headers = new Headers(opts.headers);
+  if (opts.method && !['GET','HEAD','OPTIONS'].includes(opts.method) && !headers.has('Origin')) headers.set('Origin',base);
+  return fetch(base + path, { redirect: 'manual', ...opts, headers });
+}
 async function jsonPost(path, data, headers = {}) { return request(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data) }); }
 try {
   for (let i=0; i<40; i++) {
@@ -68,6 +72,23 @@ try {
   assert.equal((await request('/api/admin/users',{headers:{Cookie:`admin_token=${leakedKey}`}})).status,401);
   const login = await jsonPost('/api/admin/auth/login', { username, password });
   assert.equal(login.status,200); capture(login);
+  const beforeOrigin = await db.systemSetting.findUnique({where:{key:'siteName'}});
+  for (const origin of ['https://untrusted.example.invalid','http://sibling.localhost:3011','null','']) {
+    const rejected = await jsonPost('/api/admin/settings',{siteName:'SYNTHETIC-REJECTED'}, {Cookie:cookie(),Origin:origin,'Content-Type':'text/plain'});
+    assert.equal(rejected.status,403); assert.equal((await rejected.json()).code,'ORIGIN_REJECTED');
+  }
+  const spoofedHost = await jsonPost('/api/admin/settings',{siteName:'SYNTHETIC-REJECTED'}, {Cookie:cookie(),Origin:'https://untrusted.example.invalid','X-Forwarded-Host':'untrusted.example.invalid'});
+  assert.equal(spoofedHost.status,403);
+  assert.deepEqual(await db.systemSetting.findUnique({where:{key:'siteName'}}),beforeOrigin);
+  const pageA = await request('/login'), pageB = await request('/login');
+  const nonce = response => response.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1];
+  assert(nonce(pageA)); assert.notEqual(nonce(pageA),nonce(pageB));
+  assert(!pageA.headers.get('content-security-policy').includes("'unsafe-eval'"));
+  assert(pageA.headers.get('cache-control').includes('no-store'));
+  const nonceHtml = await pageA.text();
+  const inlineScripts = [...nonceHtml.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filter(match=>match[2].trim());
+  assert(inlineScripts.length); assert(inlineScripts.every(match=>match[1].includes(`nonce="${nonce(pageA)}"`)));
+  console.log('HTTP browser security: rejected cross-origin/null/missing-origin writes, preserved settings, unique CSP nonces and noncached HTML: passed');
   const users = await request('/api/admin/users',{headers:{Cookie:cookie()}});
   assert.equal(users.status,200);
   assert((await users.json()).users.every(u => !('password' in u) && !('sessionVersion' in u)));

@@ -1,7 +1,7 @@
 import { OrderRequestError } from "./order-errors";
 
 // Content-Length alone is not sufficient: chunked bodies need the same bound.
-export async function readBoundedJson(request: Request, maxBytes: number): Promise<unknown> {
+export async function readBoundedText(request: Request, maxBytes: number): Promise<string> {
   if (Number(request.headers.get("content-length")) > maxBytes) throw new OrderRequestError("请求内容过大", 413);
   if (!request.body) throw new SyntaxError("Empty request");
   const reader = request.body.getReader();
@@ -19,5 +19,9 @@ export async function readBoundedJson(request: Request, maxBytes: number): Promi
       chunks.push(value);
     }
   } finally { reader.releaseLock(); }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+export async function readBoundedJson(request: Request, maxBytes: number): Promise<unknown> {
+  return JSON.parse(await readBoundedText(request, maxBytes));
 }

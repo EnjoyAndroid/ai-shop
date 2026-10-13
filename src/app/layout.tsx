@@ -3,6 +3,9 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
+// Each document must use the request's CSP nonce; do not cache prerendered HTML.
+export const dynamic = "force-dynamic";
+
 const inter = localFont({
   src: "../../public/fonts/Inter-latin.woff2",
   weight: "100 900",

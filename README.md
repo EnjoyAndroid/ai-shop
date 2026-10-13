@@ -197,6 +197,8 @@ unset ADMIN_PASSWORD
 
 `NEXT_PUBLIC_*` 在构建时写入前端，修改后重新构建镜像。Telegram 客服通过后台设置，支持 `@用户名` 或 `https://t.me/用户名`，保存后刷新商城生效；不再读取旧的 `NEXT_PUBLIC_TELEGRAM_URL`。未配置时隐藏 Telegram 入口。客服邮箱环境变量默认空。图片默认允许 Cloudinary 域名；使用其他存储需在 `next.config.mjs` 中明确添加域名。
 
+`NEXTAUTH_URL` 必须与浏览器实际访问的协议、域名和端口一致；API 写入要求匹配的 Origin，支付签名回调除外。生产 CSP 为每次请求生成脚本 nonce，HTML 动态渲染且禁止共享缓存；代理/CDN 不应覆盖这些缓存头。详情见 [浏览器安全边界](docs/security.md#登录后台与反滥用)。
+
 微信群固定页面为 `/community`，首页二维码根据 `NEXT_PUBLIC_SITE_URL` 生成。后台更新后无需重新部署；普通微信群二维码不由应用自动续期。自托管时请将本 README 的入群链接改为自己的域名，并运行 `npm run community:qr -- https://example.com` 重新生成 README 固定二维码；[维护说明](docs/community/README.md)。
 
 ### 邮件发送排查

@@ -3,9 +3,20 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
 import { getAdminSecret } from "@/lib/security-config";
+import { browserWriteAllowed, contentSecurityPolicy } from "@/lib/browser-security";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (!browserWriteAllowed(request, pathname, process.env.NEXTAUTH_URL)) {
+    return NextResponse.json({ error: "请求来源无效，请从本站页面重试", code: "ORIGIN_REJECTED" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  const policy = contentSecurityPolicy(nonce, process.env.NODE_ENV === "development");
+  const headers = new Headers(request.headers);
+  headers.set("x-nonce", nonce);
+  // Next.js reads this request header to nonce its bootstrap and inline scripts.
+  headers.set("Content-Security-Policy", policy);
 
   // 后台路由保护（排除登录页和登出API）
   if (
@@ -39,9 +50,12 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next({ request: { headers } });
+  response.headers.set("Content-Security-Policy", policy);
+  if (!pathname.startsWith("/api/")) response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|favicon.svg|fonts/|icons/).*)"],
 };

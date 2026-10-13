@@ -8,6 +8,8 @@ import { POST as requestPasswordReset } from "../../src/app/api/auth/forgot-pass
 import { POST as resetPassword } from "../../src/app/api/auth/reset-password/route";
 import { POST as verifyResetToken } from "../../src/app/api/auth/verify-reset-token/route";
 import { resetTokenKey } from "../../src/lib/password-reset";
+import { handleXunhuCallback } from "../../src/lib/payment/callback";
+import { queryUSDTPayment } from "../../src/lib/payment/usdt";
 import { searchOrders, unlockOrder } from "../../src/lib/services/order-query.service";
 import { canAccessOrder, issueOrderAccess, issueOrderQuery, readOrderQuery } from "../../src/lib/order-access";
 import { createWithOrderNumber } from "../../src/lib/order-number";
@@ -533,4 +535,77 @@ test("concurrent buyers sharing a trusted IP cannot exceed the 100-card reservat
   } finally {
     for (const name of names) if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
   }
+});
+
+test("actual callback routes reject tampering, duplicate parameters, oversized streams and transaction reuse", async () => {
+  const names = ["XUNHU_ALIPAY_APPID", "XUNHU_ALIPAY_APPSECRET", "XUNHU_WECHAT_APPID", "XUNHU_WECHAT_APPSECRET"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const settings = await prisma.systemSetting.findMany({ where: { key: { in: ["alipayEnabled", "wechatEnabled"] } } });
+  const secret = "test-only-callback-secret";
+  Object.assign(process.env, { XUNHU_ALIPAY_APPID: "test-alipay", XUNHU_ALIPAY_APPSECRET: secret, XUNHU_WECHAT_APPID: "test-wechat", XUNHU_WECHAT_APPSECRET: "test-only-wechat-secret" });
+  const signed = (data: Record<string, string>) => new URLSearchParams({ ...data, hash: createHash("md5").update(Object.keys(data).sort().filter(key => data[key] !== "").map(key => `${key}=${data[key]}`).join("&") + secret).digest("hex") }).toString();
+  const invoke = (body: string, channel: "alipay" | "wechat" = "alipay") => handleXunhuCallback(new NextRequest(`http://localhost/api/payment/callback/${channel}`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }), channel);
+  try {
+    for (const key of ["alipayEnabled", "wechatEnabled"]) await prisma.systemSetting.upsert({ where: { key }, create: { key, value: "true" }, update: { value: "true" } });
+    await redis.del("system:settings");
+    const f = await fixture(2); const order = await createOrder(f.input);
+    const data = { appid: "test-alipay", payment: "alipay", status: "OD", trade_order_id: order.orderNo, transaction_id: `${prefix}-route-receipt`, total_fee: "1.00" };
+    const valid = signed(data);
+    assert.equal((await invoke(valid.replace("total_fee=1.00", "total_fee=9.00"))).status, 400);
+    assert.equal((await invoke(valid + "&total_fee=1.00")).status, 400);
+    assert.equal((await invoke(signed({ ...data, total_fee: "0.01" }))).status, 400);
+    assert.equal((await invoke(valid, "wechat")).status, 400);
+    assert.equal((await invoke("x=" + "x".repeat(17000))).status, 413);
+    assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status, "PENDING");
+    assert.equal(await prisma.paymentReceipt.count({ where: { orderId: order.id } }), 0);
+    const replies = await Promise.all([invoke(valid), invoke(valid)]);
+    assert(replies.every(response => response.status === 200));
+    assert.equal(await prisma.paymentReceipt.count({ where: { orderId: order.id } }), 1);
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: f.product.id } })).salesCount, 1);
+    const other = await createOrder(f.input);
+    assert.equal((await invoke(signed({ ...data, trade_order_id: other.orderNo }))).status, 400);
+    assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: other.id } })).status, "PENDING");
+    await prisma.systemSetting.update({ where: { key: "alipayEnabled" }, data: { value: "false" } }); await redis.del("system:settings");
+    assert.equal((await invoke(valid)).status, 400);
+  } finally {
+    for (const key of ["alipayEnabled", "wechatEnabled"]) {
+      const old = settings.find(row => row.key === key);
+      if (old) await prisma.systemSetting.update({ where: { key }, data: { value: old.value } });
+      else await prisma.systemSetting.deleteMany({ where: { key } });
+    }
+    await redis.del("system:settings");
+    for (const name of names) if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
+  }
+});
+
+test("USDT query only accepts exact confirmed contract transfers and refuses already claimed hashes", async context => {
+  const f = await fixture(1);
+  const order = await createOrder({ ...f.input, paymentMethod: "USDT_TRC20" });
+  const address = "T" + "1".repeat(33);
+  const quote = await prisma.paymentQuote.create({ data: { orderId: order.id, method: "USDT_TRC20", address, amountMicros: BigInt(1000123), exchangeRate: 7.2, expiresAt: order.expiredAt!, reservation: `${prefix}-chain-reservation` } });
+  const hash = randomBytes(32).toString("hex");
+  const transfer = { transaction_id: hash, token_info: { symbol: "USDT", address: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", decimals: 6, name: "Tether" }, block_timestamp: quote.createdAt.getTime(), from: "test-sender", to: address, type: "Transfer", value: "1000123" };
+  let transfers = [{ ...transfer, value: "1000122" }, { ...transfer, token_info: { ...transfer.token_info, address: "fake-token" } }];
+  let requests = 0;
+  const mocked = context.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const url = new URL(String(input)); requests++;
+    assert.equal(url.hostname, "api.trongrid.io");
+    assert.equal(url.searchParams.get("only_confirmed"), "true");
+    assert.equal(url.searchParams.get("contract_address"), transfer.token_info.address);
+    return Response.json({ success: true, data: transfers });
+  });
+  try {
+    assert.equal((await queryUSDTPayment(order.orderNo)).status, "pending");
+    transfers = [transfer];
+    assert.equal((await queryUSDTPayment(order.orderNo)).tradeNo, hash);
+    await handlePaymentSuccess(order.orderNo, hash, { method: "USDT_TRC20", amount: 100 });
+    const other = await fixture(1);
+    const otherOrder = await createOrder({ ...other.input, paymentMethod: "USDT_TRC20" });
+    await prisma.paymentQuote.create({ data: { orderId: otherOrder.id, method: "USDT_TRC20", address, amountMicros: quote.amountMicros, exchangeRate: 7.2, expiresAt: order.expiredAt!, createdAt: quote.createdAt, reservation: `${prefix}-chain-other` } });
+    assert.equal((await queryUSDTPayment(otherOrder.orderNo)).status, "pending");
+    const before = requests;
+    await prisma.paymentQuote.update({ where: { orderId: otherOrder.id }, data: { expiresAt: new Date(0) } });
+    assert.equal((await queryUSDTPayment(otherOrder.orderNo)).status, "pending");
+    assert.equal(requests, before);
+  } finally { mocked.mock.restore(); }
 });

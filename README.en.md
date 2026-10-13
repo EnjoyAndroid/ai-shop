@@ -199,6 +199,8 @@ Pending inventory quotas for externally paid product orders are checked inside t
 
 `NEXT_PUBLIC_*` values are embedded in the frontend during the build. Rebuild the image after changing them. Configure Telegram support in the admin panel with `@username` or an official Telegram link; saving and refreshing the storefront is enough. The app no longer reads `NEXT_PUBLIC_TELEGRAM_URL`. Telegram links are hidden when unset, and the support email defaults to empty. Cloudinary is allowed by default for remote images; explicitly add other storage domains to `next.config.mjs`.
 
+`NEXTAUTH_URL` must match the browser's actual scheme, host, and port. API writes require that exact Origin, except the two signed payment callback endpoints. Production CSP uses a unique script nonce per request; HTML is dynamically rendered and must not be stored in shared caches. Proxies/CDNs must preserve the cache headers. See [browser security boundaries](docs/security.md) for details.
+
 The permanent community page is `/community`; homepage QR codes use `NEXT_PUBLIC_SITE_URL`. Updating group settings does not require redeployment, but the app cannot automatically renew WeChat group invitations. For a self-hosted instance, change the README join links to your domain and run `npm run community:qr -- https://example.com` to regenerate its QR image. See the [maintenance guide](docs/community/README.md).
 
 ### Troubleshooting email delivery
