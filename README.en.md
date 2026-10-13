@@ -211,11 +211,9 @@ Storefront support uses WeChat QR codes or Telegram; password resets and payment
 
 The permanent community page is `/community`; homepage QR codes use `NEXT_PUBLIC_SITE_URL`. Updating group settings does not require redeployment, but the app cannot automatically renew WeChat group invitations. For a self-hosted instance, change the README join links to your domain and run `npm run community:qr -- https://example.com` to regenerate its QR image. See the [maintenance guide](docs/community/README.md).
 
-## Upgrades, backups, and migrations
-
-Before upgrading an existing instance, back up the database and `.env` and preserve the digital-key encryption key. **Older instances with real orders that have not applied the order-query migration cannot upgrade directly.** Do not delete real orders to bypass migration restrictions.
-
 ## Verification and maintenance
+
+Before updating a deployed instance, back up the database and `.env` and preserve the digital-key encryption key.
 
 CI covers production builds, isolated tests, HTTP checks, and security scans. See [Contributing](CONTRIBUTING.md) (Chinese) for the full validation commands and [dependency maintenance](docs/security.md#验证与依赖维护) (Chinese) for known advisories and temporary patches.
 

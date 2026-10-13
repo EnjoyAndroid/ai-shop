@@ -209,11 +209,9 @@ unset ADMIN_PASSWORD
 
 微信群固定页面为 `/community`，首页二维码根据 `NEXT_PUBLIC_SITE_URL` 生成。后台更新后无需重新部署；普通微信群二维码不由应用自动续期。自托管时请将本 README 的入群链接改为自己的域名，并运行 `npm run community:qr -- https://example.com` 重新生成 README 固定二维码；[维护说明](docs/community/README.md)。
 
-## 升级、备份与迁移
-
-升级现有实例前，先备份数据库和 `.env`，保留原卡密加密密钥。**尚未应用订单查询迁移的旧实例若已有正式订单，不能直接升级。** 不要删除正式订单来绕过迁移限制。
-
 ## 验证与维护
+
+更新已部署的实例前，备份数据库和 `.env`，保留原卡密加密密钥。
 
 CI 覆盖生产构建、隔离测试、HTTP 验收及安全扫描。贡献前的完整验证命令见 [贡献说明](CONTRIBUTING.md)；已知依赖告警及临时补丁见 [依赖维护说明](docs/security.md#验证与依赖维护)。
 
