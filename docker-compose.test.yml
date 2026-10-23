@@ -1,0 +1,55 @@
+name: ai-shop-test
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aishop_test
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:?Run npm run env:init first}
+      POSTGRES_DB: ai_shop_security_test
+    ports: ["127.0.0.1:55441:5432"]
+    volumes: ["test_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aishop_test -d ai_shop_security_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:16381:6379"]
+    volumes: ["test_redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  app:
+    profiles: ["verification"]
+    image: ${AI_SHOP_CANDIDATE_IMAGE:-ai-shop-candidate:unset}
+    pull_policy: never
+    command: ["node", "server.js"]
+    ports: ["127.0.0.1:3014:3000"]
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql://aishop_test:${TEST_DB_PASSWORD}@postgres:5432/ai_shop_image_test
+      REDIS_URL: redis://redis:6379/14
+      NEXTAUTH_URL: http://127.0.0.1:3014
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3014
+      NEXT_PUBLIC_SITE_NAME: AI Shop Test
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CRON_SECRET: ${CRON_SECRET}
+      AUTH_TRUST_HOST: 'true'
+      TRUST_PROXY: 'false'
+      SUPPORT_LLM_API_KEY: ''
+      SMTP_HOST: ''
+      TELEGRAM_BOT_TOKEN: ''
+      XUNHU_ALIPAY_APPSECRET: ''
+      XUNHU_WECHAT_APPSECRET: ''
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+volumes:
+  test_postgres:
+  test_redis:

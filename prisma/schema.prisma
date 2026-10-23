@@ -42,6 +42,7 @@ model User {
   // 关联
   orders        Order[]
   balanceLogs   BalanceLog[]
+  supportConversations SupportConversation[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -456,4 +457,97 @@ model SystemSetting {
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+// ==================== 智能客服 ====================
+// 知识正文是唯一事实源；检索索引（包括未来的向量索引）均可重建。
+model SupportArticle {
+  id          String   @id @default(cuid())
+  title       String
+  question    String
+  aliases     String[] @default([])
+  keywords    String[] @default([])
+  category    String   @default("general")
+  content     String   @db.Text
+  status      SupportArticleStatus @default(DRAFT)
+  version     Int      @default(1)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, category])
+  @@index([publishedAt])
+}
+
+enum SupportArticleStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model SupportConversation {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  anonymousKey String?
+  title        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  expiresAt    DateTime
+  turns        SupportTurn[]
+
+  @@index([userId, updatedAt])
+  @@index([anonymousKey, updatedAt])
+  @@index([expiresAt])
+}
+
+model SupportTurn {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  requestId      String
+  userText       String   @db.Text
+  answerText     String?  @db.Text
+  sources        Json?
+  facts          Json?
+  status         String   @default("COMPLETED")
+  feedback       Int?
+  createdAt      DateTime @default(now())
+  modelCalls     SupportModelCall[]
+
+  @@unique([conversationId, requestId])
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+}
+
+model SupportModelCall {
+  id               String   @id @default(cuid())
+  turnId           String
+  turn             SupportTurn @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  provider         String
+  requestModel     String
+  responseModel    String?
+  inputTokens      Int?
+  cachedTokens     Int?
+  cacheWriteTokens Int?
+  outputTokens     Int?
+  reasoningTokens  Int?
+  totalTokens      Int?
+  estimatedCost    Decimal? @db.Decimal(18, 8)
+  currency         String   @default("USD")
+  usageStatus      String   @default("MISSING")
+  latencyMs        Int?
+  success          Boolean  @default(false)
+  errorCode        String?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([provider, requestModel, createdAt])
+}
+
+model SupportBudgetDay {
+  day           DateTime @id
+  reservedCents Int      @default(0)
+  settledCents  Int      @default(0)
+  alertSent     Boolean  @default(false)
+  updatedAt     DateTime @updatedAt
 }

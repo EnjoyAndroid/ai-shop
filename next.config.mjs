@@ -2,6 +2,7 @@
 const nextConfig = {
   // 启用 standalone 模式（Docker 部署必需）
   output: 'standalone',
+  distDir: process.env.NEXT_DEV_ISOLATED === '1' ? '.next-dev' : '.next',
 
   experimental: {
     serverActions: {

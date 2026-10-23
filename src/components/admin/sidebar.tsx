@@ -13,6 +13,7 @@ const menuItems = [
   { href: "/admin/users", label: "用户管理", icon: "👥" },
   { href: "/admin/announcements", label: "公告管理", icon: "📢" },
   { href: "/admin/contact", label: "客服与社群", icon: "💬" },
+  { href: "/admin/support", label: "智能客服", icon: "🤖" },
   { href: "/admin/settings", label: "系统设置", icon: "⚙️" },
 ];
 

@@ -46,7 +46,7 @@ Use a SUPER_ADMIN account to open Support & community at `/admin/contact`. Exist
 
 The WeChat support dialog displays only a QR image and scanning instructions. The retained support text is not shown in the dialog, but remains available through the public contact API; do not use it for private notes. Clear both support text and QR URL to hide the entry. A text-only configuration still shows the entry but opens a “QR code not configured” message. Support QR codes and group invitation codes are separate settings, and support QR codes have no group-expiry field.
 
-Telegram accepts a username or official link and is hidden when blank. The help page shows configured contact methods; order/payment support prefers WeChat when configured and otherwise links to Telegram. Storefront email links have been removed; SMTP continues to serve password resets and payment notifications.
+Telegram accepts a username or official link and is hidden when blank. The smart support panel shows configured contact methods; order/payment support can open it from the storefront and it falls back to Telegram or WeChat when configured. Storefront email links have been removed; SMTP continues to serve password resets and payment notifications.
 
 The homepage and README QR codes open `/community`, which displays the latest group invitation configured by a super administrator. Replace the group QR image and optionally set its expiry under Support & community → WeChat community, then save. Existing pages check for updates every minute and offer a manual refresh button.
 

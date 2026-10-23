@@ -1,6 +1,6 @@
 # 贡献说明
 
-开发前阅读 `dev_log.md`。安装 Node.js 22.14+、PostgreSQL 15+ 和 Redis 7+，复制 `.env.example` 并配置独立随机密钥。
+开发前阅读 `dev_log.md`。安装 Node.js 22.14+、PostgreSQL 15+ 和 Redis 7+，执行 `npm run env:init` 生成独立开发/测试配置，按 [环境隔离指南](docs/operations/environments.md) 启动依赖。生产配置只能保存在 `.deploy/`。
 
 README 维护项目介绍、快速部署和必要配置；开发过程、调试问题与验证记录放在 `dev_log.md`。功能或配置文档变更同步中英文版本。
 
@@ -18,7 +18,7 @@ npm run check:history
 npm run audit:security
 ```
 
-集成测试只能连接名称以 `_test` 结尾的独立数据库，Redis 使用测试专用 15 库；可以通过 `TEST_DATABASE_URL` 和 `TEST_REDIS_URL` 配置。测试不调用支付网关或通知服务。
+本地集成测试固定连接独立 `ai-shop-test` 容器（55441 / 16381），数据库必须以 `_test` 结尾、Redis 必须为 15 库；CI 使用显式指定的临时服务。拒绝生产端口和外部服务凭据，测试不调用支付、通知或付费模型。生产仅通过用户明确授权后的 `release:deploy` 更新。
 
 历史邮箱检查需要完整检出，只输出提交位置。提交及 GitHub 网页编辑均应使用 GitHub noreply 或约定的公开示例身份。`npm audit` 仍可能报告已由源码补丁缓解的 braces 公告；`audit:security` 会校验补丁并拒绝其他告警，维护要求见 [安全说明](docs/security.md#验证与依赖维护)。不要关闭安装脚本或降低整个审计阈值。
 

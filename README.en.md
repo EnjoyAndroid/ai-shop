@@ -85,7 +85,7 @@ The tour combines real page screenshots, captions, and transitions; it is not a 
 - **Email and order number lookup:** complete slider verification to open a separate order list with status filters and pagination. Viewing an order's details requires its lookup password.
 - **Recent email history:** successful searches save up to three recent email addresses in the current browser. Click an address to fill the field or remove it; order numbers are not saved.
 - **Member center:** view account details, recent orders, and balance history. Navigation stays visible when switching between the dashboard, orders, and balance pages.
-- **Contact support:** use a WeChat support QR code or Telegram. The WeChat dialog shows only the QR image and scanning instructions.
+- **Smart support:** use the site-wide assistant for purchase, product, stock, payment, order, and after-sales questions; escalate to configured WeChat or Telegram support when needed.
 - **Mobile layouts:** responsive product pages, order cards, navigation, and touch support for slider verification.
 
 Purchase flow: **Choose a product → Enter email and lookup password → Pay → Automatic delivery → View order details**.
@@ -100,6 +100,7 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings and Support & community configuration.
 - **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
+- **Smart support administration:** edit and publish support knowledge, configure the shop's dedicated sub2api model, and inspect input, output, cache, reasoning-token, and estimated-cost metrics.
 
 ### Payments and notifications
 
@@ -119,71 +120,44 @@ See [Security and usage boundaries](docs/security.md) (Chinese) for order privac
 - PostgreSQL 15+ and Redis 7+; both are required.
 - Docker Compose 2.24.4+; the local override file uses `!override`.
 
-## Local deployment
+## Configuration
+
+Edit **`.env` for local development**, and **`.deploy/production.env` for production**.
+Test credentials are automatically managed by `npm run env:init`; do not copy production credentials into tests.
+`.env.example` is a template, not an active configuration. Run `npm run env:status` to see configuration locations and presence without printing secrets.
+Production changes take effect only after an explicitly authorized deployment. See [Configuration](CONFIGURATION.md).
+
+## Isolated development and releases
+
+Development never uses the production configuration or data. The default Compose project is `ai-shop-dev`; production is a separate `ai-shop` project with private configuration under ignored `.deploy/`.
 
 ```bash
 npm ci
-cp .env.example .env
-```
-
-Configure `.env`. Generate separate random values for the database password, `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET`. The initial `ADMIN_PASSWORD` must contain at least 12 characters and at most 72 UTF-8 bytes. To generate one random value:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-The password in `DATABASE_URL` must match `DB_PASSWORD`. The template uses `localhost:55439` for PostgreSQL, `localhost:16379/1` for Redis, and `http://localhost:3010` for the storefront. Do not commit the actual `.env` file.
-
-```bash
-# Start the required services.
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis
-
-# Generate the client, prepare the schema, and seed demo products and the admin account.
+npm run env:init
+npm run dev:up
 npm run db:generate
 npm run db:prepare
 npm run db:seed
-
-# Build and deploy.
-npm run build
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+npm run dev
 ```
 
-Open:
-
-- Storefront: http://localhost:3010
-- Admin login: http://localhost:3010/admin/login
-- Admin username: `admin`. Its password is the `ADMIN_PASSWORD` supplied during initialization; there is no built-in default. Running the seed again does not reset an existing admin password.
-
-If your local `.env.local` already links to `.env`, you can keep that link. The Node seed script reads `.env`, while Next.js also reads `.env.local`; avoid conflicting configuration in the two files.
+- Local development and manual acceptance: http://127.0.0.1:3013; PostgreSQL 55440 and Redis 16380, loopback only.
+- Acceptance: independent `ai-shop-test` services (55441 / 16381), HTTP tests on 3011, temporary image checks on 3014 (stopped after checks).
+- Production: the existing public domain through loopback port 3010. Development and testing do not rebuild or restart it.
+- The development `admin` password is generated in `.env`. No production data, credentials, payment, email or AI keys are copied into local environments.
 
 ```bash
-# Check status, inspect logs, or stop services while keeping volumes.
-docker compose -f docker-compose.yml -f docker-compose.local.yml ps
-docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f app
-docker compose -f docker-compose.yml -f docker-compose.local.yml down
+npm run test:up
+npm run release:prepare
 ```
 
-## Server deployment
-
-1. Copy `.env.production.example` to `.env`. Configure separate random secrets, the actual database password, and your HTTPS domain.
-2. Install Docker and Compose, and configure DNS and TLS termination. The included Nginx configuration listens on HTTP port 80 and expects a trusted reverse proxy with TLS; it does not provide a complete public HTTPS setup by itself.
-3. When using Cloudflare, configure a TLS certificate on the origin and use **Full (strict)**. Restrict access to the origin; do not use Flexible mode. If preserving client IPs, configure trusted proxy ranges with Nginx `set_real_ip_from` and `real_ip_header`. Do not trust arbitrary incoming IP headers.
-4. Run `docker compose up -d --build`. The app container applies database migrations before starting the server. App, database, and Redis ports remain on the internal network.
-5. Initialize the admin account and demo products:
+This runs acceptance, builds an immutable image and checks it in the isolated preview. A failed gate blocks promotion. It does **not** deploy to production. After reviewing the release ID and explicitly authorizing production deployment:
 
 ```bash
-# Pass ADMIN_PASSWORD from .env to the initialization process, not as a literal argument.
-# The app container does not retain the initial admin password in its runtime environment.
-set -a
-. ./.env
-set +a
-docker compose exec -e ADMIN_PASSWORD app node seed.cjs
-unset ADMIN_PASSWORD
+npm run release:deploy -- <release-id> --confirm-production
 ```
 
-Only source a trusted `.env` file containing plain assignments. You can also run `npm run db:seed` on the host if its `DATABASE_URL` can reach PostgreSQL.
-
-The seed enables only balance payments by default. External payments require both server credentials and the admin payment switch. Missing credentials cause payment creation and callback handling to reject requests.
+Production deployment backs up the database, explicitly applies migrations, replaces only the app image and reloads Nginx. It never runs demo seed or recreates PostgreSQL/Redis. Runtime startup no longer automatically migrates. See the [environment and release guide](docs/operations/environments.md) for configuration, rollback, and first-time adoption. Existing production settings are saved in `.deploy/production.env`; do not copy them back into `.env`.
 
 | Integration | Configuration |
 |---|---|
@@ -196,12 +170,15 @@ The seed enables only balance payments by default. External payments require bot
 | WeChat support | Admin panel → Support & community → WeChat support; upload a support QR image. The storefront dialog shows only the QR image and scanning instructions. |
 | Telegram support link | Admin panel → Support & community → Telegram support; leave blank to hide. |
 | WeChat community | Admin panel → Support & community → WeChat community; upload the current group QR code and optionally set its expiry. |
+| Smart support model | `SUPPORT_LLM_BASE_URL`, a shop-specific `SUPPORT_LLM_API_KEY`, and `SUPPORT_LLM_MODEL`; see the [Smart support technical document](docs/ai-support.md). |
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 | Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
 
+Local development and manual acceptance share `.env`, the database, accounts, and port 3013. Stop `npm run dev` before `npm run release:prepare`; after all gates pass, the accepted image replaces the local server without resetting data. Automated tests remain isolated.
+
 ## Verification and maintenance
 
-Before updating a deployed instance, back up the database and `.env` and preserve the digital-key encryption key.
+Before updating a deployed instance, back up the database and `.deploy/production.env` and preserve the digital-key encryption key.
 
 CI covers production builds, isolated tests, HTTP checks, and security scans. See [Contributing](CONTRIBUTING.md) (Chinese) for the full validation commands and [dependency maintenance](docs/security.md#验证与依赖维护) (Chinese) for known advisories and temporary patches.
 

@@ -83,7 +83,7 @@ https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 - **邮箱与订单号查询**：完成拼图验证后进入独立订单列表，支持状态筛选、分页，查看详情时验证该订单密码。
 - **最近邮箱缓存**：查询成功后在当前浏览器保存最近 3 个邮箱，可点击填入或删除，订单号不缓存。
 - **会员中心**：查看账户、最近订单和余额流水；个人中心、订单、余额之间切换时保留公共导航。
-- **联系客服**：通过微信客服二维码或 Telegram 获取帮助；微信弹窗仅展示二维码与扫码提示。
+- **智能客服**：通过全站智能客服入口获取购买、商品、库存、支付、订单和售后帮助；需要人工处理时可转微信或 Telegram。
 - **手机端适配**：响应式商品页面、订单卡片、移动导航与触屏拼图验证。
 
 购买流程：**选择商品 → 填写邮箱与查询密码 → 完成付款 → 自动发货 → 查看订单详情**。
@@ -98,6 +98,7 @@ https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 - **微信群固定入口**：首页与 README 共用入群页面；后台更换群二维码和设置有效期，过期后停止展示旧群码。
 - **后台角色分工**：OPERATOR 负责商品及发货，ADMIN 管理用户和财务，SUPER_ADMIN 管理系统设置及客服与社群配置。
 - **后台菜单切换**：管理页面共用固定侧栏，切换时只加载右侧内容，支持加载骨架、切换提示与失败重试。
+- **智能客服后台**：维护客服知识草稿与发布、配置商城专用 sub2api 模型，并查看输入、输出、缓存、推理 token 和估算费用。
 
 ### 支付与通知
 
@@ -117,71 +118,44 @@ https://github.com/user-attachments/assets/5f4e285b-39c4-4d1d-bfe6-f762d8f530ca
 - PostgreSQL 15+、Redis 7+，二者均为必需服务
 - Docker Compose 2.24.4+（本机覆盖文件使用 `!override`）
 
-## 本机部署
+## 配置文件
+
+只需要区分两个入口：**本地开发改 `.env`，线上配置改 `.deploy/production.env`**。
+测试凭据由 `npm run env:init` 自动生成，无需手动配置。`.env.example` 是说明模板，不会生效。
+当前商城模型 key 在 `.deploy/production.env`；修改后仍需明确部署才会影响线上。
+运行 `npm run env:status` 查看配置位置和状态，不显示密钥。详见 [配置说明](CONFIGURATION.md)。
+
+## 隔离开发与部署
+
+默认命令只操作开发环境，开发和验收不再共用生产配置、数据库或 Redis。默认 Compose 项目是 `ai-shop-dev`，生产继续使用独立的 `ai-shop` 项目，私有配置保存在被忽略的 `.deploy/` 中。
 
 ```bash
 npm ci
-cp .env.example .env
-```
-
-填写 `.env`：数据库密码、`NEXTAUTH_SECRET`、`ENCRYPTION_KEY` 和 `CRON_SECRET` 应分别随机生成；`ADMIN_PASSWORD` 首次初始化至少 12 位、最多 72 个 UTF-8 字节。生成单个随机值：
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-`DATABASE_URL` 中密码与 `DB_PASSWORD` 一致。模板使用 `localhost:55439` 数据库、`localhost:16379/1` Redis 和 `http://localhost:3010` 网站地址。实际 `.env` 不提交到 Git。
-
-```bash
-# 启动依赖服务
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis
-
-# 生成客户端、建立/升级结构、初始化演示数据和管理员
+npm run env:init
+npm run dev:up
 npm run db:generate
 npm run db:prepare
 npm run db:seed
-
-# 验证并部署
-npm run build
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+npm run dev
 ```
 
-访问：
-
-- 商城：http://localhost:3010
-- 后台：http://localhost:3010/admin/login
-- 管理员：`admin`，密码为首次初始化时的 `ADMIN_PASSWORD`，不存在内置默认密码。重复初始化不会重置已有密码。
-
-当前机器如已有 `.env.local` 指向 `.env` 的链接，可以继续使用。Node CLI 的种子脚本读取 `.env`；Next.js 本身也读取 `.env.local`，避免在两处维护冲突配置。
+- 本地开发与人工验收：http://127.0.0.1:3013；数据库 55440、Redis 16380，仅绑定本机。
+- 验收：独立 `ai-shop-test` 服务（55441 / 16381），HTTP 测试使用 3011，临时镜像检查使用 3014（完成即停止）。
+- 生产：原公网域名，通过本机 3010 入口访问；开发和验收不重建或重启生产。
+- 开发管理员 `admin` 密码由 `.env` 随机生成。开发/验收不复制生产数据和密钥，默认关闭真实支付、邮件、通知及付费模型。
 
 ```bash
-# 状态、日志、停止（保留数据卷）
-docker compose -f docker-compose.yml -f docker-compose.local.yml ps
-docker compose -f docker-compose.yml -f docker-compose.local.yml logs -f app
-docker compose -f docker-compose.yml -f docker-compose.local.yml down
+npm run test:up
+npm run release:prepare
 ```
 
-## 服务器部署
-
-1. 复制 `.env.production.example` 为 `.env`，填写独立随机密钥、数据库密码和真实 HTTPS 域名。
-2. 安装 Docker/Compose，配置域名与 TLS 入口。仓库 Nginx 默认提供 HTTP 80，适用于置于已经配置 TLS 的可信反向代理后；不要把这个默认入口当成已完成公网 HTTPS 部署。
-3. 使用 Cloudflare 时配置源站证书和 **Full (strict)**，限制源站来源；不使用 Flexible。若需真实访客 IP，按 Cloudflare 官方 IP 范围配置 Nginx `set_real_ip_from` / `real_ip_header`，只信任受限来源。
-4. 执行 `docker compose up -d --build`。应用容器会先运行数据库迁移，再启动网站；数据库、Redis 和应用端口仅在内部网络可用。
-5. 首次管理员与演示数据初始化：
+该命令执行验收、构建固定镜像并检查隔离预览。任何门禁失败都会阻止发布，**不会自动部署公网**。确认版本与验收结果、明确授权部署后执行：
 
 ```bash
-# 将 .env 中的 ADMIN_PASSWORD 安全地传给初始化进程，不写入命令行明文。
-# app 容器运行环境中不持久保存管理员初始密码。
-set -a
-. ./.env
-set +a
-docker compose exec -e ADMIN_PASSWORD app node seed.cjs
-unset ADMIN_PASSWORD
+npm run release:deploy -- <release-id> --confirm-production
 ```
 
-使用纯赋值格式的可信 `.env`；不要从不可信来源执行该文件。也可以通过宿主机 Node 环境运行 `npm run db:seed`，但 DATABASE_URL 必须可从宿主机访问。
-
-系统默认仅启用余额支付。启用第三方收款需要同时配置服务端凭据和后台开关；凭据缺失时创建支付和回调会被拒绝。
+发布会先备份数据库，显式运行迁移，仅更新应用镜像并重载 Nginx，不执行演示 seed、不重建 PostgreSQL/Redis。新镜像启动不再自动迁移。配置、首次接管与回退见[环境隔离与部署指南](docs/operations/environments.md)。当前生产配置保存在 `.deploy/production.env`，不要复制回 `.env`。
 
 | 功能 | 配置方式 |
 |---|---|
@@ -194,12 +168,15 @@ unset ADMIN_PASSWORD
 | 微信客服 | 后台「客服与社群 → 微信客服」上传客服二维码；前台弹窗仅展示二维码与扫码提示 |
 | Telegram 客服 | 后台「客服与社群 → Telegram 客服」，留空隐藏入口 |
 | 微信交流群 | 后台「客服与社群 → 微信交流群」，上传最新群二维码并设置可选过期时间 |
+| 智能客服模型 | `SUPPORT_LLM_BASE_URL`、商城专用 `SUPPORT_LLM_API_KEY`、`SUPPORT_LLM_MODEL`；详细配置见 [智能客服技术文档](docs/ai-support.md) |
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 | 待付库存额度 | `MAX_PENDING_ORDERS=3`、`MAX_PENDING_QUANTITY=100`，分别限制每个账号、邮箱和可信客户端 IP |
 
+本地日常开发和人工验收共用 `.env`、数据库与账号，始终访问 3013。运行 `npm run dev` 调试，准备验收时先退出开发进程再运行 `npm run release:prepare`；门禁通过后自动切换固定镜像，数据不会重置。自动化测试仍与本地数据隔离。
+
 ## 验证与维护
 
-更新已部署的实例前，备份数据库和 `.env`，保留原卡密加密密钥。
+更新已部署的实例前，备份数据库和 `.deploy/production.env`，保留原卡密加密密钥。
 
 CI 覆盖生产构建、隔离测试、HTTP 验收及安全扫描。贡献前的完整验证命令见 [贡献说明](CONTRIBUTING.md)；已知依赖告警及临时补丁见 [依赖维护说明](docs/security.md#验证与依赖维护)。
 

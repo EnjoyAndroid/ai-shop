@@ -9,8 +9,10 @@ nul
 
 .env.*
 !.env.example
-!.env.production.example
 *.tsbuildinfo
 backups/
 coverage/
 *.dump
+
+.deploy/
+.next-dev/

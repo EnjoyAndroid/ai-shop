@@ -101,11 +101,6 @@ export default async function HomePage() {
                     Telegram
                   </a>
                 </li>}
-                <li>
-                  <Link href="/help" className="hover:text-white">
-                    使用帮助
-                  </Link>
-                </li>
               </ul>
             </div>
           </div>

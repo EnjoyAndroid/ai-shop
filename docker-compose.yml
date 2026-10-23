@@ -1,112 +1,57 @@
+# Local development and manual preview share data. No production resources.
+name: ai-shop-dev
 services:
-  # Next.js 应用
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-AI Shop}
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-    container_name: ai-shop-app
-    restart: unless-stopped
+  postgres:
+    image: postgres:16-alpine
     environment:
-      - DATABASE_URL=postgresql://aishop:${DB_PASSWORD}@postgres:5432/ai_shop?schema=public
-      - REDIS_URL=redis://redis:6379
-      - NEXTAUTH_URL=${NEXTAUTH_URL}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - AUTH_TRUST_HOST=true
-      - TRUST_PROXY=true
-      - MAX_PENDING_ORDERS=${MAX_PENDING_ORDERS:-3}
-      - MAX_PENDING_QUANTITY=${MAX_PENDING_QUANTITY:-100}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - NEXT_PUBLIC_SITE_NAME=${NEXT_PUBLIC_SITE_NAME}
-      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
-      # 支付配置 - 虎皮椒
-      - XUNHU_GATEWAY=${XUNHU_GATEWAY}
-      - XUNHU_WECHAT_APPID=${XUNHU_WECHAT_APPID}
-      - XUNHU_WECHAT_APPSECRET=${XUNHU_WECHAT_APPSECRET}
-      - XUNHU_ALIPAY_APPID=${XUNHU_ALIPAY_APPID}
-      - XUNHU_ALIPAY_APPSECRET=${XUNHU_ALIPAY_APPSECRET}
-      # USDT 支付
-      - USDT_TRC20_ADDRESS=${USDT_TRC20_ADDRESS}
-      - TRONGRID_API_KEY=${TRONGRID_API_KEY}
-      # 通知配置
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      # 邮件配置
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - MAIL_FROM=${MAIL_FROM}
-      # 其他配置
-      - USDT_EXCHANGE_RATE=${USDT_EXCHANGE_RATE}
-      - CRON_SECRET=${CRON_SECRET}
-      # Cloudinary 图片存储
-      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
-      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
-      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      POSTGRES_USER: aishop_dev
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:?Run npm run env:init first}
+      POSTGRES_DB: ai_shop_dev
+    ports: ["127.0.0.1:55440:5432"]
+    volumes: ["dev_postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aishop_dev -d ai_shop_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:16380:6379"]
+    volumes: ["dev_redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  app:
+    profiles: ["preview"]
+    image: ${AI_SHOP_CANDIDATE_IMAGE:-ai-shop-candidate:unset}
+    pull_policy: never
+    command: ["node", "server.js"]
+    ports: ["127.0.0.1:3013:3000"]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql://aishop_dev:${DEV_DB_PASSWORD}@postgres:5432/ai_shop_dev
+      REDIS_URL: redis://redis:6379/0
+      NEXTAUTH_URL: http://127.0.0.1:3013
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3013
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-AI Shop Local}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      CRON_SECRET: ${CRON_SECRET}
+      AUTH_TRUST_HOST: 'true'
+      TRUST_PROXY: 'false'
+      SUPPORT_LLM_API_KEY: ''
+      SMTP_HOST: ''
+      TELEGRAM_BOT_TOKEN: ''
+      XUNHU_ALIPAY_APPSECRET: ''
+      XUNHU_WECHAT_APPSECRET: ''
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    networks:
-      - ai-shop-network
-
-  # PostgreSQL 数据库
-  postgres:
-    image: postgres:15-alpine
-    container_name: ai-shop-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=aishop
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
-      - POSTGRES_DB=ai_shop
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aishop -d ai_shop"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - ai-shop-network
-
-  # Redis 缓存
-  redis:
-    image: redis:7-alpine
-    container_name: ai-shop-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    networks:
-      - ai-shop-network
-
-  # Nginx 反向代理
-  nginx:
-    image: nginx:alpine
-    container_name: ai-shop-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - app
-    networks:
-      - ai-shop-network
+        condition: service_healthy
 
 volumes:
-  postgres_data:
-  redis_data:
-
-networks:
-  ai-shop-network:
-    driver: bridge
+  dev_postgres:
+  dev_redis:

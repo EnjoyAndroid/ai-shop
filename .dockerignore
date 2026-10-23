@@ -42,3 +42,6 @@ backups
 *.dump
 *.tsbuildinfo
 .github
+
+.deploy
+.next-dev

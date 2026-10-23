@@ -40,6 +40,7 @@ jobs:
         run: |
           node -e 'const fs=require("fs"), c=require("crypto"); for(const key of ["NEXTAUTH_SECRET","ENCRYPTION_KEY"]) fs.appendFileSync(process.env.GITHUB_ENV, key+"="+c.randomBytes(32).toString("hex")+"\n");'
       - run: npm ci
+      - run: npm run env:init
       - run: npm run db:generate
       - run: npm run check:secrets
       - run: npm run check:history

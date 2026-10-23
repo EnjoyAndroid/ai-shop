@@ -1,7 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-if (existsSync('.env')) process.loadEnvFile('.env');
+if (process.env.APP_ENV === 'production') {
+  if (process.env.AI_SHOP_DEPLOY_AUTHORIZED !== '1') throw new Error('Production migrations require the explicit release workflow');
+} else {
+  const target = new URL(process.env.DATABASE_URL || '');
+  if (target.pathname !== '/ai_shop_dev' && !target.pathname.endsWith('_test')) throw new Error('Refusing migration outside development/test database');
+}
 const db = new PrismaClient();
 function prisma(args, capture = false) {
   const result = spawnSync(process.execPath, ['node_modules/prisma/build/index.js', ...args], { env: process.env, stdio: capture ? 'pipe' : 'inherit' });
