@@ -130,6 +130,12 @@ export function fallbackAnswer(question: string, knowledgeAnswer: string, facts:
   // Dynamic questions must be answered from current business facts before
   // returning broad article matches. Otherwise a stock question can surface
   // unrelated refund/payment articles when the LLM is intentionally disabled.
+  if (trustedSupportFaq(question) === "哪些商品有库存？") {
+    const available = facts.products.filter(product => product.stock > 0);
+    return available.length
+      ? available.map(product => `${product.name}：有货（${product.stock} 件），售价 ¥${product.priceCny.toFixed(2)}`).join("\n")
+      : "当前暂无有库存的上架商品，请稍后再来查看。";
+  }
   if (/库存|有货|售罄|哪些商品/.test(question)) return facts.products.length ? facts.products.map(product => `${product.name}：${product.stock > 0 ? `有货（${product.stock} 件）` : "暂时缺货"}，售价 ¥${product.priceCny.toFixed(2)}`).join("\n") : "当前暂未查询到商品信息，请稍后重试。";
   if (isProductQuestion(question)) return productAnswer(question, facts);
   if (isPaymentMethodsQuestion(question)) return facts.paymentMethods.length ? `当前可用支付方式：${facts.paymentMethods.join("、")}。实际以付款页面显示为准。` : "当前暂未查询到可用支付方式，请稍后重试或联系客服。";
@@ -197,6 +203,10 @@ async function answerLocked(conversationId: string, requestId: string, question:
     status = "OUT_OF_SCOPE";
   } else if (supportGreetingAnswer(safeQuestion)) {
     answer = supportGreetingAnswer(safeQuestion)!; status = "GREETING";
+  } else if (trustedFaq) {
+    // Complete, preapproved FAQs need current data, not model classification
+    // and tool-selection round trips. Reuse the deterministic query path below.
+    status = "FAQ";
   } else if (supportModelConfigured(config)) {
     try {
       answer = await generateSupportAnswer({ question: safeQuestion, history: recentContext(conversation.turns), summary, config,
@@ -219,11 +229,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
       status = "COMPLETED";
     } catch (error) {
       if (error instanceof SupportRequestError) throw error;
-      if (error instanceof SupportLlmError && error.code === "SCOPE_UNAVAILABLE" && trustedFaq) {
-        // The classifier is unavailable, but this complete FAQ is already
-        // in scope. Use deterministic published knowledge/current facts only.
-        status = "FALLBACK_SCOPE_UNAVAILABLE";
-      } else if (error instanceof SupportLlmError && ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE"].includes(error.code)) {
+      if (error instanceof SupportLlmError && ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE"].includes(error.code)) {
         answer = error.code === "OUT_OF_SCOPE" ? SUPPORT_SCOPE_REFUSAL : error.code === "SCOPE_CLARIFY" ? SUPPORT_SCOPE_CLARIFICATION : SUPPORT_SCOPE_UNAVAILABLE;
         status = error.code;
       } else status = error instanceof SupportLlmError ? `FALLBACK_${error.code}` : "FALLBACK_ERROR";
@@ -233,7 +239,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
   if (!answer) {
     try {
       const fallbackQuestion = trustedFaq || safeQuestion;
-      const [knowledge, facts] = await Promise.all([searchSupportKnowledge(fallbackQuestion), getSupportFacts(identity.userId)]);
+      const [knowledge, facts] = await Promise.all([searchSupportKnowledge(fallbackQuestion), getSupportFacts(identity.userId, { inStockOnly: trustedFaq === "哪些商品有库存？" })]);
       answer = fallbackAnswer(fallbackQuestion, knowledge.answer, facts);
       sources.push(...knowledge.sources);
       savedFacts = { ...facts, queries: evidence };

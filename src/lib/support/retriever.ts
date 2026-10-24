@@ -87,11 +87,11 @@ export async function searchSupportKnowledge(query: string, limit = 6) {
   return postgresKnowledgeRetriever.search(query, limit);
 }
 
-export async function getSupportFacts(userId?: string): Promise<SupportFacts> {
+export async function getSupportFacts(userId?: string, options: { inStockOnly?: boolean } = {}): Promise<SupportFacts> {
   const settings = await getSettings();
   const [products, orders, announcements, paymentMethods] = await Promise.all([
     prisma.product.findMany({
-      where: { isActive: true, category: { isActive: true } },
+      where: { isActive: true, category: { isActive: true }, ...(options.inStockOnly ? { stock: { gt: 0 } } : {}) },
       select: { name: true, slug: true, price: true, stock: true, minQuantity: true, maxQuantity: true, description: true },
       orderBy: [{ sort: "asc" }, { createdAt: "desc" }], take: 50,
     }),

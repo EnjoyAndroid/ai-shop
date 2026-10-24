@@ -101,6 +101,7 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings and Support & community configuration.
 - **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
 - **Smart support administration:** edit and publish support knowledge, configure the shop's dedicated sub2api model, and inspect input, output, cache, reasoning-token, and estimated-cost metrics.
+- **Support response time:** the six preset FAQs and complete aliases read published knowledge and current business data without model round trips; the available-stock FAQ lists only active products with stock greater than zero; free-form questions retain scope classification and the read-only agent.
 
 ### Payments and notifications
 

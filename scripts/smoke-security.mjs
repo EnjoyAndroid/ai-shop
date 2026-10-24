@@ -76,7 +76,7 @@ try {
     const response = await jsonPost(`/api/support/conversations/${supportConversation.id}/messages`, { message, requestId }, { Cookie: supportCookie });
     assert.equal(response.status, 200);
     const result = await response.json();
-    assert.equal(result.status, 'FALLBACK');
+    assert.equal(result.status, message === 'gpt plus多少钱一个月？' ? 'FALLBACK' : 'FAQ');
     assert(!('sources' in result)); assert(!('facts' in result));
     assert(!/知识\d+《|参考：/.test(result.answer));
     return result;
@@ -123,9 +123,10 @@ try {
       assert(first.answer.includes('客服库存回归商品：有货（3 件），售价 ¥12.34'));
       await db.product.update({where:{id:supportProduct.id},data:{stock:0}});
       const fresh = await supportAsk('哪些商品有库存？');
-      assert(fresh.answer.includes('客服库存回归商品：暂时缺货'));
+      assert(!fresh.answer.includes('客服库存回归商品'));
+      assert(!fresh.ui.links.some(link => link.href === `/product/${supportProduct.slug}`));
       assert.equal((await supportAsk('哪些商品有库存？', requestId)).answer, first.answer);
-      assert.equal((await db.supportTurn.findUniqueOrThrow({where:{id:fresh.turnId}})).facts.products.find(product => product.slug === supportProduct.slug).stock, 0);
+      assert(!(await db.supportTurn.findUniqueOrThrow({where:{id:fresh.turnId}})).facts.products.some(product => product.slug === supportProduct.slug));
     } finally { await db.product.delete({where:{id:supportProduct.id}}); }
     const resumed = await request('/api/support/conversations', {headers:{Cookie:supportCookie}});
     assert.equal(resumed.status,200); assert.equal((await resumed.json()).conversation.id,supportConversation.id);

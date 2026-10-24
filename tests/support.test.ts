@@ -34,6 +34,16 @@ test("inventory fallback answers from live product facts before broad knowledge 
   assert.doesNotMatch(answer, /退款政策/);
 });
 
+test("available inventory answers exclude zero stock and explain empty availability", () => {
+  const product = { name: "有货商品", slug: "available", priceCny: 9.9, stock: 2, minQuantity: 1, maxQuantity: 3, description: "" };
+  const empty = { ...product, name: "零库存商品", slug: "empty", stock: 0 };
+  const facts = { siteName: "AI Shop", paymentMethods: [], products: [product, empty], orders: [], contacts: { telegramUrl: "", wechatSupportText: "", wechatSupportQrUrl: "" }, announcements: [] };
+  assert.equal(fallbackAnswer("哪些商品有库存？", "", facts), "有货商品：有货（2 件），售价 ¥9.90");
+  for (const products of [[], [empty]]) {
+    assert.equal(fallbackAnswer("哪些商品有货", "其他知识", { ...facts, products }), "当前暂无有库存的上架商品，请稍后再来查看。");
+  }
+});
+
 test("product and contact questions use current business facts instead of generic knowledge", () => {
   const facts = {
     siteName: "AI Shop", paymentMethods: ["账户余额"],

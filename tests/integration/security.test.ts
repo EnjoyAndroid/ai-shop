@@ -755,7 +755,7 @@ test('support scope denies weather and keyword bypasses without calls; classifie
   }
 });
 
-test('model outages keep six trusted FAQs available with live facts and UI; scope denial still closes generation', async t=>{
+test('trusted FAQs skip all model calls with live facts and UI; mixed questions still require scope classification', async t=>{
   const {createSupportConversation,answerSupportTurn,getLatestSupportConversation}=await import('../../src/lib/support/service');
   const {SUPPORT_QUICK_QUESTIONS}=await import('../../src/lib/support/faq');
   const {getSupportFacts}=await import('../../src/lib/support/retriever');
@@ -779,9 +779,10 @@ test('model outages keep six trusted FAQs available with live facts and UI; scop
     const results=[];
     for(const question of SUPPORT_QUICK_QUESTIONS){
       const result=await answerSupportTurn(c.id,randomBytes(8).toString('hex'),question,identity);
-      assert.equal(result.status,'FALLBACK_SCOPE_UNAVAILABLE');assert(!result.answer.includes('无法确认问题'));assert(!result.answer.includes('智能回答暂时不可用'));results.push(result);
+      assert.equal(result.status,'FAQ');assert(!result.answer.includes('无法确认问题'));assert(!result.answer.includes('智能回答暂时不可用'));results.push(result);
     }
-    assert.equal(calls,6);
+    assert.equal(calls,0);
+    assert.equal(await prisma.supportModelCall.count({where:{turn:{conversationId:c.id}}}),0);
     assert.match(results[0].answer,/浏览商品/);assert(results[0].ui.links.some(l=>l.href==='/'));
     const facts=await getSupportFacts();
     if(facts.paymentMethods.length) assert(results[1].answer.includes(facts.paymentMethods.join('、')));else assert.match(results[1].answer,/未查询到可用支付方式/);
@@ -789,19 +790,64 @@ test('model outages keep six trusted FAQs available with live facts and UI; scop
     assert.match(results[3].answer,/订单详情/);assert(results[3].ui.links.some(l=>l.href==='/order'));
     assert(results[4].ui.links.some(l=>l.href==='/order'));assert.equal(results[5].ui.images[0].url,qr);
     await prisma.product.update({where:{id:p.id},data:{stock:0}});
-    mode='timeout';const latest=await answerSupportTurn(c.id,'faq-timeout','哪些商品有库存？',identity);assert.match(latest.answer,/常见问题回归商品：暂时缺货/);
-    mode='invalid';assert.equal((await answerSupportTurn(c.id,'faq-invalid','支持哪些支付方式？',identity)).status,'FALLBACK_SCOPE_UNAVAILABLE');
+    mode='timeout';const latest=await answerSupportTurn(c.id,'faq-timeout','哪些商品有库存？',identity);assert(!latest.answer.includes(p.name));assert(!latest.ui.links.some(l=>l.href===`/product/${p.slug}`));
+    mode='invalid';assert.equal((await answerSupportTurn(c.id,'faq-invalid','支持哪些支付方式？',identity)).status,'FAQ');
     process.env.SUPPORT_DAILY_BUDGET_CNY='0';const before=calls;
-    assert.equal((await answerSupportTurn(c.id,'faq-budget','怎么买商品？',identity)).status,'FALLBACK_SCOPE_UNAVAILABLE');assert.equal(calls,before);
+    assert.equal((await answerSupportTurn(c.id,'faq-budget','怎么买商品？',identity)).status,'FAQ');assert.equal(calls,before);
     process.env.SUPPORT_DAILY_BUDGET_CNY='10000';mode='503';
     const unknown=await answerSupportTurn(c.id,'faq-unknown','支持哪些支付方式？另外做一份旅行计划',identity);assert.equal(unknown.status,'SCOPE_UNAVAILABLE');assert.deepEqual(unknown.ui,{links:[],images:[]});
     assert.equal((await answerSupportTurn(c.id,'faq-weather','支持哪些支付方式？今天天气如何',identity)).status,'OUT_OF_SCOPE');
-    mode='deny';assert.equal((await answerSupportTurn(c.id,'faq-denied','怎么买商品？',identity)).status,'OUT_OF_SCOPE');
+    assert.equal(calls,1,'only the unrecognized mixed question reaches classification');
+    mode='deny';assert.equal((await answerSupportTurn(c.id,'faq-denied','怎么买商品？另外帮我规划出游路线',identity)).status,'OUT_OF_SCOPE');
+    mode='timeout';assert.equal((await answerSupportTurn(c.id,'unknown-timeout','帮我挑选一个适合我的会员',identity)).status,'SCOPE_UNAVAILABLE');
+    mode='invalid';assert.equal((await answerSupportTurn(c.id,'unknown-invalid','帮我挑选一个适合我的会员',identity)).status,'SCOPE_UNAVAILABLE');
+    assert.equal(calls,4);
+    const alias=await answerSupportTurn(c.id,'faq-alias','如何购买商品',identity);assert.equal(alias.status,'FAQ');assert.equal(alias.answer,results[0].answer);assert.equal(calls,4);
     const replay=await answerSupportTurn(c.id,'faq-timeout','哪些商品有库存？',identity);assert.equal(replay.answer,latest.answer);assert.deepEqual(replay.ui,latest.ui);
     assert((await getLatestSupportConversation(identity))?.turns.some(t=>t.id===latest.turnId&&t.answerText===latest.answer));
   } finally {
     keys.forEach((k,i)=>{if(saved[i]===undefined)delete process.env[k];else process.env[k]=saved[i];});
     if(priorQr) await prisma.systemSetting.update({where:{key:'wechatSupportQrUrl'},data:{value:priorQr.value}});else await prisma.systemSetting.deleteMany({where:{key:'wechatSupportQrUrl'}});
     await redis.del('system:settings');await prisma.product.delete({where:{id:p.id}});await prisma.supportConversation.delete({where:{id:c.id}});
+  }
+});
+
+test('available inventory filters zero stock before the result limit and excludes inactive products and categories', async () => {
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {getSupportFacts}=await import('../../src/lib/support/retriever');
+  const identity={anonymousKey:randomBytes(32).toString('hex')};
+  const conversation=await createSupportConversation(identity);
+  const slugPrefix=`${prefix}-availability`;
+  const hiddenCategory=await prisma.category.create({data:{name:slugPrefix,slug:slugPrefix,isActive:false}});
+  try {
+    await prisma.product.createMany({data:[
+      ...Array.from({length:51},(_,i)=>({categoryId,name:`缺货占位${i}`,slug:`${slugPrefix}-zero-${i}`,price:100,stock:0,sort:-100001})),
+      {categoryId,name:'下架库存商品',slug:`${slugPrefix}-offline`,price:100,stock:3,isActive:false,sort:-100001},
+      {categoryId:hiddenCategory.id,name:'隐藏分类库存商品',slug:`${slugPrefix}-hidden`,price:100,stock:3,sort:-100001},
+      {categoryId,name:'可售库存商品',slug:`${slugPrefix}-available`,price:100,stock:3,sort:-100000},
+    ]});
+    const response=await answerSupportTurn(conversation.id,'available-first','哪些商品有库存？',identity);
+    assert.equal(response.status,'FAQ');
+    assert.match(response.answer,/可售库存商品：有货（3 件）/);
+    assert.doesNotMatch(response.answer,/缺货占位|下架库存商品|隐藏分类库存商品/);
+    assert(response.ui.links.some(l=>l.href===`/product/${slugPrefix}-available`));
+    assert(!response.ui.links.some(l=>l.href.includes(slugPrefix)&&!l.href.endsWith('-available')));
+    const stored=await prisma.supportTurn.findUniqueOrThrow({where:{id:response.turnId}});
+    assert((stored.facts as any).products.every((p:any)=>p.stock>0));
+    await prisma.product.update({where:{slug:`${slugPrefix}-available`},data:{isActive:false}});
+    const hidden=await answerSupportTurn(conversation.id,'available-hidden','哪些商品有货',identity);
+    assert(!hidden.answer.includes('可售库存商品'));
+    assert(!hidden.ui.links.some(l=>l.href===`/product/${slugPrefix}-available`));
+    await prisma.product.update({where:{slug:`${slugPrefix}-available`},data:{isActive:true,stock:0}});
+    const empty=await answerSupportTurn(conversation.id,'available-zero','查看商品库存',identity);
+    assert(!empty.answer.includes('可售库存商品'));
+    // Direct product/price queries still need to distinguish an existing but sold-out SKU.
+    assert((await getSupportFacts()).products.some(p=>p.slug.startsWith(`${slugPrefix}-zero-`)&&p.stock===0));
+    assert.equal((await answerSupportTurn(conversation.id,'available-first','哪些商品有库存？',identity)).answer,response.answer);
+    assert.equal(await prisma.supportModelCall.count({where:{turn:{conversationId:conversation.id}}}),0);
+  } finally {
+    await prisma.product.deleteMany({where:{slug:{startsWith:slugPrefix}}});
+    await prisma.category.delete({where:{id:hiddenCategory.id}});
+    await prisma.supportConversation.delete({where:{id:conversation.id}});
   }
 });
