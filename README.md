@@ -172,7 +172,7 @@ npm run release:deploy -- <release-id> --confirm-production
 | 外部定时调用 | `CRON_SECRET`，请求携带 `Authorization: Bearer ...` |
 | 待付库存额度 | `MAX_PENDING_ORDERS=3`、`MAX_PENDING_QUANTITY=100`，分别限制每个账号、邮箱和可信客户端 IP |
 
-本地日常开发和人工验收共用 `.env`、数据库与账号，始终访问 3013。运行 `npm run dev` 调试，准备验收时先退出开发进程再运行 `npm run release:prepare`；门禁通过后自动切换固定镜像，数据不会重置。自动化测试仍与本地数据隔离。
+本地日常开发和人工验收共用 `.env`、数据库与账号，始终访问 3013。运行 `npm run dev` 调试，准备验收时先退出开发进程再运行 `npm run release:prepare`；门禁通过后自动切换固定镜像，数据不会重置。自动化测试仍与本地数据隔离。3013 真实模型联调可在 `.env` 填写专用 `SUPPORT_LLM_API_KEY`、网关地址与限额；自动化测试继续禁止外部模型凭据。
 
 ## 验证与维护
 

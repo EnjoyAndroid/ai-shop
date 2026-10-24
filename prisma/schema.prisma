@@ -489,6 +489,7 @@ model SupportConversation {
   userId       String?
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   anonymousKey String?
+  contextSummary String @default("") @db.Text
   title        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -509,6 +510,7 @@ model SupportTurn {
   answerText     String?  @db.Text
   sources        Json?
   facts          Json?
+  ui             Json?
   status         String   @default("COMPLETED")
   feedback       Int?
   createdAt      DateTime @default(now())

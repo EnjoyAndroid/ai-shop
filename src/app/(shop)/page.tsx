@@ -6,7 +6,6 @@ import { getCategories, getProducts } from "@/lib/services/product.service";
 import { ProductCard } from "@/components/shop/product-card";
 import { Announcement } from "@/components/shop/announcement";
 import { Header } from "@/components/shop/header";
-import { PurchaseSteps } from "@/components/shop/purchase-steps";
 import { CommunityEntry } from "@/components/shop/community-entry";
 import { WechatSupport } from "@/components/shop/wechat-support";
 
@@ -68,14 +67,6 @@ export default async function HomePage() {
         <div className="mb-8">
           <CommunityEntry />
         </div>
-
-        {/* 使用说明 */}
-        <section className="bg-white rounded-2xl p-8 mb-8">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-            购买流程
-          </h2>
-          <PurchaseSteps />
-        </section>
 
       </main>
 

@@ -15,6 +15,7 @@ export interface SupportConfig {
 }
 
 function numberEnv(name: string, fallback: number): number {
+  if (!process.env[name]?.trim()) return fallback;
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
@@ -45,7 +46,7 @@ export function redactSupportText(value: string): string {
     .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, "[邮箱]")
     .replace(/\b(?:AS|R)\d{8,}\b/gi, "[订单号]")
     .replace(/\b[a-f0-9]{32,}\b/gi, "[凭证]")
-    .replace(/(?:密码|口令|token|key)\s*[:：]?\s*\S+/gi, "$1：[已隐藏]")
+    .replace(/(?:(?:密码|口令|token|key)\s*[:：]\s*|\b(?:token|key)\s+)[^\s，。；、]+/gi, "[凭据已隐藏]")
     .slice(0, 4000);
 }
 

@@ -174,7 +174,7 @@ Production deployment backs up the database, explicitly applies migrations, repl
 | External scheduled calls | `CRON_SECRET`; send `Authorization: Bearer ...`. |
 | Pending inventory quotas | `MAX_PENDING_ORDERS=3`, `MAX_PENDING_QUANTITY=100`, enforced separately per account, email, and trusted client IP. |
 
-Local development and manual acceptance share `.env`, the database, accounts, and port 3013. Stop `npm run dev` before `npm run release:prepare`; after all gates pass, the accepted image replaces the local server without resetting data. Automated tests remain isolated.
+Local development and manual acceptance share `.env`, the database, accounts, and port 3013. Stop `npm run dev` before `npm run release:prepare`; after all gates pass, the accepted image replaces the local server without resetting data. Automated tests remain isolated. For real model testing on port 3013, configure a dedicated support API key, gateway and budget in `.env`; automated tests continue to reject external model credentials.
 
 ## Verification and maintenance
 

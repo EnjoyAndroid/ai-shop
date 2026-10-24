@@ -45,7 +45,7 @@ export function ContactSettingsForm() {
     if (busy || loading || loadError) return;
     setMessage(null);
     const validation = contactSettingsSchema.safeParse(settings);
-    if (!validation.success) { setMessage({ success: false, text: validation.error.errors[0].message }); return; }
+    if (!validation.success) { setMessage({ success: false, text: validation.error.issues[0].message }); return; }
     setSaving(true);
     try {
       const response = await fetch("/api/admin/contact", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(validation.data) });

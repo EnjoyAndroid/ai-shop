@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const validationResult = createOrderSchema.safeParse(body);
     if (!validationResult.success) {
       return orderJson(
-        { error: validationResult.error.errors[0].message },
+        { error: validationResult.error.issues[0].message },
         400
       );
     }

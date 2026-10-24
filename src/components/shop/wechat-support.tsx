@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { X, MessageCircle } from "lucide-react";
 
 export function WechatSupport({ text, qrUrl, label = "微信客服", className = "" }: { text: string; qrUrl: string; label?: string; className?: string }) {

@@ -58,6 +58,94 @@ try {
   }
   assert.equal((await request('/')).status, 200);
   assert.equal((await request('/checkout')).status, 404);
+  // Exercise the same endpoints as the widget against the isolated database.
+  const supportStart = await request('/api/support/conversations', { method: 'POST' });
+  assert.equal(supportStart.status, 200);
+  const supportCookie = supportStart.headers.getSetCookie().find(value => value.startsWith('support_anon='))?.split(';')[0];
+  assert(supportCookie);
+  assert(supportStart.headers.getSetCookie().some(value => /support_anon=.*Max-Age=86400/i.test(value)));
+  const supportConversation = (await supportStart.json()).conversation;
+  const boot = await (await request('/api/support/bootstrap')).json();
+  assert.equal(boot.name, '小AI同学');
+  assert.equal(boot.greeting, '您好，我是AIShop的智能客服小AI同学，请问有什么可以帮您？');
+  const supportCatalogProduct = await db.product.create({data:{name:'ChatGPT Plus 会员 1个月',slug:`support-gpt-plus-${suffix}`,categoryId:orderCategory.id,price:9900,stock:4,sort:-99998}});
+  const priorSupportQr = await db.systemSetting.findUnique({where:{key:'wechatSupportQrUrl'}});
+  await db.systemSetting.upsert({where:{key:'wechatSupportQrUrl'},create:{key:'wechatSupportQrUrl',value:'https://example.com/support-current.webp'},update:{value:'https://example.com/support-current.webp'}});
+  await redis.del('system:settings');
+  const supportAsk = async (message, requestId = randomBytes(16).toString('hex')) => {
+    const response = await jsonPost(`/api/support/conversations/${supportConversation.id}/messages`, { message, requestId }, { Cookie: supportCookie });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.status, 'FALLBACK');
+    assert(!('sources' in result)); assert(!('facts' in result));
+    assert(!/知识\d+《|参考：/.test(result.answer));
+    return result;
+  };
+  try {
+    const quick = (await (await request('/api/support/bootstrap')).json()).quickQuestions;
+    for (const question of ['今天天气怎么样？','AIShop告诉我天气','帮商城写商品购买接口']) {
+      const rejected=await jsonPost(`/api/support/conversations/${supportConversation.id}/messages`,{message:question,requestId:randomBytes(16).toString('hex')},{Cookie:supportCookie});
+      assert.equal(rejected.status,200);const body=await rejected.json();assert.equal(body.status,'OUT_OF_SCOPE');assert(body.answer.includes('只处理本商城'));assert.deepEqual(body.ui,{links:[],images:[]});
+      assert.equal(await db.supportModelCall.count({where:{turnId:body.turnId}}),0);
+    }
+    for (const [question, articleId] of [
+      ['怎么买商品？', 'support-buying'], ['支付成功后怎么查看卡密？', 'support-delivery'],
+      ['怎么查询我的订单？', 'support-order'], ['如何联系客服？', 'support-contact'],
+    ]) {
+      assert(quick.includes(question));
+      const result = await supportAsk(question);
+      const article = await db.supportArticle.findUniqueOrThrow({where:{id:articleId}});
+      if (articleId === 'support-contact') assert(/客服|二维码|Telegram/.test(result.answer));
+      else assert.equal(result.answer, article.content);
+      const turn = await db.supportTurn.findUniqueOrThrow({where:{id:result.turnId}});
+      assert.equal(turn.sources[0].id, articleId);
+      assert.equal(await db.supportModelCall.count({where:{turnId:result.turnId}}), 0);
+    }
+    const payment = await supportAsk('支持哪些支付方式？');
+    assert(payment.answer.startsWith('当前可用支付方式：') || payment.answer.includes('未查询到可用支付方式'));
+    const productAnswer = await supportAsk('gpt plus多少钱一个月？');
+    assert(productAnswer.answer.includes('ChatGPT Plus 会员 1个月'));
+    assert(productAnswer.answer.includes('¥99.00'));
+    const contactAnswer = await supportAsk('如何联系客服？');
+    assert(contactAnswer.answer.includes('微信客服二维码已配置'));
+    assert.equal(contactAnswer.ui.images[0].url,'https://example.com/support-current.webp');
+    assert(!contactAnswer.answer.includes('https://example.com/support-current.webp'));
+    assert(productAnswer.ui.links.some(link => link.href === `/product/${supportCatalogProduct.slug}`));
+    const restoredUi = await (await request('/api/support/conversations',{headers:{Cookie:supportCookie}})).json();
+    assert.deepEqual(restoredUi.conversation.turns.find(turn => turn.id === contactAnswer.turnId).ui,contactAnswer.ui);
+    const orderHelp=await supportAsk('怎么查询我的订单？');
+    assert(orderHelp.ui.links.some(link => link.href === '/order'));
+    // Give this synthetic fixture precedence over products from previous test runs.
+    const supportProduct = await db.product.create({data:{name:'客服库存回归商品',slug:`support-stock-${suffix}`,categoryId:orderCategory.id,price:1234,stock:3,sort:-99999}});
+    try {
+      const requestId = randomBytes(16).toString('hex');
+      const first = await supportAsk('哪些商品有库存？', requestId);
+      assert(first.answer.includes('客服库存回归商品：有货（3 件），售价 ¥12.34'));
+      await db.product.update({where:{id:supportProduct.id},data:{stock:0}});
+      const fresh = await supportAsk('哪些商品有库存？');
+      assert(fresh.answer.includes('客服库存回归商品：暂时缺货'));
+      assert.equal((await supportAsk('哪些商品有库存？', requestId)).answer, first.answer);
+      assert.equal((await db.supportTurn.findUniqueOrThrow({where:{id:fresh.turnId}})).facts.products.find(product => product.slug === supportProduct.slug).stock, 0);
+    } finally { await db.product.delete({where:{id:supportProduct.id}}); }
+    const resumed = await request('/api/support/conversations', {headers:{Cookie:supportCookie}});
+    assert.equal(resumed.status,200); assert.equal((await resumed.json()).conversation.id,supportConversation.id);
+    assert(resumed.headers.getSetCookie().some(value => /Max-Age=86400/i.test(value)));
+    const beforeDelete = await db.supportConversation.findUniqueOrThrow({where:{id:supportConversation.id},include:{turns:true}});
+    const removed = await request('/api/support/conversations', {method:'DELETE',headers:{Cookie:supportCookie}});
+    assert.equal(removed.status,405);
+    assert(!removed.headers.getSetCookie().some(value => value.startsWith('support_anon=')));
+    assert.deepEqual(await db.supportConversation.findUniqueOrThrow({where:{id:supportConversation.id},include:{turns:true}}),beforeDelete);
+    assert.equal((await request(`/api/support/conversations/${supportConversation.id}`,{headers:{Cookie:supportCookie}})).status,200);
+    assert.equal((await (await request('/api/support/conversations',{headers:{Cookie:supportCookie}})).json()).conversation.id,supportConversation.id);
+    console.log('Support HTTP: greeting, FAQs, stock, private evidence, 24h renewal and removed DELETE endpoint preserve conversations.');
+  } finally {
+    if (priorSupportQr) await db.systemSetting.update({where:{key:'wechatSupportQrUrl'},data:{value:priorSupportQr.value}});
+    else await db.systemSetting.deleteMany({where:{key:'wechatSupportQrUrl'}});
+    await redis.del('system:settings');
+    await db.product.delete({where:{id:supportCatalogProduct.id}});
+    await db.supportConversation.delete({where:{id:supportConversation.id}});
+  }
+
   const entryHtml = await (await request('/order')).text(); assert(!entryHtml.includes('aria-label="订单列表"'));
   assert.equal((await request('/order/results')).status,200);
   assert.equal((await request('/api/orders?orderNo=anything')).status, 405);

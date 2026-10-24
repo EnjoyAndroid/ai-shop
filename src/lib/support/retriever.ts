@@ -19,37 +19,67 @@ export interface SupportFacts {
   announcements: Array<{ title: string; content: string }>;
 }
 
-export interface KnowledgeRetriever {
-  search(query: string, limit?: number): Promise<{ sources: SupportSource[]; context: string }>;
+export interface SupportKnowledgeArticle extends SupportSource {
+  question: string;
+  aliases: string[];
+  keywords: string[];
+  content: string;
 }
 
+export interface SupportKnowledgeResult {
+  sources: SupportSource[];
+  context: string;
+  answer: string;
+}
+
+export interface KnowledgeRetriever {
+  search(query: string, limit?: number): Promise<SupportKnowledgeResult>;
+}
+
+function normalize(value: string): string { return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
+
+const genericTerms = new Set(["怎么", "如何", "什么", "哪些", "哪里", "可以", "能不", "不能", "支持", "我的", "商品"]);
 function terms(text: string): string[] {
-  const normalized = text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   const words = new Set<string>();
-  for (const match of text.toLowerCase().match(/[a-z0-9]{2,}|[\u4e00-\u9fff]/g) || []) words.add(match);
-  for (let i = 0; i < normalized.length - 1; i += 1) words.add(normalized.slice(i, i + 2));
-  return [...words].filter(Boolean);
+  for (const segment of text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]+/g) || []) {
+    if (/^[a-z0-9]+$/.test(segment)) { if (segment.length >= 2) words.add(segment); continue; }
+    for (let i = 0; i < segment.length - 1; i += 1) words.add(segment.slice(i, i + 2));
+  }
+  return [...words].filter(term => !genericTerms.has(term));
+}
+
+/** Keep model context separate from the single published answer used on fallback. */
+export function rankSupportKnowledge(query: string, articles: SupportKnowledgeArticle[], limit = 6): SupportKnowledgeResult {
+  const normalizedQuery = normalize(query);
+  if (!normalizedQuery || limit <= 0) return { sources: [], context: "", answer: "" };
+  const queryTerms = terms(query);
+  const ranked = articles.map(article => {
+    const phrases = [article.question, ...article.aliases].map(normalize).filter(Boolean);
+    const corpus = [article.title, article.question, ...article.aliases, ...article.keywords, article.category].map(normalize);
+    const hits = queryTerms.filter(term => corpus.some(value => value.includes(term))).length;
+    const exact = phrases.includes(normalizedQuery);
+    const phraseLength = Math.max(0, ...phrases.filter(value => value.length >= 3 && normalizedQuery.includes(value)).map(value => value.length));
+    return { article, exact, phraseLength, hits };
+  }).filter(item => item.exact || item.phraseLength || item.hits > 0)
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || b.phraseLength - a.phraseLength || b.hits - a.hits);
+  // An exact standard question/alias needs no loosely related supplementary articles.
+  const selected = (ranked[0]?.exact ? ranked.filter(item => item.exact) : ranked).slice(0, limit);
+  return {
+    sources: selected.map(({ article }) => ({ id: article.id, title: article.title, category: article.category, version: article.version })),
+    context: selected.map(({ article }, index) => `知识${index + 1}《${article.title}》\n${article.content}`).join("\n\n"),
+    answer: selected[0]?.article.content.trim() || "",
+  };
 }
 
 export const postgresKnowledgeRetriever: KnowledgeRetriever = {
-  async search(query: string, limit = 6): Promise<{ sources: SupportSource[]; context: string }> {
-  const articles = await prisma.supportArticle.findMany({
-    where: { status: "PUBLISHED" },
-    select: { id: true, title: true, question: true, aliases: true, keywords: true, category: true, content: true, version: true },
-    orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
-    take: 500,
-  });
-  const queryTerms = terms(query);
-  const ranked = articles.map(article => {
-    const corpus = [article.title, article.question, ...article.aliases, ...article.keywords, article.category].join(" ").toLowerCase();
-    const hits = queryTerms.reduce((count, term) => count + (corpus.includes(term) ? 1 : 0), 0);
-    const exact = [article.question, ...article.aliases].some(value => value.toLowerCase() === query.toLowerCase().trim()) ? 8 : 0;
-    return { article, score: hits + exact };
-  }).filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
-  return {
-    sources: ranked.map(({ article }) => ({ id: article.id, title: article.title, category: article.category, version: article.version })),
-    context: ranked.map(({ article }, index) => `知识${index + 1}《${article.title}》\n${article.content}`).join("\n\n"),
-  };
+  async search(query: string, limit = 6): Promise<SupportKnowledgeResult> {
+    const articles = await prisma.supportArticle.findMany({
+      where: { status: "PUBLISHED" },
+      select: { id: true, title: true, question: true, aliases: true, keywords: true, category: true, content: true, version: true },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      take: 500,
+    });
+    return rankSupportKnowledge(query, articles, limit);
   },
 };
 

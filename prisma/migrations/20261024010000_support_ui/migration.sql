@@ -1,0 +1,1 @@
+ALTER TABLE "SupportTurn" ADD COLUMN "ui" JSONB;

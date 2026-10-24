@@ -57,3 +57,17 @@ test('actual test entrypoints reject a conflicting TEST_DATABASE_URL before open
     assert(!result.stderr.includes('PrismaClientInitializationError'));
   }
 });
+
+
+test('manual development permits model and image upload, while machine tests reject external services', () => {
+  const dev = { ...generateEnvironment('development'), SUPPORT_LLM_API_KEY: 'test-only-model-key', SUPPORT_LLM_BASE_URL: 'https://model.example.invalid/v1', CLOUDINARY_CLOUD_NAME: 'test-only-cloud', CLOUDINARY_API_KEY: 'test-only-api-key', CLOUDINARY_API_SECRET: 'test-only-upload-secret' };
+  assert.doesNotThrow(() => assertIsolated(dev, 'development'));
+  for (const key of ['SMTP_PASS', 'TELEGRAM_BOT_TOKEN', 'XUNHU_ALIPAY_APPSECRET', 'USDT_TRC20_ADDRESS']) {
+    assert.throws(() => assertIsolated({ ...dev, [key]: 'test-only-external-key' }, 'development'));
+  }
+  assert.throws(() => assertIsolated({ ...generateEnvironment('test'), SUPPORT_LLM_API_KEY: dev.SUPPORT_LLM_API_KEY }, 'test'));
+  assert.throws(() => assertIsolated({ ...generateEnvironment('test'), SUPPORT_LLM_BASE_URL: dev.SUPPORT_LLM_BASE_URL }, 'test'));
+  for (const key of ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'] as const) {
+    assert.throws(() => assertIsolated({ ...generateEnvironment('test'), [key]: dev[key] }, 'test'));
+  }
+});

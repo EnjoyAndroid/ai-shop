@@ -15,13 +15,13 @@ function execute(cwd: string, expression: string) {
 test('local development and manual preview share one configuration and canonical origin', () => {
   const dir = mkdtempSync(join(tmpdir(), 'shop-local-mode-'));
   try {
-    writeEnv(join(dir, '.env'), generateEnvironment('development'));
-    const result = execute(dir, `const env=localRuntimeEnvironment(); assert.equal(env.NEXTAUTH_URL,'http://127.0.0.1:3013'); assert.equal(new URL(env.DATABASE_URL).pathname,'/ai_shop_dev');`);
+    writeEnv(join(dir, '.env'), { ...generateEnvironment('development'), SUPPORT_LLM_API_KEY: 'test-only-development-key', SUPPORT_LLM_BASE_URL: 'https://model.example.invalid/v1' });
+    const result = execute(dir, `const env=localRuntimeEnvironment(); assert.equal(env.NEXTAUTH_URL,'http://127.0.0.1:3013'); assert.equal(new URL(env.DATABASE_URL).pathname,'/ai_shop_dev'); assert.equal(env.SUPPORT_LLM_API_KEY,'test-only-development-key'); assert.equal(env.SUPPORT_LLM_BASE_URL,'https://model.example.invalid/v1');`);
     assert.equal(result.status, 0, result.stderr);
     const local = readFileSync('docker-compose.yml', 'utf8');
-    assert(local.includes('ai_shop_dev')); assert(local.includes('redis://redis:6379/0')); assert(local.includes('127.0.0.1:3013:3000'));
+    assert(local.includes('SUPPORT_LLM_API_KEY: ${SUPPORT_LLM_API_KEY:-}')); assert(local.includes('ai_shop_dev')); assert(local.includes('redis://redis:6379/0')); assert(local.includes('127.0.0.1:3013:3000'));
     const machine = readFileSync('docker-compose.test.yml', 'utf8');
-    assert(machine.includes('ai_shop_image_test')); assert(machine.includes('127.0.0.1:3014:3000')); assert(!machine.includes('ai_shop_dev'));
+    assert(machine.includes("SUPPORT_LLM_API_KEY: ''")); assert(machine.includes('ai_shop_image_test')); assert(machine.includes('127.0.0.1:3014:3000')); assert(!machine.includes('ai_shop_dev'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

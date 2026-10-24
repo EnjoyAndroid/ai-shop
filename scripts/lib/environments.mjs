@@ -81,7 +81,10 @@ export function assertIsolated(env, mode, ci = false) {
   } else if (db.pathname !== '/ai_shop_dev' || db.port !== '55440' || db.username !== 'aishop_dev' || redis.port !== '16380' || redis.pathname !== '/0') {
     throw new Error('Development must use the separate ai-shop-dev containers');
   }
-  if (externalKeys.some(key => env[key])) throw new Error('External credentials are disabled in isolated environments');
+  // Manual development may use its support model and image upload service. Machine tests still
+  // reject all external credentials; payment and notification keys stay blocked.
+  const allowed = mode === 'development' ? ['SUPPORT_LLM_API_KEY', 'SUPPORT_LLM_BASE_URL', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'] : [];
+  if (externalKeys.some(key => env[key] && !allowed.includes(key))) throw new Error('External credentials are disabled in isolated environments');
 }
 /** @param {string} mode @param {Record<string, string|undefined>} [inherited] @returns {Record<string, string>} */
 export function isolatedEnvironment(mode = 'development', inherited = process.env) {

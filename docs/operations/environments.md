@@ -30,7 +30,7 @@
 
 开发和验收有不同的网络、数据库账号、随机密钥和数据卷；生产使用原有 `ai-shop_postgres_data` 与 `ai-shop_redis_data`，不复制业务数据，不创建演示数据。即使仅改数据库名称，也不能让测试连接原生产端口。
 
-`.env` 是安全开发配置。命令包装器另外显式选择环境文件、清除继承的业务凭据，阻止 Next 加载其他环境文件；开发/验收的 SMTP、Telegram、支付、Cloudinary、付费模型密钥都为空。生产凭据、固定镜像清单、Nginx 配置快照、备份和验收日志位于 `.deploy/`，权限收紧并同时被 Git / Docker 构建上下文忽略。不要直接打印 Compose 展开的完整配置。
+`.env` 是安全开发配置。命令包装器另外显式选择环境文件、清除继承的业务凭据，阻止 Next 加载其他环境文件；开发/验收的 SMTP、Telegram、支付、Cloudinary 密钥都为空；3013 人工联调可使用 `.env` 单独配置的专用客服模型凭据，自动化测试仍拒绝所有外部凭据。生产凭据、固定镜像清单、Nginx 配置快照、备份和验收日志位于 `.deploy/`，权限收紧并同时被 Git / Docker 构建上下文忽略。不要直接打印 Compose 展开的完整配置。
 
 ## 日常开发
 
@@ -45,7 +45,7 @@ npm run dev           # 3013，开发缓存为 .next-dev，共用本地数据
 
 本地管理员用户名 `admin`，随机密码见 `.env` 的 `ADMIN_PASSWORD`。结束开发可 Ctrl+C，再 `npm run dev:down`；命令不带 `-v`，保留开发数据。测试依赖对应 `npm run test:up` / `npm run test:down`。
 
-直接运行 `npm run build` 使用隔离配置，生产构建缓存为 `.next`。Next 的 `NODE_ENV=production` 表示构建模式，不表示访问公网数据库。`APP_ENV` 用于区分业务环境。模型真实联调应另外配置明确受控的联调环境；不要把生产 key 填进默认开发/测试文件。
+直接运行 `npm run build` 使用隔离配置，生产构建缓存为 `.next`。Next 的 `NODE_ENV=production` 表示构建模式，不表示访问公网数据库。`APP_ENV` 用于区分业务环境。模型真实联调使用共享 3013 环境的 `.env` 专用 Key 与限额；不要把生产 Key 复制进开发/测试文件。
 
 ## 本地模式切换
 

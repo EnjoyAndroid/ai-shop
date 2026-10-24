@@ -3,16 +3,21 @@ import { getPublicContactSettings } from "@/lib/contact-settings";
 import { getSettings } from "@/lib/services/settings.service";
 import { getSupportConfig, supportModelConfigured } from "@/lib/support/config";
 
+import { SUPPORT_NAME, SUPPORT_GREETING } from "@/lib/support/policy";
+import { SUPPORT_QUICK_QUESTIONS } from "@/lib/support/faq";
+
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const [settings, config] = await Promise.all([getSettings(), getSupportConfig()]);
   return NextResponse.json({
     enabled: true,
+    name: SUPPORT_NAME,
+    greeting: SUPPORT_GREETING,
     modelConfigured: supportModelConfigured(config),
     siteName: settings.siteName || "AI Shop",
     contact: getPublicContactSettings(settings),
-    quickQuestions: ["怎么买商品？", "支持哪些支付方式？", "哪些商品有库存？", "支付成功后怎么查看卡密？", "怎么查询我的订单？", "如何联系客服？"],
+    quickQuestions: SUPPORT_QUICK_QUESTIONS,
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
