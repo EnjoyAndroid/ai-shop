@@ -101,7 +101,7 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings and Support & community configuration.
 - **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
 - **Smart support administration:** edit and publish support knowledge, configure the shop's dedicated sub2api model, and inspect input, output, cache, reasoning-token, and estimated-cost metrics.
-- **Support response time:** the six preset FAQs and complete aliases read published knowledge and current business data without model round trips; the available-stock FAQ lists only active products with stock greater than zero; free-form questions retain scope classification and the read-only agent.
+- **Support response time:** the six preset FAQs and complete aliases read published knowledge and current business data without model round trips; the available-stock FAQ lists only active products with stock greater than zero; free-form questions use one bounded planning call followed by one answer call, with the existing read-only tools and fixed abuse limits.
 
 ### Payments and notifications
 
@@ -183,6 +183,8 @@ Before updating a deployed instance, back up the database and `.deploy/productio
 
 CI covers production builds, isolated tests, HTTP checks, and security scans. See [Contributing](CONTRIBUTING.md) (Chinese) for the full validation commands and [dependency maintenance](docs/security.md#验证与依赖维护) (Chinese) for known advisories and temporary patches.
 
+- [Development log: optimizations, root causes, verification and release outcomes](dev_log.md) (Chinese)
+- [Development record guidelines and template](CONTRIBUTING.md#开发日志与交付记录) (Chinese)
 - [Support and community maintenance](docs/community/README.md#english)
 - [Security policy and private vulnerability reports](SECURITY.md) (Chinese)
 - [Contributing](CONTRIBUTING.md) (Chinese)

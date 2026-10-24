@@ -22,7 +22,16 @@ export const supportTools = [
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").replace(/chatgpt/g, "gpt");
 
+/** Shared by the planner and executor so a plan is validated before any query. */
+export function validateSupportTool(name: string, raw: unknown): Record<string, string> {
+  if (name === 'search_products' || name === 'search_knowledge') return query.parse(raw);
+  if (name === 'get_navigation') return z.object({ page: z.enum(Object.keys(supportPages) as [SupportPage, ...SupportPage[]]) }).strict().parse(raw);
+  if (!supportTools.some(tool => tool.name === name)) throw new Error('UNKNOWN_TOOL');
+  return empty.parse(raw);
+}
+
 export async function executeSupportTool(name: string, raw: unknown, userId?: string): Promise<unknown> {
+  validateSupportTool(name, raw);
   if (name === "search_products") {
     const { query: text } = query.parse(raw);
     const tokens = [...new Set(text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]+/g) || [])].slice(0, 8);

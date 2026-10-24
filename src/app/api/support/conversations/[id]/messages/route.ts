@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupportIdentity, answerSupportTurn, renewSupportCookie, SupportRequestError } from "@/lib/support/service";
 import { readBoundedJson } from "@/lib/request-body";
-import { getClientIp } from "@/lib/get-client-ip";
+import { getClientIpInfo } from "@/lib/get-client-ip";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -14,16 +14,17 @@ const messageSchema = z.object({
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!await rateLimit("support-message", getClientIp(request), 30, 60)) return NextResponse.json({ error: "消息发送过于频繁，请稍后再试" }, { status: 429 });
+    const clientIp = getClientIpInfo(request);
+    if (!await rateLimit("support-message", clientIp.value, 30, 60)) return NextResponse.json({ error: "消息发送过于频繁，请稍后再试" }, { status: 429 });
     const body = messageSchema.parse(await readBoundedJson(request, 16 * 1024));
     const identity = await getSupportIdentity();
-    const result = await answerSupportTurn((await params).id, body.requestId, body.message, identity);
+    const result = await answerSupportTurn((await params).id, body.requestId, body.message, identity, clientIp, request.signal);
     await renewSupportCookie(identity);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const message = error instanceof z.ZodError ? error.issues[0]?.message : error instanceof Error ? error.message : "客服服务暂不可用";
+    const message = error instanceof z.ZodError ? error.issues[0]?.message : error instanceof SupportRequestError ? error.message : "客服服务暂不可用";
     const status = error instanceof SupportRequestError ? error.status : error instanceof z.ZodError ? 400 : message.includes("不存在") || message.includes("过期") ? 404 : 503;
-    return NextResponse.json({ error: message }, { status, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: message, ...(error instanceof SupportRequestError ? { code: error.code, retryAfter: error.retryAfter } : {}) }, { status, headers: { "Cache-Control": "no-store", ...(error instanceof SupportRequestError && error.retryAfter ? { "Retry-After": String(error.retryAfter) } : {}) } });
   }
 }
 

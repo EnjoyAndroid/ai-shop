@@ -6,7 +6,7 @@ import { recentContext, nextContextSummary } from "../src/lib/support/context";
 import { isOutOfScopeSupportQuestion } from "../src/lib/support/policy";
 import type { SupportConfig } from "../src/lib/support/config";
 const config: SupportConfig = { provider: "test", baseUrl: "https://example.invalid/v1", model: "test-model", wireApi: "responses", apiKey: "synthetic-key", dailyBudgetCny: 10, usdCnyRate: 7, inputUsdPerMillion: 0.1, cachedInputUsdPerMillion: 0.01, cacheWriteUsdPerMillion: 0.1, outputUsdPerMillion: 0.5 };
-function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses', scope: unknown = {decision:'allow'}) {
+function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses', scope: unknown = {decision:'allow',queries:[]}) {
   sequence = [{...(wireApi === 'responses' ? {output_text:JSON.stringify(scope)} : {choices:[{message:{role:'assistant',content:JSON.stringify(scope)}}]}), usage:{input_tokens:9,output_tokens:4,total_tokens:13}}, ...sequence];
   const bodies: any[] = [], records: SupportCallRecord[] = [], executed: any[] = [];
   return { bodies, records, executed, input: {
@@ -18,6 +18,22 @@ function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses
   }};
 }
 const usage={input_tokens:9,output_tokens:4,total_tokens:13};
+
+for (const wire of ['responses','chat_completions'] as const) test(`planner ${wire}: combines scope and read-only query planning into two model calls`, async () => {
+  const plan = { decision: 'allow', queries: [{ name: 'search_products', arguments: { query: 'Claude 5x' } }, { name: 'search_knowledge', arguments: { query: '购买流程' } }] };
+  const answer = wire === 'responses'
+    ? { output: [{ type: 'message', content: [{ type: 'output_text', text: '没有找到该型号，相关套餐目前缺货。' }] }], usage }
+    : { choices: [{ message: { role: 'assistant', content: '没有找到该型号，相关套餐目前缺货。' }, finish_reason: 'stop' }], usage };
+  const h = harness([answer], wire, plan);
+  const result = await generateSupportAnswer(h.input);
+  assert.match(result, /缺货/);
+  assert.equal(h.bodies.length, 2);
+  assert.equal(h.executed.length, 2);
+  assert.equal(h.records.length, 2);
+  assert.equal(h.bodies[0].max_output_tokens || h.bodies[0].max_tokens, 256);
+  assert.equal(h.bodies[1].max_output_tokens || h.bodies[1].max_tokens, 1000);
+  assert.equal(h.bodies[1].tool_choice, 'auto');
+});
 for (const wire of ['responses','chat_completions'] as const) test(`agent ${wire}: preserves context, multiple tools and records every model request`,async()=>{
   const toolCalls=[{id:'one',type:'function',function:{name:'search_products',arguments:'{"query":"Claude 5x"}'}},{id:'two',type:'function',function:{name:'search_knowledge',arguments:'{"query":"购买流程"}'}}];
   const first=wire==='responses'?{output:[{type:'reasoning',id:'r',summary:[]},...toolCalls.map(c=>({type:'function_call',call_id:c.id,name:c.function.name,arguments:c.function.arguments}))],usage}:{choices:[{message:{role:'assistant',content:null,tool_calls:toolCalls}}],usage};
@@ -41,8 +57,8 @@ test('invalid or unauthorized tools return a query error, never execute arbitrar
 
 test('tool loop and budget limits stop requests; upstream 503 is recorded without invented facts',async()=>{
   const h=harness(Array.from({length:4},(_,i)=>({output:[{type:'function_call',call_id:`c${i}`,name:'get_contacts',arguments:'{}'}],usage})));
-  await assert.rejects(generateSupportAnswer(h.input), /查询次数/);assert.equal(h.executed.length,3);assert.equal(h.bodies[4].tool_choice,'none');
-  const blocked=harness([]);await assert.rejects(generateSupportAnswer({...blocked.input,beforeCall:async()=>false}),/服务范围/);assert.equal(blocked.bodies.length,0);
+  await assert.rejects(generateSupportAnswer(h.input), /查询次数/);assert.equal(h.executed.length,1, 'same query reuses this-turn result');assert.equal(h.bodies[3].tool_choice,'none');
+  const blocked=harness([]);await assert.rejects(generateSupportAnswer({...blocked.input,beforeCall:async()=>false}),/预算/);assert.equal(blocked.bodies.length,0);
   const error=harness([{statusCode:503,data:{error:{type:'api_error'}}}]);await assert.rejects(generateSupportAnswer(error.input),/网关/);assert.equal(error.records[1].errorCode,'UPSTREAM_503');assert.equal(error.records[1].success,false);assert.equal(error.records[1].usage.totalTokens,null);
 });
 
@@ -79,4 +95,25 @@ test('scope gateway failure and non-JSON output fail closed without fallback gen
     await assert.rejects(generateSupportAnswer({...h.input,fetcher:async()=>new Response(JSON.stringify(data),{status:data.error?503:200})}),(e:any)=>e.code==='SCOPE_UNAVAILABLE');
     assert.equal(h.executed.length,0);
   }
+});
+
+test('planner validates the entire plan before any tool, including deny extra fields and identity injection',async()=>{
+  for(const plan of [
+    {decision:'allow',queries:[{name:'get_contacts',arguments:{}},{name:'get_my_orders',arguments:{userId:'other'}}]},
+    {decision:'deny',queries:[{name:'get_contacts',arguments:{}}]},
+    {decision:'allow'}, {decision:'allow',queries:Array(5).fill({name:'get_contacts',arguments:{}})},
+    {decision:'allow',queries:[{name:'get_navigation',arguments:{page:'admin'}}]},
+  ]) {
+    const h=harness([], 'responses', plan);
+    await assert.rejects(generateSupportAnswer(h.input));assert.equal(h.executed.length,0);assert.equal(h.bodies.length,1);
+    assert.equal(h.records[0].success,false);
+  }
+});
+test('cancelled paid request records missing usage and stops subsequent calls',async()=>{
+  const c=new AbortController(),h=harness([]);
+  await assert.rejects(generateSupportAnswer({...h.input,signal:c.signal,fetcher:async()=>{c.abort();throw new DOMException('cancelled','AbortError');}}),(e:any)=>e.code==='CANCELLED');
+  assert.equal(h.records.length,1);assert.equal(h.records[0].errorCode,'CANCELLED');assert.equal(h.records[0].usage.inputTokens,null);assert.equal(h.executed.length,0);
+});
+test('input cap refuses oversized questions before a paid request',async()=>{
+  const h=harness([]);await assert.rejects(generateSupportAnswer({...h.input,question:'长'.repeat(20000)}));assert.equal(h.bodies.length,0);
 });

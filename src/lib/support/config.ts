@@ -28,7 +28,7 @@ export async function getSupportConfig(): Promise<SupportConfig> {
     model: settings.supportLlmModel || process.env.SUPPORT_LLM_MODEL || "gpt-6-luna",
     wireApi: process.env.SUPPORT_LLM_WIRE_API === "chat_completions" ? "chat_completions" : "responses",
     apiKey: process.env.SUPPORT_LLM_API_KEY || "",
-    dailyBudgetCny: numberEnv("SUPPORT_DAILY_BUDGET_CNY", Number(settings.supportDailyBudgetCny || 10)),
+    dailyBudgetCny: settings.supportDailyBudgetCny !== undefined ? Number(settings.supportDailyBudgetCny) : numberEnv("SUPPORT_DAILY_BUDGET_CNY", 10),
     usdCnyRate: numberEnv("SUPPORT_USD_CNY_RATE", 7.2),
     inputUsdPerMillion: numberEnv("SUPPORT_LLM_INPUT_USD_PER_MILLION", 0.1),
     cachedInputUsdPerMillion: numberEnv("SUPPORT_LLM_CACHED_INPUT_USD_PER_MILLION", 0.01),

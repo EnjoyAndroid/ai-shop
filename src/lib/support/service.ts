@@ -3,9 +3,9 @@ import { cookies } from "next/headers";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
-import { getSupportConfig, dayStartShanghai, redactSupportText, supportModelConfigured } from "./config";
+import { getSupportConfig, redactSupportText, supportModelConfigured } from "./config";
 import { getSupportFacts, searchSupportKnowledge, type SupportFacts } from "./retriever";
-import { generateSupportAnswer, SupportLlmError, type SupportUsage } from "./llm";
+import { generateSupportAnswer, SupportLlmError } from "./llm";
 import { SUPPORT_GREETING, SUPPORT_NAME, MEMBER_SESSION_SECONDS, GUEST_SESSION_SECONDS, isOutOfScopeSupportQuestion, supportGreetingAnswer, SUPPORT_SCOPE_REFUSAL, SUPPORT_SCOPE_CLARIFICATION, SUPPORT_SCOPE_UNAVAILABLE } from "./policy";
 import { executeSupportTool } from "./tools";
 import { recentContext, nextContextSummary } from "./context";
@@ -13,14 +13,19 @@ import { buildSupportUi, modelToolResult, readSupportUi, cleanSupportAnswer } fr
 import redis from "@/lib/redis";
 import { rateLimit } from "@/lib/rate-limit";
 import { trustedSupportFaq } from "./faq";
+import { SUPPORT_LIMITS } from "./limits";
+import { reserveSupportCall, settleSupportCall } from "./budget";
+import { supportIdentityHash, acquireSupportPermit, SupportRiskError, recordRisk, checkSupportBlock, checkSupportCircuit, recordModelOutcome } from "./risk";
+import type { ClientIpInfo } from "@/lib/get-client-ip";
 
 const ANON_COOKIE = "support_anon";
 export class SupportRequestError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public code?: string, public retryAfter?: number) { super(message); }
 }
 
 export interface SupportIdentity { userId?: string; anonymousKey: string; }
 
+const UNKNOWN_CLIENT_IP: ClientIpInfo = { value: "unknown", trusted: false };
 export async function getSupportIdentity(): Promise<SupportIdentity> {
   const session = await auth();
   const userId = typeof session?.user?.id === "string" ? session.user.id : undefined;
@@ -150,34 +155,27 @@ export function fallbackAnswer(question: string, knowledgeAnswer: string, facts:
 
 export { SUPPORT_GREETING, SUPPORT_NAME };
 
-function costUsd(usage: SupportUsage, config: Awaited<ReturnType<typeof getSupportConfig>>): number | null {
-  if (usage.inputTokens === null || usage.outputTokens === null) return null;
-  const cached = usage.cachedTokens || 0;
-  const writes = usage.cacheWriteTokens || 0;
-  const ordinary = Math.max(0, usage.inputTokens - cached - writes);
-  return (ordinary * config.inputUsdPerMillion + cached * config.cachedInputUsdPerMillion + writes * config.cacheWriteUsdPerMillion + usage.outputTokens * config.outputUsdPerMillion) / 1_000_000;
-}
-
-async function budgetExceeded(): Promise<boolean> {
-  const config = await getSupportConfig();
-  const aggregate = await prisma.supportModelCall.aggregate({ where: { createdAt: { gte: dayStartShanghai() }, estimatedCost: { not: null } }, _sum: { estimatedCost: true } });
-  return Number(aggregate._sum.estimatedCost || 0) * config.usdCnyRate >= config.dailyBudgetCny;
-}
-
-export async function answerSupportTurn(conversationId: string, requestId: string, question: string, identity: SupportIdentity) {
+export async function answerSupportTurn(conversationId: string, requestId: string, question: string, identity: SupportIdentity, clientIp: ClientIpInfo = UNKNOWN_CLIENT_IP, requestSignal?: AbortSignal) {
   // Shared Redis lock bounds duplicate and concurrent generation across app processes.
   const lockKey = `support:turn-lock:${conversationId}`;
   const lockToken = randomUUID();
   if (await redis.set(lockKey, lockToken, "PX", 120000, "NX") !== "OK") throw new SupportRequestError("客服正在回答，请稍后再试", 409);
-  try { return await answerLocked(conversationId, requestId, question, identity); }
+  const signal = AbortSignal.any([...(requestSignal ? [requestSignal] : []), AbortSignal.timeout(SUPPORT_LIMITS.totalTimeoutMs)]);
+  try { return await answerLocked(conversationId, requestId, question, identity, clientIp, signal); }
+  catch (error) {
+    await prisma.supportTurn.updateMany({ where: { conversationId, requestId, status: 'PROCESSING' }, data: { status: signal.aborted ? 'CANCELLED' : 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
+    throw error;
+  }
   finally { await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", 1, lockKey, lockToken); }
 }
 
-async function answerLocked(conversationId: string, requestId: string, question: string, identity: SupportIdentity) {
-  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, expiresAt: true, contextSummary: true, turns: { where: { status: { notIn: ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE", "PROCESSING"] } }, orderBy: turnOrder, take: 12, select: turnFields } } });
+async function answerLocked(conversationId: string, requestId: string, question: string, identity: SupportIdentity, clientIp: ClientIpInfo, requestSignal?: AbortSignal) {
+  const started = Date.now();
+  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, expiresAt: true, contextSummary: true, turns: { where: { status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, take: 12, select: turnFields } } });
   if (!conversation) throw new SupportRequestError("客服会话不存在或已过期", 404);
   const existing = await prisma.supportTurn.findUnique({ where: { conversationId_requestId: { conversationId, requestId } }, select: { id: true, answerText: true, status: true, ui: true } });
   if (existing) {
+    if (existing.status.startsWith('RISK_')) throw new SupportRequestError(existing.answerText || '客服请求受限', 429, existing.status.slice(5), 60);
     await touchSupportConversation(conversationId, identity);
     if (!existing.answerText) throw new SupportRequestError("上次回答未完成，请重新提问", 409);
     return { turnId: existing.id, answer: existing.answerText, status: existing.status, ui: readSupportUi(existing.ui) };
@@ -186,33 +184,40 @@ async function answerLocked(conversationId: string, requestId: string, question:
   await touchSupportConversation(conversationId, identity);
   let summary = conversation.contextSummary;
   if (!summary && conversation.turns.length === 12) {
-    const older = await prisma.supportTurn.findMany({ where: { conversationId, status: { notIn: ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE", "PROCESSING"] } }, orderBy: turnOrder, skip: 12, take: 30, select: { userText: true, answerText: true } });
+    const older = await prisma.supportTurn.findMany({ where: { conversationId, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: 12, take: 30, select: { userText: true, answerText: true } });
     summary = older.reverse().map(t => `用户关注：${t.userText.slice(0, 150)}；当时回答（可能过时）：${(t.answerText || "未完成").slice(0, 120)}`).join("\n").slice(-6000);
   }
   const safeQuestion = redactSupportText(question.trim());
   const trustedFaq = trustedSupportFaq(question);
-  const turn = await prisma.supportTurn.create({ data: { conversationId, requestId, userText: safeQuestion, status: "PROCESSING" } });
+  const identityHash = supportIdentityHash(identity);
+  const config = await getSupportConfig();
+  const outOfScope = isOutOfScopeSupportQuestion(question);
+  const greeting = supportGreetingAnswer(safeQuestion);
+  const turn = await prisma.supportTurn.create({ data: { conversationId, requestId, userText: safeQuestion, status: "PROCESSING", clientIp: clientIp.trusted ? clientIp.value : null, clientIpTrusted: clientIp.trusted, identityHash, modelTurn: false } });
   const sources: unknown[] = [];
   const evidence: Array<{ tool: string; arguments: unknown; result: unknown }> = [];
   let answer = "";
   let status = "FALLBACK";
-  const config = await getSupportConfig();
-  const outOfScope = isOutOfScopeSupportQuestion(question);
+  let riskError: SupportRiskError | undefined;
+  let permitRelease: (() => Promise<void>) | null = null;
   if (outOfScope) {
     answer = SUPPORT_SCOPE_REFUSAL;
     status = "OUT_OF_SCOPE";
   } else if (supportGreetingAnswer(safeQuestion)) {
-    answer = supportGreetingAnswer(safeQuestion)!; status = "GREETING";
+    answer = greeting!; status = "GREETING";
   } else if (trustedFaq) {
     // Complete, preapproved FAQs need current data, not model classification
     // and tool-selection round trips. Reuse the deterministic query path below.
     status = "FAQ";
   } else if (supportModelConfigured(config)) {
     try {
+      permitRelease = await acquireSupportPermit(identity, clientIp, safeQuestion);
       answer = await generateSupportAnswer({ question: safeQuestion, history: recentContext(conversation.turns), summary, config,
-        beforeCall: async () => {
+        beforeCall: async start => {
           if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
-          return !(await budgetExceeded());
+          await checkSupportBlock(identity, clientIp);
+          await checkSupportCircuit();
+          return reserveSupportCall(turn.id, start, config);
         },
         execute: async (name, args) => {
           if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
@@ -222,18 +227,28 @@ async function answerLocked(conversationId: string, requestId: string, question:
           return modelToolResult(name, result);
         },
         recordCall: async call => {
-          const cost = costUsd(call.usage, config);
-          await prisma.supportModelCall.create({ data: { turnId: turn.id, provider: config.provider, requestModel: config.model, responseModel: call.usage.responseModel, inputTokens: call.usage.inputTokens, cachedTokens: call.usage.cachedTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, reasoningTokens: call.usage.reasoningTokens, totalTokens: call.usage.totalTokens, estimatedCost: cost, usageStatus: cost === null ? "MISSING" : "COMPLETE", latencyMs: call.latencyMs, success: call.success, errorCode: call.phase === "scope" ? `SCOPE_${call.errorCode || "CLASSIFIED"}` : call.errorCode } });
+          await settleSupportCall(call);
         },
+        signal: requestSignal,
       });
       status = "COMPLETED";
+      await recordModelOutcome(false);
     } catch (error) {
       if (error instanceof SupportRequestError) throw error;
+      if (error instanceof SupportRiskError) {
+        riskError = error; status = `RISK_${error.code}`; answer = error.message;
+        await recordRisk(error.code, identity, clientIp, { retryAfter: error.retryAfter });
+      } else
       if (error instanceof SupportLlmError && ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE"].includes(error.code)) {
         answer = error.code === "OUT_OF_SCOPE" ? SUPPORT_SCOPE_REFUSAL : error.code === "SCOPE_CLARIFY" ? SUPPORT_SCOPE_CLARIFICATION : SUPPORT_SCOPE_UNAVAILABLE;
         status = error.code;
-      } else status = error instanceof SupportLlmError ? `FALLBACK_${error.code}` : "FALLBACK_ERROR";
-    }
+      } else {
+        if (error instanceof SupportLlmError && !['CANCELLED', 'OUT_OF_SCOPE', 'SCOPE_CLARIFY'].includes(error.code)) await recordModelOutcome(true);
+        status = error instanceof SupportLlmError ? error.code === 'CANCELLED' ? 'CANCELLED' : `FALLBACK_${error.code}` : 'FALLBACK_ERROR';
+        // Before planning succeeds, never bypass scope checks with broad data lookup.
+        answer = status === 'CANCELLED' ? '本次请求已取消，请重新提问。' : '智能回答暂时不可用，请使用常见问题或联系人工客服。';
+      }
+    } finally { if (permitRelease) await permitRelease(); }
   }
   let savedFacts: unknown = { queries: evidence };
   if (!answer) {
@@ -257,10 +272,11 @@ async function answerLocked(conversationId: string, requestId: string, question:
   answer = cleanSupportAnswer(answer, ui);
   // An expired or retired session must not receive a late answer.
   await prisma.$transaction(async tx => {
-    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: conversation.title || safeQuestion.slice(0, 40), contextSummary: ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE"].includes(status) ? summary : nextContextSummary(summary, conversation.turns) } });
+    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: conversation.title || safeQuestion.slice(0, 40), contextSummary: ["FAQ", "COMPLETED", "FALLBACK"].includes(status) ? nextContextSummary(summary, conversation.turns) : summary } });
     if (!valid.count) throw new SupportRequestError("客服会话不存在或已过期", 404);
-    await tx.supportTurn.update({ where: { id: turn.id }, data: { answerText: answer, status, sources: sources as Prisma.InputJsonValue, facts: JSON.parse(JSON.stringify(savedFacts)), ui: JSON.parse(JSON.stringify(ui)) } });
+    await tx.supportTurn.update({ where: { id: turn.id }, data: { answerText: answer, status, latencyMs: Date.now() - started, sources: sources as Prisma.InputJsonValue, facts: JSON.parse(JSON.stringify(savedFacts)), ui: JSON.parse(JSON.stringify(ui)) } });
   });
+  if (riskError) throw new SupportRequestError(riskError.message, 429, riskError.code, riskError.retryAfter);
   return { turnId: turn.id, answer, status, ui };
 }
 
@@ -269,24 +285,27 @@ export async function setSupportFeedback(turnId: string, value: number, identity
   return updated.count > 0;
 }
 
-export async function supportUsageSummary() {
-  const calls = await prisma.supportModelCall.findMany({ orderBy: { createdAt: "desc" }, take: 500, select: { createdAt: true, provider: true, requestModel: true, inputTokens: true, cachedTokens: true, cacheWriteTokens: true, outputTokens: true, reasoningTokens: true, totalTokens: true, estimatedCost: true, usageStatus: true, latencyMs: true, success: true } });
-  const totals = calls.reduce((sum, call) => ({ input: sum.input + (call.inputTokens || 0), cached: sum.cached + (call.cachedTokens || 0), writes: sum.writes + (call.cacheWriteTokens || 0), output: sum.output + (call.outputTokens || 0), reasoning: sum.reasoning + (call.reasoningTokens || 0), cost: sum.cost + Number(call.estimatedCost || 0), success: sum.success + (call.success ? 1 : 0) }), { input: 0, cached: 0, writes: 0, output: 0, reasoning: 0, cost: 0, success: 0 });
-  return { calls: calls.length, ...totals, usageMissing: calls.filter(call => call.usageStatus !== "COMPLETE").length };
-}
+export { supportUsageSummary, listSupportRisk, createSupportBlock, revokeSupportBlock } from "./admin";
 
-/** Clear customer-facing content without cascading away the usage ledger. */
-export async function cleanupSupportData(now = new Date()): Promise<{ turns: number; calls: number }> {
-  const conversationCutoff = new Date(now.getTime() - 30 * 86400 * 1000);
-  const callCutoff = new Date(now.getTime() - 180 * 86400 * 1000);
-  const stale = await prisma.supportConversation.findMany({ where: { updatedAt: { lt: conversationCutoff } }, select: { id: true } });
-  let turns = 0;
-  if (stale.length) {
-    const result = await prisma.supportTurn.updateMany({ where: { conversationId: { in: stale.map(item => item.id) } }, data: { userText: "[对话内容已按保留策略清理]", answerText: null, sources: Prisma.JsonNull, facts: Prisma.JsonNull, ui: Prisma.JsonNull } });
-    turns = result.count;
-    await prisma.supportConversation.updateMany({ where: { id: { in: stale.map(item => item.id) } }, data: { userId: null, anonymousKey: null, title: "已清理客服会话", contextSummary: "" } });
-  }
-  const calls = await prisma.supportModelCall.deleteMany({ where: { createdAt: { lt: callCutoff } } });
-  return { turns, calls: calls.count };
+/** Content ages independently of conversation activity; usage keeps a longer lifetime. */
+export async function cleanupSupportData(now = new Date()) {
+  const cutoff = new Date(now.getTime() - 90 * 86400000);
+  const callCutoff = new Date(now.getTime() - 180 * 86400000);
+  const result = await prisma.$transaction(async tx => {
+    const stale = await tx.supportTurn.findMany({ where: { createdAt: { lt: cutoff }, clearedAt: null }, select: { id: true, conversationId: true }, take: 1000 });
+    const turns = await tx.supportTurn.updateMany({ where: { id: { in: stale.map(t => t.id) } }, data: { userText: '[对话内容已按保留策略清理]', answerText: null, sources: Prisma.JsonNull, facts: Prisma.JsonNull, ui: Prisma.JsonNull, clientIp: null, clientIpTrusted: false, identityHash: null, clearedAt: now } });
+    // Summaries can contain excerpts from any expired turn.
+    await tx.supportConversation.updateMany({ where: { id: { in: [...new Set(stale.map(t => t.conversationId))] } }, data: { contextSummary: '', title: null } });
+    await tx.supportConversation.updateMany({ where: { expiresAt: { lt: cutoff } }, data: { userId: null, anonymousKey: null, contextSummary: '', title: null } });
+    await tx.supportModelCall.updateMany({ where: { accountingState: 'PENDING', createdAt: { lt: new Date(now.getTime()-120000) } }, data: { accountingState: 'UNCERTAIN', usageStatus: 'MISSING', errorCode: 'INTERRUPTED' } });
+    await tx.supportTurn.updateMany({ where: { status: 'PROCESSING', createdAt: { lt: new Date(now.getTime()-120000) } }, data: { status: 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
+    const calls = await tx.supportModelCall.deleteMany({ where: { createdAt: { lt: callCutoff } } });
+    await tx.supportTurn.deleteMany({ where: { createdAt: { lt: callCutoff }, modelCalls: { none: {} } } });
+    await tx.supportConversation.deleteMany({ where: { expiresAt: { lt: callCutoff }, turns: { none: {} } } });
+    const events = await tx.supportRiskEvent.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    await tx.supportBlock.deleteMany({ where: { expiresAt: { lt: cutoff } } });
+    await tx.supportBudgetDay.deleteMany({ where: { day: { lt: callCutoff } } });
+    return { turns: turns.count, calls: calls.count, events: events.count };
+  });
+  return result;
 }
-

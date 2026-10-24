@@ -1,4 +1,4 @@
-import test, { before, after } from "node:test";
+import test, { before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -43,6 +43,7 @@ before(async () => {
   await redis.flushdb();
   categoryId = (await prisma.category.create({ data: { name: prefix, slug: prefix } })).id;
 });
+beforeEach(async () => { await redis.del('support:v2:circuit'); });
 after(async () => { await prisma.$disconnect(); await redis.quit(); });
 
 test("unsold card listing never returns secrets; editing encrypts content and stale edits are rejected", async () => {
@@ -658,12 +659,12 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
     let count=0;const bodies:any[]=[];
     t.mock.method(globalThis,'fetch',async (_url:unknown,init:any)=>{
       const body=JSON.parse(init.body);bodies.push(body);count++;
-      const data=count===1?{output_text:JSON.stringify({decision:'allow'})}:count===2?{output:[{type:'function_call',call_id:'products',name:'search_products',arguments:'{"query":"Claude 5x"}'},{type:'function_call',call_id:'knowledge',name:'search_knowledge',arguments:'{"query":"购买流程"}'}]}:{output_text:'当前未找到 Claude 5x，相关 Claude Pro 月付129元，当前缺货。'};
+      const data=count===1?{output_text:JSON.stringify({decision:'allow',queries:[]})}:count===2?{output:[{type:'function_call',call_id:'products',name:'search_products',arguments:'{"query":"Claude 5x"}'},{type:'function_call',call_id:'knowledge',name:'search_knowledge',arguments:'{"query":"购买流程"}'}]}:{output_text:'当前未找到 Claude 5x，相关 Claude Pro 月付129元，当前缺货。'};
       return new Response(JSON.stringify({...data,usage:{input_tokens:20,output_tokens:10,total_tokens:30},model:'test'}));
     });
     const answer=await answerSupportTurn(c.id,'agent-request','Claude 5x多少钱？',identity);
     assert.equal(answer.status,'COMPLETED');assert.equal(count,3);assert(!('sources' in answer));assert(!('facts' in answer));
-    const firstInput=JSON.stringify(bodies[0].input);assert(firstInput.includes('旧问题24'));assert(firstInput.includes('旧问题0'));assert(!firstInput.includes('priceCny'));
+    const firstInput=JSON.stringify(bodies[0].input);assert(firstInput.includes('旧问题24'));assert(firstInput.includes('旧问题24'));assert(!firstInput.includes('priceCny'));
     assert(JSON.stringify(bodies[2].input).includes('priceCny'));
     const stored=await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId},include:{modelCalls:true}});
     assert.equal(stored.modelCalls.length,3);assert(stored.modelCalls.every(call=>call.totalTokens===30));assert((stored.sources as any[]).length>0);assert((stored.facts as any).queries.length===2);
@@ -673,7 +674,8 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
     await redis.set(`support:turn-lock:${c.id}`,'another-worker','EX',5);
     await assert.rejects(answerSupportTurn(c.id,'concurrent-request','另一个问题',identity),/正在回答/);
     await redis.del(`support:turn-lock:${c.id}`);
-    await prisma.supportConversation.update({where:{id:c.id},data:{updatedAt:new Date(Date.now()-31*86400000)}});
+    await prisma.supportConversation.update({where:{id:c.id},data:{updatedAt:new Date(Date.now()-91*86400000),expiresAt:new Date(Date.now()-91*86400000)}});
+    await prisma.supportTurn.updateMany({where:{conversationId:c.id},data:{createdAt:new Date(Date.now()-91*86400000)}});
     await cleanupSupportData();
     assert.equal(await getLatestSupportConversation(identity),null);
     assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId}})).answerText,null);
@@ -698,7 +700,7 @@ test('support attachments persist across replay and restore, hide QR URLs from m
     t.mock.method(globalThis,'fetch',async (_url:unknown,init:any)=>{
       requests++;const body=JSON.parse(init.body);
       if(requests===3){assert(!JSON.stringify(body.input).includes(qr));assert(JSON.stringify(body.input).includes('wechatQrConfigured'));}
-      return new Response(JSON.stringify({usage:{input_tokens:10,output_tokens:10,total_tokens:20},...(requests===1?{output_text:JSON.stringify({decision:'allow'})}:requests===2?{output:[{type:'function_call',name:'get_contacts',call_id:'contact-ui',arguments:'{}'},{type:'function_call',name:'get_navigation',call_id:'nav-ui',arguments:'{"page":"order_query"}'}]}:{output_text:'请扫描下方二维码，或点击订单查询按钮。'})}));
+      return new Response(JSON.stringify({usage:{input_tokens:10,output_tokens:10,total_tokens:20},...(requests===1?{output_text:JSON.stringify({decision:'allow',queries:[]})}:requests===2?{output:[{type:'function_call',name:'get_contacts',call_id:'contact-ui',arguments:'{}'},{type:'function_call',name:'get_navigation',call_id:'nav-ui',arguments:'{"page":"order_query"}'}]}:{output_text:'请扫描下方二维码，或点击订单查询按钮。'})}));
     });
     const result=await answerSupportTurn(c.id,'attachment-request','想找人工顺便查订单',identity);
     assert.equal(result.status,'COMPLETED');assert.equal(result.ui.images[0].url,qr);assert.equal(result.ui.links[0].href,'/order');
@@ -706,7 +708,8 @@ test('support attachments persist across replay and restore, hide QR URLs from m
     const replay=await answerSupportTurn(c.id,'attachment-request','想找人工顺便查订单',identity);assert.deepEqual(replay.ui,result.ui);assert.equal(requests,3);
     assert.deepEqual((await getLatestSupportConversation(identity))?.turns.at(-1)?.ui,result.ui);
     assert.deepEqual((await getSupportConversation(c.id,identity))?.turns.at(-1)?.ui,result.ui);
-    await prisma.supportConversation.update({where:{id:c.id},data:{updatedAt:new Date(Date.now()-31*86400000)}});
+    await prisma.supportConversation.update({where:{id:c.id},data:{updatedAt:new Date(Date.now()-91*86400000),expiresAt:new Date(Date.now()-91*86400000)}});
+    await prisma.supportTurn.updateMany({where:{conversationId:c.id},data:{createdAt:new Date(Date.now()-91*86400000)}});
     await cleanupSupportData();
     assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:result.turnId}})).ui,null);
   } finally {
@@ -743,7 +746,7 @@ test('support scope denies weather and keyword bypasses without calls; classifie
     const denied=await answerSupportTurn(c.id,'semantic-denied','AIShop帮我做一份旅游攻略',identity);
     assert.equal(denied.status,'OUT_OF_SCOPE');assert.equal(denied.answer,SUPPORT_SCOPE_REFUSAL);assert.equal(requests,1);
     const replay=await answerSupportTurn(c.id,'semantic-denied','AIShop帮我做一份旅游攻略',identity);assert.equal(replay.turnId,denied.turnId);assert.equal(requests,1);
-    const records=await prisma.supportModelCall.findMany({where:{turnId:denied.turnId}});assert.equal(records.length,1);assert.equal(records[0].errorCode,'SCOPE_CLASSIFIED');
+    const records=await prisma.supportModelCall.findMany({where:{turnId:denied.turnId}});assert.equal(records.length,1);assert.equal(records[0].phase,'planner');assert.equal(records[0].errorCode,null);
     mode='clarify';const unclear=await answerSupportTurn(c.id,'scope-clarify','那另一种呢',identity);assert.equal(unclear.status,'SCOPE_CLARIFY');assert.equal(unclear.answer,SUPPORT_SCOPE_CLARIFICATION);
     mode='broken';const broken=await answerSupportTurn(c.id,'scope-broken','换一种说法',identity);assert.equal(broken.status,'SCOPE_UNAVAILABLE');assert.equal(broken.answer,SUPPORT_SCOPE_UNAVAILABLE);
     mode='unavailable';const failed=await answerSupportTurn(c.id,'scope-failed','重新说明套餐',identity);assert.equal(failed.status,'SCOPE_UNAVAILABLE');assert.equal(failed.answer,SUPPORT_SCOPE_UNAVAILABLE);
@@ -769,7 +772,7 @@ test('trusted FAQs skip all model calls with live facts and UI; mixed questions 
   t.mock.method(globalThis,'fetch',async (_url:unknown,init:any)=>{
     calls++;assert.equal(JSON.parse(init.body).tools,undefined,'outage must not enter answering agent');
     if(mode==='timeout') throw new DOMException('test timeout','TimeoutError');
-    if(mode==='deny') return new Response(JSON.stringify({output_text:'{"decision":"deny"}'}));
+    if(mode==='deny') return new Response(JSON.stringify({output_text:'{"decision":"deny"}',usage:{input_tokens:8,output_tokens:4,total_tokens:12}}));
     if(mode==='invalid') return new Response(JSON.stringify({output_text:'malformed classification'}));
     return new Response(JSON.stringify({error:{type:'api_error'}}),{status:503});
   });
@@ -850,4 +853,120 @@ test('available inventory filters zero stock before the result limit and exclude
     await prisma.category.delete({where:{id:hiddenCategory.id}});
     await prisma.supportConversation.delete({where:{id:conversation.id}});
   }
+});
+
+test('support planner executes real tools in two calls; records identity, phase, cost and idempotent replay',async t=>{
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const identity={anonymousKey:randomBytes(32).toString('hex')},c=await createSupportConversation(identity);
+  const keys=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_DAILY_BUDGET_CNY'];const old=keys.map(k=>process.env[k]);
+  await redis.del('support:v2:circuit');
+  try{
+    process.env.SUPPORT_LLM_API_KEY='synthetic-test';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';
+    let calls=0;t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({output_text:++calls===1?JSON.stringify({decision:'allow',queries:[{name:'get_contacts',arguments:{}},{name:'get_navigation',arguments:{page:'order_query'}}]}):'请使用订单查询页面。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}})));
+    const r=await answerSupportTurn(c.id,'planned-request','想找人工顺便了解订单入口',identity,{value:'8.8.4.4',trusted:true});
+    assert.equal(calls,2);assert.equal(r.status,'COMPLETED');assert(r.ui.links.some(l=>l.href==='/order'));
+    const saved=await prisma.supportTurn.findUniqueOrThrow({where:{id:r.turnId},include:{modelCalls:{orderBy:{sequence:'asc'}}}});
+    assert(saved.identityHash);assert.equal(saved.clientIp,'8.8.4.4');assert(saved.modelTurn);assert.deepEqual(saved.modelCalls.map(v=>v.phase),['planner','answer']);assert(saved.modelCalls.every(v=>v.accountingState==='SETTLED'&&v.rateSnapshot));
+    assert.equal((await answerSupportTurn(c.id,'planned-request','同一请求重试',identity)).turnId,r.turnId);assert.equal(calls,2);
+  }finally{keys.forEach((k,i)=>old[i]===undefined?delete process.env[k]:process.env[k]=old[i]);await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+test('support budget reservations serialize competing calls, settle once and preserve unknown usage',async()=>{
+  const {reserveSupportCall,reservationCost,settleSupportCall}=await import('../../src/lib/support/budget');
+  const {getSupportConfig,dayStartShanghai}=await import('../../src/lib/support/config');
+  const config={...await getSupportConfig(),dailyBudgetCny:10000};const day=dayStartShanghai();
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'budget',expiresAt:new Date(Date.now()+86400000)}});
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'budget-call',userText:'预算测试'}});
+  const prior=await prisma.systemSetting.findUnique({where:{key:'supportDailyBudgetCny'}});
+  const start={phase:'answer' as const,body:{input:'test'},sequence:1,maxOutputTokens:1000};
+  try{
+    const balance=await prisma.supportBudgetDay.upsert({where:{day},create:{day},update:{}});
+    const legacy=await prisma.supportModelCall.aggregate({where:{accountingState:'LEGACY',createdAt:{gte:day}},_sum:{estimatedCost:true}});
+    const {Prisma}=await import('@prisma/client');
+    const ceiling=balance.reservedCny.add(balance.settledCny).add(new Prisma.Decimal(String(legacy._sum.estimatedCost||0)).mul(config.usdCnyRate)).add(reservationCost(start,config));
+    await prisma.systemSetting.upsert({where:{key:'supportDailyBudgetCny'},create:{key:'supportDailyBudgetCny',value:ceiling.toString()},update:{value:ceiling.toString()}});
+    const results=await Promise.all(Array.from({length:6},()=>reserveSupportCall(turn.id,start,config)));
+    assert.equal(results.filter(Boolean).length,1,'only one call fits the remaining budget');
+    const reservation=results.find(Boolean)!;assert(reservation);
+    const record={callId:reservation.callId,phase:'answer' as const,sequence:1,sent:true,latencyMs:10,success:true,usage:{inputTokens:10,outputTokens:5,totalTokens:15,cachedTokens:0,cacheWriteTokens:0,reasoningTokens:0,responseModel:'test'}};
+    await Promise.all([settleSupportCall(record),settleSupportCall(record)]);
+    const paid=await prisma.supportModelCall.findUniqueOrThrow({where:{id:reservation.callId}});assert(paid.settledCny!.lt(0.01));assert.equal(paid.accountingState,'SETTLED');
+    await prisma.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:'10000'}});
+    const missing=await reserveSupportCall(turn.id,{...start,sequence:2},config);assert(missing);
+    await settleSupportCall({...record,callId:missing.callId,success:false,usage:{...record.usage,inputTokens:null,outputTokens:null,totalTokens:null}});
+    const uncertain=await prisma.supportModelCall.findUniqueOrThrow({where:{id:missing.callId}});assert.equal(uncertain.accountingState,'UNCERTAIN');assert.equal(uncertain.estimatedCost,null);
+    await prisma.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:'0'}});assert.equal(await reserveSupportCall(turn.id,start,config),false);
+  }finally{if(prior)await prisma.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:prior.value}});else await prisma.systemSetting.deleteMany({where:{key:'supportDailyBudgetCny'}});await redis.del('system:settings');await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+test('support atomic leases enforce identity/IP/global capacity and stale release cannot unlock a new request',async()=>{
+  const {acquireSupportPermit,riskKeys}=await import('../../src/lib/support/risk');
+  await redis.del('support:v2:circuit','support:v2:global');
+  const releases:Array<()=>Promise<void>>=[],ip={value:'8.8.8.8',trusted:true};
+  try{
+    const same={anonymousKey:randomBytes(32).toString('hex')};const release=await acquireSupportPermit(same,ip,'一号问题');releases.push(release);
+    await assert.rejects(acquireSupportPermit(same,{value:'1.1.1.1',trusted:true},'二号问题'),(e:any)=>e.code==='CONCURRENT');
+    for(let i=0;i<2;i++)releases.push(await acquireSupportPermit({anonymousKey:randomBytes(32).toString('hex')},ip,`询问${i}`));
+    await assert.rejects(acquireSupportPermit({anonymousKey:'excess-'+prefix},ip,'更多问题'),(e:any)=>e.code==='CONCURRENT');
+    for(let i=0;i<5;i++)releases.push(await acquireSupportPermit({anonymousKey:randomBytes(32).toString('hex')},{value:`8.0.0.${i}`,trusted:true},'商品'));
+    await assert.rejects(acquireSupportPermit({anonymousKey:prefix+'full'},{value:'9.9.9.9',trusted:true},'商品'),(e:any)=>e.code==='CONCURRENT');
+    const keys=riskKeys(same,ip,'一号问题');for(const key of keys.slice(0,3)){const tokens=await redis.zrange(key,0,-1);for(const token of tokens)await redis.zadd(key,Date.now()-1,token);}
+    const replacement=await acquireSupportPermit(same,ip,'不同问题');await release();assert.equal(await redis.zcard(keys[0]),1);await replacement();
+  }finally{for(const release of releases)await release();}
+});
+
+test('support quotas, duplicates, cold circuit and manual bans stop generation; FAQ remains available',async()=>{
+  const {acquireSupportPermit,riskKeys,recordModelOutcome,checkSupportCircuit}=await import('../../src/lib/support/risk');
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {createSupportBlock,revokeSupportBlock}=await import('../../src/lib/support/admin');
+  const ip={value:'1.0.0.1',trusted:true};await redis.del('support:v2:circuit');
+  for(const member of [false,true]){
+    const identity={anonymousKey:randomBytes(32).toString('hex'),...(member?{userId:prefix+'member'}:{})};const keys=riskKeys(identity,ip,'额度');
+    await redis.set(keys[4],member?200:50,'EX',60);
+    await assert.rejects(acquireSupportPermit(identity,ip,'额度'),(e:any)=>e.code==='DAILY_LIMIT');await redis.del(keys[4]);
+    await redis.set(keys[3],member?10:5,'EX',60);for(let i=0;i<3;i++)await assert.rejects(acquireSupportPermit(identity,ip,'额度'));
+    await redis.del(keys[3]);await assert.rejects(acquireSupportPermit(identity,ip,'额度'),(e:any)=>e.code==='COOLDOWN');
+  }
+  const identity={anonymousKey:randomBytes(32).toString('hex')};for(let i=0;i<3;i++)await(await acquireSupportPermit(identity,ip,'相同问题'))();
+  await assert.rejects(acquireSupportPermit(identity,ip,'相同问题'),(e:any)=>e.code==='DUPLICATE_SPAM');
+  for(let i=0;i<3;i++)await recordModelOutcome(true);await assert.rejects(checkSupportCircuit(),(e:any)=>e.code==='CIRCUIT');
+  const c=await createSupportConversation(identity);const faq=await answerSupportTurn(c.id,'faq-still-free','怎么买商品？',identity,ip);assert.equal(faq.status,'FAQ');
+  const block=await createSupportBlock({action:'block',source:'turn',id:faq.turnId,kind:'identity',reason:'test'},'test-admin');
+  await redis.del('support:v2:circuit');await assert.rejects(acquireSupportPermit(identity,ip,'封禁后问题'),(e:any)=>e.code==='BLOCKED');
+  await revokeSupportBlock(block.id,'test-admin');await redis.del(riskKeys(identity,ip,'商品')[7]);await(await acquireSupportPermit(identity,ip,'解封后新问题'))();
+  await prisma.supportBlock.delete({where:{id:block.id}});await prisma.supportConversation.delete({where:{id:c.id}});
+});
+
+test('support full-range totals exceed 500, page boundaries are stable, and aged turns clear even in active conversations',async()=>{
+  const {supportUsageSummary}=await import('../../src/lib/support/admin');const {cleanupSupportData}=await import('../../src/lib/support/service');
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'statistics',expiresAt:new Date(Date.now()+86400000)}});
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:prefix+'stats',userText:prefix+'统计',answerText:'回答',identityHash:'a'.repeat(64),clientIp:'8.8.8.8',clientIpTrusted:true}});
+  await prisma.supportModelCall.createMany({data:Array.from({length:501},(_,i)=>({turnId:turn.id,provider:'test',requestModel:'test',sequence:i,inputTokens:10,outputTokens:5,totalTokens:15,usageStatus:'COMPLETE',estimatedCost:0.00001,success:true}))});
+  try{
+    const first=await supportUsageSummary({q:prefix+'统计',view:'calls',pageSize:100});const last=await supportUsageSummary({q:prefix+'统计',view:'calls',pageSize:100,page:6});
+    assert.equal(first.summary.calls,501);assert.equal(first.summary.totalTokens,7515);assert.equal(first.items.length,100);assert.equal(last.items.length,1);assert(!last.hasMore);
+    const missing=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'old-privacy',userText:'old private',answerText:'old answer',identityHash:'b'.repeat(64),clientIp:'9.9.9.9',createdAt:new Date(Date.now()-91*86400000)}});
+    await prisma.supportConversation.update({where:{id:c.id},data:{contextSummary:'old private',updatedAt:new Date()}});
+    await cleanupSupportData();const old=await prisma.supportTurn.findUniqueOrThrow({where:{id:missing.id}});assert.equal(old.answerText,null);assert.equal(old.clientIp,null);assert.equal(old.identityHash,null);assert(old.clearedAt);
+    assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:turn.id}})).answerText,'回答');assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,'');
+  }finally{await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+test('support visitor ID search matches displayed prefixes, copied labels and full hashes with consistent totals',async()=>{
+  const {supportUsageSummary}=await import('../../src/lib/support/admin');
+  const hash=randomBytes(32).toString('hex'),other=randomBytes(32).toString('hex');
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'guest-search',expiresAt:new Date(Date.now()+86400000)}});
+  try{
+    await prisma.supportTurn.createMany({data:[
+      {conversationId:c.id,requestId:'guest-one',userText:'售前咨询',identityHash:hash,status:'FAQ'},
+      {conversationId:c.id,requestId:'guest-two',userText:'售后咨询',identityHash:hash,status:'COMPLETED'},
+      {conversationId:c.id,requestId:'guest-other',userText:'其他咨询',identityHash:other,status:'FAQ'},
+      {conversationId:c.id,requestId:'guest-cleared',userText:'已清理',identityHash:hash,clearedAt:new Date()},
+    ]});
+    for(const q of [hash.slice(0,10),hash.slice(0,10).toUpperCase(),`游客 ${hash.slice(0,10)}`,hash]){
+      const result=await supportUsageSummary({q});assert.equal(result.total,2);assert.equal(result.summary.turns,2);assert.equal(result.items.length,2);
+      assert(result.items.every(item=>'identityHash' in item&&item.identityHash===hash));
+    }
+    const unmatched=await supportUsageSummary({q:randomBytes(32).toString('hex')});assert.equal(unmatched.total,0);
+  }finally{await prisma.supportConversation.delete({where:{id:c.id}});}
 });

@@ -201,6 +201,31 @@ try {
   console.log('Admin shared layout: all menu pages and order details render one sidebar/main, anonymous pages redirect, login has no sidebar: passed');
 
   const category = await db.category.create({ data: { name: `smoke-${suffix}`, slug: `smoke-${suffix}` } });
+  // Actual admin endpoints: no model calls or production credentials are involved.
+  const previousSupportBudget = await db.systemSetting.findUnique({where:{key:'supportDailyBudgetCny'}});
+  const auditConversation = await db.supportConversation.create({data:{anonymousKey:'synthetic-audit-'+suffix,expiresAt:new Date(Date.now()+86400000)}});
+  const auditTurn = await db.supportTurn.create({data:{conversationId:auditConversation.id,requestId:'synthetic-audit-request',userText:'SYNTHETIC-AUDIT-'+suffix,answerText:'测试回答',identityHash:'a'.repeat(64),status:'FAQ'}});
+  try {
+    assert.equal((await request('/api/admin/support/usage')).status,403);
+    assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:0},{Cookie:cookie()})).status,200);
+    const cfg=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();assert.equal(cfg.dailyBudgetCny,0);assert(!('baseUrl' in cfg));assert(!('apiKey' in cfg));
+    assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:10,model:'ignored'},{Cookie:cookie()})).status,400);
+    const data=await (await request('/api/admin/support/usage?q='+encodeURIComponent('SYNTHETIC-AUDIT-'+suffix),{headers:{Cookie:cookie()}})).json();
+    assert.equal(data.summary.turns,1);assert.equal(data.items[0].answerText,'测试回答');assert(!JSON.stringify(data).includes('anonymousKey'));
+    assert.equal((await request('/api/admin/support/usage?page=-1',{headers:{Cookie:cookie()}})).status,400);
+    assert.equal((await request('/api/admin/support/risk?page=NaN',{headers:{Cookie:cookie()}})).status,400);
+    const ban={action:'block',source:'turn',id:auditTurn.id,kind:'identity',reason:'synthetic test'};
+    assert.equal((await jsonPost('/api/admin/support/risk',{...ban,kind:'ip'},{Cookie:cookie()})).status,400);
+    assert.equal((await jsonPost('/api/admin/support/risk',ban,{Cookie:cookie()})).status,200);
+    const blocks=await db.supportBlock.findMany({where:{keyHash:'a'.repeat(64),revokedAt:null}});assert(blocks.length);
+    for(const b of blocks){assert.equal((await jsonPost('/api/admin/support/risk',{action:'revoke',id:b.id},{Cookie:cookie()})).status,200);}
+    console.log('Support admin HTTP: full-range summaries, private transcripts, budget-only config, typed pagination, ban/revoke and unknown IP rejection passed.');
+  }finally{
+    if(previousSupportBudget)await db.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:previousSupportBudget.value}});else await db.systemSetting.deleteMany({where:{key:'supportDailyBudgetCny'}});
+    await redis.del('system:settings');await db.supportConversation.delete({where:{id:auditConversation.id}});
+    await db.supportBlock.deleteMany({where:{keyHash:'a'.repeat(64)}});
+  }
+
   const productInput = { name: 'Image save regression', slug: `smoke-product-${suffix}`, categoryId: category.id, price: 19900, originalPrice: 29900, image: null };
   const createdProduct = await jsonPost('/api/admin/products', productInput, {Cookie:cookie()}); assert.equal(createdProduct.status,200);
   const productId = (await createdProduct.json()).product.id;
@@ -316,6 +341,7 @@ try {
   jar.clear();
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
+  for(const path of ['/api/admin/support/usage','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
   for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
   assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'},{Cookie:cookie()})).status,403);

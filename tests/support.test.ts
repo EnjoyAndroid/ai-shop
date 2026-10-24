@@ -68,7 +68,7 @@ test("IME candidate Enter confirms composition without submitting the support qu
 test("support agent understands context, calls a read-only tool, then answers", async () => {
   const requests: any[] = [];
   const answers = [
-    {output_text:JSON.stringify({decision:"allow"}),usage:{input_tokens:8,output_tokens:4,total_tokens:12}},
+    {output_text:JSON.stringify({decision:"allow",queries:[]}),usage:{input_tokens:8,output_tokens:4,total_tokens:12}},
     { output: [{ type: "function_call", call_id: "call-1", name: "search_products", arguments: JSON.stringify({ query: "Claude 5x" }) }], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }, model: "test-model" },
     { output_text: "不好意思，店内暂时没有 Claude 5x。目前有 Claude Pro，售价 ¥129，但现在缺货。", usage: { input_tokens: 20, output_tokens: 18, total_tokens: 38 }, model: "test-model" },
   ];
@@ -150,6 +150,8 @@ test("empty compose budget and pricing use defaults; explicit zero budget remain
     const config = await getSupportConfig();
     assert.equal(config.dailyBudgetCny, 12); assert.equal(config.usdCnyRate, 7.2); assert.equal(config.inputUsdPerMillion, 0.1);
     process.env.SUPPORT_DAILY_BUDGET_CNY = '0';
+    assert.equal((await getSupportConfig()).dailyBudgetCny, 12, 'saved admin budget takes precedence over environment default');
+    t.mock.method(redis, 'get', async () => JSON.stringify({ supportDailyBudgetCny: '0' }));
     assert.equal((await getSupportConfig()).dailyBudgetCny, 0);
   } finally {
     names.forEach((name, index) => { if (saved[index] === undefined) delete process.env[name]; else process.env[name] = saved[index]; });

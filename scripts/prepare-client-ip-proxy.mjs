@@ -1,0 +1,15 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { clientIpProxyCandidate } from './lib/client-ip-proxy.mjs';
+const [peer] = process.argv.slice(2);
+if (process.argv.length !== 3) throw new Error('Usage: node scripts/prepare-client-ip-proxy.mjs <verified-immediate-peer-ip>');
+const source = '.deploy/nginx.production.conf';
+const destination = '.deploy/client-ip/nginx.candidate.conf';
+if (existsSync(destination)) throw new Error('Candidate already exists; review it before generating another');
+const content = readFileSync(source, 'utf8');
+const candidate = clientIpProxyCandidate(content, peer);
+mkdirSync('.deploy/client-ip', {recursive: true, mode: 0o700});
+writeFileSync(destination, candidate, {flag:'wx', mode:0o600});
+const hash = value => createHash('sha256').update(value).digest('hex');
+writeFileSync('.deploy/client-ip/candidate.json', JSON.stringify({createdAt:new Date().toISOString(),peer,source,destination,sourceSha256:hash(content),candidateSha256:hash(candidate),productionApplied:false},null,2)+'\n',{mode:0o600});
+console.log(`Prepared ${destination}. Production config and running services were not changed.`);

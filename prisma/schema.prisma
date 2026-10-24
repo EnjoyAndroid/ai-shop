@@ -13,26 +13,26 @@ datasource db {
 // ==================== 用户系统 ====================
 
 model User {
-  id            String    @id @default(cuid())
-  email         String?   @unique
-  phone         String?   @unique
-  password      String?
-  sessionVersion Int      @default(0)
-  name          String?
-  avatar        String?
+  id             String  @id @default(cuid())
+  email          String? @unique
+  phone          String? @unique
+  password       String?
+  sessionVersion Int     @default(0)
+  name           String?
+  avatar         String?
 
   // 会员等级
-  levelId       String?
-  level         UserLevel? @relation(fields: [levelId], references: [id])
+  levelId String?
+  level   UserLevel? @relation(fields: [levelId], references: [id])
 
   // 余额 (分为单位)
-  balance       Int       @default(0)
+  balance Int @default(0)
 
   // 累计消费金额 (分)
-  totalSpent    Int       @default(0)
+  totalSpent Int @default(0)
 
   // 状态
-  status        UserStatus @default(ACTIVE)
+  status UserStatus @default(ACTIVE)
 
   // OAuth
   emailVerified DateTime?
@@ -40,12 +40,12 @@ model User {
   sessions      Session[]
 
   // 关联
-  orders        Order[]
-  balanceLogs   BalanceLog[]
+  orders               Order[]
+  balanceLogs          BalanceLog[]
   supportConversations SupportConversation[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([email])
   @@index([phone])
@@ -95,102 +95,102 @@ model VerificationToken {
 
 // 会员等级定义
 model UserLevel {
-  id          String   @id @default(cuid())
-  name        String   @unique  // 普通会员、银牌会员、金牌会员
-  minSpent    Int      @default(0)  // 升级所需最低消费 (分)
-  discount    Int      @default(100) // 折扣百分比 (95 = 95折)
-  sort        Int      @default(0)
+  id       String @id @default(cuid())
+  name     String @unique // 普通会员、银牌会员、金牌会员
+  minSpent Int    @default(0) // 升级所需最低消费 (分)
+  discount Int    @default(100) // 折扣百分比 (95 = 95折)
+  sort     Int    @default(0)
 
-  users       User[]
+  users User[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([minSpent])
 }
 
 // 余额变动日志
 model BalanceLog {
-  id          String      @id @default(cuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  type        BalanceType
-  amount      Int         // 变动金额 (分), 正数增加, 负数减少
-  balance     Int         // 变动后余额
+  type    BalanceType
+  amount  Int // 变动金额 (分), 正数增加, 负数减少
+  balance Int // 变动后余额
 
-  orderId     String?     // 关联订单
-  order       Order?      @relation(fields: [orderId], references: [id])
+  orderId String? // 关联订单
+  order   Order?  @relation(fields: [orderId], references: [id])
 
-  remark      String?
+  remark String?
 
-  createdAt   DateTime    @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([orderId])
 }
 
 enum BalanceType {
-  RECHARGE    // 充值
-  CONSUME     // 消费
-  REFUND      // 退款
-  ADJUST      // 管理员调整
+  RECHARGE // 充值
+  CONSUME // 消费
+  REFUND // 退款
+  ADJUST // 管理员调整
 }
 
 // ==================== 商品系统 ====================
 
 model Category {
-  id          String    @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  slug        String    @unique
+  slug        String  @unique
   description String?
-  icon        String?   // 图标 URL 或 emoji
-  sort        Int       @default(0)
-  isActive    Boolean   @default(true)
+  icon        String? // 图标 URL 或 emoji
+  sort        Int     @default(0)
+  isActive    Boolean @default(true)
 
-  products    Product[]
+  products Product[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([isActive, sort])
 }
 
 model Product {
-  id          String        @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  slug        String        @unique
-  description String?       @db.Text
-  content     String?       @db.Text  // 详细说明 (Markdown)
-  image       String?       // 商品图片 URL
+  slug        String  @unique
+  description String? @db.Text
+  content     String? @db.Text // 详细说明 (Markdown)
+  image       String? // 商品图片 URL
 
   // 分类
-  categoryId  String
-  category    Category      @relation(fields: [categoryId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
 
   // 价格 (分)
-  price       Int
-  originalPrice Int?        // 原价 (用于显示划线价)
+  price         Int
+  originalPrice Int? // 原价 (用于显示划线价)
 
   // 库存
-  stock       Int           @default(0)  // 可用库存数量
-  salesCount  Int           @default(0)  // 销量
+  stock      Int @default(0) // 可用库存数量
+  salesCount Int @default(0) // 销量
 
   // 状态
-  isActive    Boolean       @default(true)
-  sort        Int           @default(0)
+  isActive Boolean @default(true)
+  sort     Int     @default(0)
 
   // 购买限制
-  minQuantity Int           @default(1)
-  maxQuantity Int           @default(10)
+  minQuantity Int @default(1)
+  maxQuantity Int @default(10)
 
   // 关联
-  cardKeys    CardKey[]
-  orderItems  OrderItem[]
+  cardKeys   CardKey[]
+  orderItems OrderItem[]
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
   @@index([categoryId])
@@ -199,28 +199,28 @@ model Product {
 
 // 卡密库存
 model CardKey {
-  id          String        @id @default(cuid())
-  productId   String
-  product     Product       @relation(fields: [productId], references: [id])
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
   // 加密存储的卡密内容 (AES-256-GCM)
-  content     String        @db.Text
-  iv          String        // 初始化向量
-  tag         String        // 认证标签
+  content String @db.Text
+  iv      String // 初始化向量
+  tag     String // 认证标签
 
   // 状态
-  status      CardKeyStatus @default(AVAILABLE)
+  status CardKeyStatus @default(AVAILABLE)
 
   // 分配信息
-  orderId     String?
-  orderItem   OrderItem?    @relation(fields: [orderId], references: [id])
-  soldAt      DateTime?
+  orderId   String?
+  orderItem OrderItem? @relation(fields: [orderId], references: [id])
+  soldAt    DateTime?
 
   // 批次管理
-  batchNo     String?
+  batchNo String?
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([productId, status])
   @@index([batchNo])
@@ -228,61 +228,61 @@ model CardKey {
 }
 
 enum CardKeyStatus {
-  AVAILABLE   // 可用
-  SOLD        // 已售出
-  LOCKED      // 锁定中 (下单未付款)
-  INVALID     // 无效
+  AVAILABLE // 可用
+  SOLD // 已售出
+  LOCKED // 锁定中 (下单未付款)
+  INVALID // 无效
 }
 
 // ==================== 订单系统 ====================
 
 model Order {
-  id            String        @id @default(cuid())
-  orderNo       String        @unique  // 订单号
+  id      String @id @default(cuid())
+  orderNo String @unique // 订单号
 
   // 用户信息 (可为游客)
-  userId        String?
-  user          User?         @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
   // 联系方式 (用于发货通知)
-  email         String?
-  phone         String?
+  email String?
+  phone String?
 
   // 商品订单查询密码哈希；充值订单不设置密码
   queryPasswordHash String?
 
   // 金额 (分)
-  totalAmount   Int           // 商品总价
-  discountAmount Int          @default(0)  // 折扣金额
-  payAmount     Int           // 实付金额
+  totalAmount    Int // 商品总价
+  discountAmount Int @default(0) // 折扣金额
+  payAmount      Int // 实付金额
 
   // 支付信息
   paymentMethod PaymentMethod?
-  paymentNo     String?       // 第三方支付流水号
+  paymentNo     String? // 第三方支付流水号
   paidAt        DateTime?
 
   // 状态
-  status        OrderStatus   @default(PENDING)
+  status OrderStatus @default(PENDING)
 
   // IP 和设备信息 (防刷)
-  ip            String?
-  userAgent     String?
-  fingerprint   String?       // 设备指纹
+  ip          String?
+  userAgent   String?
+  fingerprint String? // 设备指纹
 
   // 备注
-  remark        String?
-  adminRemark   String?
+  remark      String?
+  adminRemark String?
 
   // 关联
-  items         OrderItem[]
-  paymentLogs   PaymentLog[]
+  items          OrderItem[]
+  paymentLogs    PaymentLog[]
   paymentReceipt PaymentReceipt?
-  paymentQuote PaymentQuote?
-  balanceLogs   BalanceLog[]
+  paymentQuote   PaymentQuote?
+  balanceLogs    BalanceLog[]
 
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  expiredAt     DateTime?     // 订单过期时间 (未支付)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  expiredAt DateTime? // 订单过期时间 (未支付)
 
   @@index([orderNo])
   @@index([userId])
@@ -290,46 +290,46 @@ model Order {
   @@index([email, createdAt, id])
   @@index([status])
   @@index([createdAt])
-  @@index([status, createdAt])  // 复合索引：按状态筛选并按时间排序
-  @@index([userId, createdAt])  // 复合索引：用户订单按时间排序
-  @@index([ip, status])         // 可信客户端 IP 的待付库存额度
-  @@index([expiredAt])          // 过期订单查询
+  @@index([status, createdAt]) // 复合索引：按状态筛选并按时间排序
+  @@index([userId, createdAt]) // 复合索引：用户订单按时间排序
+  @@index([ip, status]) // 可信客户端 IP 的待付库存额度
+  @@index([expiredAt]) // 过期订单查询
 }
 
 enum OrderStatus {
-  PENDING     // 待支付
-  PAID        // 已支付
-  DELIVERED   // 已发货
-  COMPLETED   // 已完成
-  CANCELLED   // 已取消
-  REFUNDED    // 已退款
+  PENDING // 待支付
+  PAID // 已支付
+  DELIVERED // 已发货
+  COMPLETED // 已完成
+  CANCELLED // 已取消
+  REFUNDED // 已退款
 }
 
 enum PaymentMethod {
-  ALIPAY      // 支付宝
-  WECHAT      // 微信
-  USDT_TRC20  // USDT TRC20
-  USDT_ERC20  // USDT ERC20
-  BALANCE     // 余额支付
+  ALIPAY // 支付宝
+  WECHAT // 微信
+  USDT_TRC20 // USDT TRC20
+  USDT_ERC20 // USDT ERC20
+  BALANCE // 余额支付
 }
 
 model OrderItem {
-  id          String    @id @default(cuid())
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  productId   String
-  product     Product   @relation(fields: [productId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
 
   // 快照信息
   productName String
-  price       Int       // 单价 (分)
+  price       Int // 单价 (分)
   quantity    Int
 
   // 分配的卡密
-  cardKeys    CardKey[]
+  cardKeys CardKey[]
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([orderId])
   @@index([productId])
@@ -338,37 +338,37 @@ model OrderItem {
 // ==================== 支付系统 ====================
 
 model PaymentConfig {
-  id          String        @id @default(cuid())
-  method      PaymentMethod @unique
-  name        String
+  id     String        @id @default(cuid())
+  method PaymentMethod @unique
+  name   String
 
   // 配置信息 (加密存储)
-  config      String        @db.Text  // JSON 加密
+  config String @db.Text // JSON 加密
 
-  isActive    Boolean       @default(false)
-  sort        Int           @default(0)
+  isActive Boolean @default(false)
+  sort     Int     @default(0)
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model PaymentLog {
-  id          String        @id @default(cuid())
-  orderId     String
-  order       Order         @relation(fields: [orderId], references: [id])
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
 
-  method      PaymentMethod
-  action      String        // create, callback, query, refund
+  method PaymentMethod
+  action String // create, callback, query, refund
 
   // 请求和响应
-  request     String?       @db.Text
-  response    String?       @db.Text
+  request  String? @db.Text
+  response String? @db.Text
 
   // 状态
-  success     Boolean       @default(false)
-  errorMsg    String?
+  success  Boolean @default(false)
+  errorMsg String?
 
-  createdAt   DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@index([orderId])
 }
@@ -388,35 +388,35 @@ model PaymentReceipt {
 
 // USDT 报价只生成一次，使用整数微单位精确匹配，禁止查询时重算汇率。
 model PaymentQuote {
-  id            String        @id @default(cuid())
-  orderId       String        @unique
-  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  method        PaymentMethod
-  address       String
-  amountMicros  BigInt
-  exchangeRate  Decimal       @db.Decimal(18, 8)
-  expiresAt     DateTime
-  createdAt     DateTime      @default(now())
+  id           String        @id @default(cuid())
+  orderId      String        @unique
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method       PaymentMethod
+  address      String
+  amountMicros BigInt
+  exchangeRate Decimal       @db.Decimal(18, 8)
+  expiresAt    DateTime
+  createdAt    DateTime      @default(now())
   // 仅有效报价占用该标识；到期后释放，历史流水仍由 PaymentReceipt 防重。
-  reservation   String?       @unique
+  reservation  String?       @unique
 }
 
 // ==================== 管理系统 ====================
 
 model Admin {
-  id          String      @id @default(cuid())
-  username    String      @unique
-  password    String
-  sessionVersion Int      @default(0)
-  name        String?
-  role        AdminRole   @default(OPERATOR)
+  id             String    @id @default(cuid())
+  username       String    @unique
+  password       String
+  sessionVersion Int       @default(0)
+  name           String?
+  role           AdminRole @default(OPERATOR)
 
   status      AdminStatus @default(ACTIVE)
   lastLoginAt DateTime?
   lastLoginIp String?
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([username])
 }
@@ -434,46 +434,46 @@ enum AdminStatus {
 
 // 公告
 model Announcement {
-  id          String    @id @default(cuid())
-  title       String
-  content     String    @db.Text
-  type        String    @default("info")  // info, warning, success
-  isActive    Boolean   @default(true)
-  isPinned    Boolean   @default(false)
-  sort        Int       @default(0)
+  id       String  @id @default(cuid())
+  title    String
+  content  String  @db.Text
+  type     String  @default("info") // info, warning, success
+  isActive Boolean @default(true)
+  isPinned Boolean @default(false)
+  sort     Int     @default(0)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([isActive, sort])
 }
 
 // 系统设置
 model SystemSetting {
-  id          String    @id @default(cuid())
-  key         String    @unique
-  value       String    @db.Text
+  id          String  @id @default(cuid())
+  key         String  @unique
+  value       String  @db.Text
   description String?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==================== 智能客服 ====================
 // 知识正文是唯一事实源；检索索引（包括未来的向量索引）均可重建。
 model SupportArticle {
-  id          String   @id @default(cuid())
+  id          String               @id @default(cuid())
   title       String
   question    String
-  aliases     String[] @default([])
-  keywords    String[] @default([])
-  category    String   @default("general")
-  content     String   @db.Text
+  aliases     String[]             @default([])
+  keywords    String[]             @default([])
+  category    String               @default("general")
+  content     String               @db.Text
   status      SupportArticleStatus @default(DRAFT)
-  version     Int      @default(1)
+  version     Int                  @default(1)
   publishedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 
   @@index([status, category])
   @@index([publishedAt])
@@ -485,16 +485,16 @@ enum SupportArticleStatus {
 }
 
 model SupportConversation {
-  id           String   @id @default(cuid())
-  userId       String?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  anonymousKey String?
-  contextSummary String @default("") @db.Text
-  title        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  expiresAt    DateTime
-  turns        SupportTurn[]
+  id             String        @id @default(cuid())
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  anonymousKey   String?
+  contextSummary String        @default("") @db.Text
+  title          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expiresAt      DateTime
+  turns          SupportTurn[]
 
   @@index([userId, updatedAt])
   @@index([anonymousKey, updatedAt])
@@ -502,27 +502,35 @@ model SupportConversation {
 }
 
 model SupportTurn {
-  id             String   @id @default(cuid())
-  conversationId String
-  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  requestId      String
-  userText       String   @db.Text
-  answerText     String?  @db.Text
-  sources        Json?
-  facts          Json?
-  ui             Json?
-  status         String   @default("COMPLETED")
-  feedback       Int?
-  createdAt      DateTime @default(now())
-  modelCalls     SupportModelCall[]
+  id              String              @id @default(cuid())
+  conversationId  String
+  conversation    SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  requestId       String
+  userText        String              @db.Text
+  answerText      String?             @db.Text
+  sources         Json?
+  facts           Json?
+  ui              Json?
+  status          String              @default("COMPLETED")
+  feedback        Int?
+  clientIp        String?
+  clientIpTrusted Boolean             @default(false)
+  identityHash    String?
+  modelTurn       Boolean             @default(false)
+  latencyMs       Int?
+  clearedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  modelCalls      SupportModelCall[]
 
   @@unique([conversationId, requestId])
   @@index([conversationId, createdAt])
   @@index([createdAt])
+  @@index([clientIp, createdAt])
+  @@index([identityHash, createdAt])
 }
 
 model SupportModelCall {
-  id               String   @id @default(cuid())
+  id               String      @id @default(cuid())
   turnId           String
   turn             SupportTurn @relation(fields: [turnId], references: [id], onDelete: Cascade)
   provider         String
@@ -534,16 +542,26 @@ model SupportModelCall {
   outputTokens     Int?
   reasoningTokens  Int?
   totalTokens      Int?
-  estimatedCost    Decimal? @db.Decimal(18, 8)
-  currency         String   @default("USD")
-  usageStatus      String   @default("MISSING")
+  estimatedCost    Decimal?    @db.Decimal(18, 8)
+  currency         String      @default("USD")
+  usageStatus      String      @default("MISSING")
   latencyMs        Int?
-  success          Boolean  @default(false)
+  success          Boolean     @default(false)
   errorCode        String?
-  createdAt        DateTime @default(now())
+  phase            String      @default("answer")
+  sequence         Int         @default(0)
+  budgetDay        DateTime?
+  reservedCents    Int         @default(0)
+  settledCents     Int?
+  rateSnapshot     Json?
+  reservedCny      Decimal     @default(0) @db.Decimal(18, 8)
+  settledCny       Decimal?    @db.Decimal(18, 8)
+  accountingState  String      @default("LEGACY")
+  createdAt        DateTime    @default(now())
 
   @@index([createdAt])
   @@index([provider, requestModel, createdAt])
+  @@index([phase, createdAt])
 }
 
 model SupportBudgetDay {
@@ -551,5 +569,41 @@ model SupportBudgetDay {
   reservedCents Int      @default(0)
   settledCents  Int      @default(0)
   alertSent     Boolean  @default(false)
+  reservedCny   Decimal  @default(0) @db.Decimal(18, 8)
+  settledCny    Decimal  @default(0) @db.Decimal(18, 8)
   updatedAt     DateTime @updatedAt
+}
+
+model SupportBlock {
+  id        String    @id @default(cuid())
+  kind      String
+  keyHash   String
+  label     String
+  reason    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdBy String
+  revokedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([kind, keyHash, expiresAt])
+  @@index([expiresAt])
+}
+
+model SupportRiskEvent {
+  id           String   @id @default(cuid())
+  category     String
+  identityHash String?
+  userId       String?
+  clientIp     String?
+  details      Json?
+  bucket       String?  @unique
+  count        Int      @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([identityHash, createdAt])
+  @@index([clientIp, createdAt])
 }
