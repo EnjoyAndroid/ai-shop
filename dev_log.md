@@ -4,6 +4,14 @@
 
 历史条目描述当时的阶段与实现，不等于当前线上状态；后续发布、替代方案和未完成项以较新的结论为准。当前功能说明见中英文 README 和专题文档。测试原始日志、备份及配置只保存在本地忽略目录，仓库保留可独立理解的脱敏结论。
 
+## 2026-10-25 03:11 客服增强与真实IP修复已发布生产
+
+- **版本**：功能提交 `2ca1503` 已推送 origin/main。部署候选 `20261024185759-80df8fb7b23c`，镜像 `sha256:7749c0ba90dc783f28cdbf55c040088ff41e70fe03e3aa740e72599343c05e10`；复用与提交源码完全一致的本地生产构建及12项门禁结果。远程推送提示绕过必需 verify 检查，不能视作远程CI通过。
+- **部署与备份**：部署记录 `20261024191101-c3c403`；先备份生产数据库和配置，再显式应用两项客服迁移，仅更新app并reload Nginx。数据库、Redis、Nginx容器ID、镜像和启动时间未变。完整备份位于该部署目录，含 before.dump 与 nginx-before-ip.conf。
+- **IP结果**：应用精确隧道入口白名单的Nginx配置后，公网正常访问、伪造X-Real-IP和X-Forwarded-For三个FAQ请求均记录可信IP，且与Cloudflare trace观察地址一致；三次耗时534/352/378ms，均0模型调用。组合伪造含CF-Connecting-IP的头返回403且未创建问答。只验证新请求，历史未知IP不补写。
+- **线上验证**：3010及公网健康200；后台统计/风控/预算接口继续由Cloudflare Access保护；生产客服迁移已完成。记录不包含真实访客IP、Cookie或凭据。
+- **权威证据与回退**：`.deploy/client-ip/production-verification.json`、`.deploy/client-ip/production-proxy-apply.json` 和 `.deploy/deployments/20261024191101-c3c403/deployment.json`。应用可按既有镜像流程回退；代理单独原位恢复nginx-before-ip.conf后语法校验/reload，不能恢复旧数据库覆盖新订单。
+
 ## 2026-10-25 客服问答标题吸顶与游客ID搜索
 
 - “问答记录”标题到达视口顶部时吸顶，使用不透明背景隔开滚动内容，不改变各条问答展开行为。
