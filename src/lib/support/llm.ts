@@ -78,7 +78,7 @@ function boundedResult(value: unknown): unknown {
 }
 export async function generateSupportAnswer(input: {
   question: string; history: Array<{ role: 'user' | 'assistant'; content: string }>; summary: string; config: SupportConfig;
-  execute: (name: string, args: unknown) => Promise<unknown>;
+  execute: (name: string, args: unknown, signal?: AbortSignal) => Promise<unknown>;
   beforeCall: (start: SupportCallStart) => Promise<boolean | { callId: string }>;
   recordCall: (call: SupportCallRecord) => Promise<void>;
   signal?: AbortSignal; fetcher?: typeof fetch;
@@ -126,8 +126,8 @@ export async function generateSupportAnswer(input: {
     const scopeInput = JSON.stringify({ question: input.question, history, summary });
     const instructions = `${SUPPORT_SCOPE_INSTRUCTIONS}\n查询参数定义（不是可直接执行的工具）：${JSON.stringify(supportTools)}`;
     const body = chat
-      ? { model: config.model, messages: [{ role:'system', content:instructions }, { role:'user', content:scopeInput }], max_tokens:256, store:false }
-      : { model: config.model, instructions, input: [{ role:'user', content:scopeInput }], max_output_tokens:256, store:false };
+      ? { model: config.model, messages: [{ role:'system', content:instructions }, { role:'user', content:scopeInput }], max_tokens:SUPPORT_LIMITS.plannerMaxOutputTokens, store:false }
+      : { model: config.model, instructions, input: [{ role:'user', content:scopeInput }], max_output_tokens:SUPPORT_LIMITS.plannerMaxOutputTokens, store:false };
     await requestModel(body, 'scope', data => {
       try {
         if (data.choices?.[0]?.message?.tool_calls?.length || data.output?.some((item:any) => item.type === 'function_call')) throw new Error();
@@ -145,7 +145,13 @@ export async function generateSupportAnswer(input: {
   const cache = new Map<string, Promise<unknown>>();
   async function execute(name: string, args: unknown): Promise<unknown> {
     check(); const parsed = validateSupportTool(name,args), key = `${name}:${JSON.stringify(parsed)}`;
-    if (!cache.has(key)) cache.set(key, input.execute(name,parsed).then(boundedResult).catch(() => queryFailure));
+    if (!cache.has(key)) cache.set(key, new Promise<unknown>((resolve,reject)=>{
+      const abort=()=>reject(new SupportLlmError(input.signal?.aborted?'CANCELLED':'TIMEOUT','客服请求已取消或超时'));
+      signal.addEventListener('abort',abort,{once:true});
+      const pending=Promise.resolve().then(()=>{check();return input.execute(name,parsed,signal);}).then(boundedResult);
+      pending.then(resolve,()=>resolve(queryFailure)).finally(()=>signal.removeEventListener('abort',abort));
+      if(signal.aborted)abort();
+    }));
     const result = await cache.get(key); check(); return result;
   }
   // Whole plan has already been validated before any tool executes.
@@ -156,8 +162,8 @@ export async function generateSupportAnswer(input: {
   for (let round=1; round<MAX_AGENT_ROUNDS; round++) {
     check(); const last = round === MAX_AGENT_ROUNDS-1;
     const body = chat
-      ? { model:config.model, messages, tools:supportTools.map(({type,...tool}) => ({type,function:tool})), tool_choice:last?'none':'auto', max_tokens:1000, store:false }
-      : { model:config.model, instructions:SUPPORT_INSTRUCTIONS, input:messages, tools:supportTools, tool_choice:last?'none':'auto', max_output_tokens:1000, store:false };
+      ? { model:config.model, messages, tools:supportTools.map(({type,...tool}) => ({type,function:tool})), tool_choice:last?'none':'auto', max_tokens:SUPPORT_LIMITS.answerMaxOutputTokens, store:false }
+      : { model:config.model, instructions:SUPPORT_INSTRUCTIONS, input:messages, tools:supportTools, tool_choice:last?'none':'auto', max_output_tokens:SUPPORT_LIMITS.answerMaxOutputTokens, store:false };
     const data = await requestModel(body,'answer');
     const calls = chat ? (data.choices?.[0]?.message?.tool_calls || []).map((c:any) => ({id:c.id,name:c.function?.name,arguments:c.function?.arguments}))
       : (data.output || []).filter((c:any) => c.type==='function_call').map((c:any) => ({id:c.call_id,name:c.name,arguments:c.arguments}));

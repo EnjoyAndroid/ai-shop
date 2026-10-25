@@ -1,4 +1,4 @@
-/** Fixed support limits are intentionally code controlled; they are not admin settings. */
+/** Safety limits remain code controlled; selected quotas and retention windows are runtime settings. */
 export const SUPPORT_LIMITS = {
   plannerMaxOutputTokens: 256,
   answerMaxOutputTokens: 1000,

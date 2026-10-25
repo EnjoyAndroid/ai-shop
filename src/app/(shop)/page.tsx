@@ -71,32 +71,20 @@ export default async function HomePage() {
       </main>
 
       {/* 页脚 */}
-      <footer className="bg-gray-800 text-gray-300 py-8">
+      <footer className="bg-gray-50 text-slate-500">
         <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <h3 className="text-white font-bold mb-4">AI Shop</h3>
-              <p className="text-sm">专业的 AI 服务充值平台</p>
+          <div className="border-t border-slate-200/70 py-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm font-semibold text-slate-700">AI Shop</span>
+                <span className="text-xs">专业的 AI 服务充值平台</span>
+              </div>
+              {(wechatSupportText || wechatSupportQrUrl || telegramUrl) && <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                {(wechatSupportText || wechatSupportQrUrl) && <WechatSupport text={wechatSupportText} qrUrl={wechatSupportQrUrl} className="transition-colors hover:text-primary" />}
+                {telegramUrl && <a href={telegramUrl} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-primary">Telegram</a>}
+              </div>}
             </div>
-            <div className="md:text-right">
-              <h3 className="text-white font-bold mb-4">联系我们</h3>
-              <ul className="space-y-2 text-sm">
-                {(wechatSupportText || wechatSupportQrUrl) && <li><WechatSupport text={wechatSupportText} qrUrl={wechatSupportQrUrl} className="hover:text-white" /></li>}
-                {telegramUrl && <li>
-                  <a
-                    href={telegramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-white"
-                  >
-                    Telegram
-                  </a>
-                </li>}
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-700 mt-8 pt-8 text-center text-sm">
-            © 2026 AI Shop. All rights reserved.
+            <p className="mt-3 text-xs">© 2026 AI Shop. All rights reserved.</p>
           </div>
         </div>
       </footer>

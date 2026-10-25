@@ -2,6 +2,7 @@ import prisma from "@/lib/db";
 import { getPublicContactSettings } from "@/lib/contact-settings";
 import { isPaymentEnabled } from "@/lib/payment/config";
 import { getSettings } from "@/lib/services/settings.service";
+import { withSupportDbAbort } from "./db-abort";
 
 export interface SupportSource {
   id: string;
@@ -33,7 +34,7 @@ export interface SupportKnowledgeResult {
 }
 
 export interface KnowledgeRetriever {
-  search(query: string, limit?: number): Promise<SupportKnowledgeResult>;
+  search(query: string, limit?: number, signal?: AbortSignal): Promise<SupportKnowledgeResult>;
 }
 
 function normalize(value: string): string { return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
@@ -72,19 +73,19 @@ export function rankSupportKnowledge(query: string, articles: SupportKnowledgeAr
 }
 
 export const postgresKnowledgeRetriever: KnowledgeRetriever = {
-  async search(query: string, limit = 6): Promise<SupportKnowledgeResult> {
-    const articles = await prisma.supportArticle.findMany({
+  async search(query: string, limit = 6, signal?: AbortSignal): Promise<SupportKnowledgeResult> {
+    const articles = await withSupportDbAbort(signal, tx => tx.supportArticle.findMany({
       where: { status: "PUBLISHED" },
       select: { id: true, title: true, question: true, aliases: true, keywords: true, category: true, content: true, version: true },
       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
       take: 500,
-    });
+    }));
     return rankSupportKnowledge(query, articles, limit);
   },
 };
 
-export async function searchSupportKnowledge(query: string, limit = 6) {
-  return postgresKnowledgeRetriever.search(query, limit);
+export async function searchSupportKnowledge(query: string, limit = 6, signal?: AbortSignal) {
+  return postgresKnowledgeRetriever.search(query, limit, signal);
 }
 
 export async function getSupportFacts(userId?: string, options: { inStockOnly?: boolean } = {}): Promise<SupportFacts> {

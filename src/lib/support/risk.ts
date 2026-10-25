@@ -1,3 +1,4 @@
+import { getSupportPolicy } from './policy-store';
 import { createHash, randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/db';
@@ -73,10 +74,11 @@ export function riskKeys(identity: RiskIdentity, ip: ClientIpInfo, question: str
 }
 export async function acquireSupportPermit(identity: RiskIdentity, ip: ClientIpInfo, question: string, now = new Date()) {
   await checkSupportBlock(identity, ip);
+  const config = await getSupportPolicy();
   const keys = riskKeys(identity, ip, question, now), token = randomUUID();
   const daySeconds = Math.max(1, Math.ceil((dayStartShanghai(now).getTime()+86400000-now.getTime())/1000));
   const result = await redis.eval(admitLua, keys.length, ...keys, now.getTime(), L.leaseMs, token,
-    identity.userId ? L.memberPerMinute : L.guestPerMinute, identity.userId ? L.memberDailyModelTurns : L.guestDailyModelTurns,
+    identity.userId ? (config.memberPerMinute ?? L.memberPerMinute) : (config.guestPerMinute ?? L.guestPerMinute), identity.userId ? (config.memberDailyModelTurns ?? L.memberDailyModelTurns) : (config.guestDailyModelTurns ?? L.guestDailyModelTurns),
     L.ipDaily, L.duplicateThreshold, L.violationThreshold, L.violationWindowSeconds, L.cooldownSeconds, daySeconds, L.ipConcurrent, L.globalConcurrent) as [string, number];
   if (result[0] !== 'OK') throw new SupportRiskError(result[0], messages[result[0]] || messages.RATE_LIMIT, Number(result[1]));
   let released = false;

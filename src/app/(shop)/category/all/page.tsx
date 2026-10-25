@@ -66,7 +66,7 @@ export default async function AllProductsPage() {
       </main>
 
       {/* 页脚 */}
-      <footer className="bg-gray-800 text-gray-300 py-8 mt-12">
+      <footer className="mt-12 border-t border-slate-200 bg-white py-10 text-slate-500">
         <div className="container mx-auto px-4 text-center text-sm">
           © 2026 AI Shop. All rights reserved.
         </div>

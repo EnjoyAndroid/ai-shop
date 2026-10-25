@@ -62,6 +62,29 @@ test('tool loop and budget limits stop requests; upstream 503 is recorded withou
   const error=harness([{statusCode:503,data:{error:{type:'api_error'}}}]);await assert.rejects(generateSupportAnswer(error.input),/网关/);assert.equal(error.records[1].errorCode,'UPSTREAM_503');assert.equal(error.records[1].success,false);assert.equal(error.records[1].usage.totalTokens,null);
 });
 
+test('planned and follow-up tools stop on cancellation without another model call',async()=>{
+  for(const planned of [true,false]){
+    const controller=new AbortController();
+    const h=harness(planned?[]:[{output:[{type:'function_call',call_id:'slow',name:'get_contacts',arguments:'{}'}],usage}], 'responses',
+      {decision:'allow',queries:planned?[{name:'get_contacts',arguments:{}}]:[]});
+    let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
+    const execute=async()=>{entered();return new Promise(()=>{});};
+    const pending=generateSupportAnswer({...h.input,signal:controller.signal,execute});
+    await started;controller.abort();
+    await assert.rejects(pending,(error:any)=>error.code==='CANCELLED');
+    assert.equal(h.bodies.length,planned?1:2);
+  }
+});
+
+test('a tool that never completes is bounded by the total model deadline',async t=>{
+  const timeout=AbortSignal.timeout;
+  t.mock.method(AbortSignal,'timeout',(ms:number)=>timeout(ms===65000?20:ms));
+  const h=harness([],'responses',{decision:'allow',queries:[{name:'get_contacts',arguments:{}}]});
+  const keepAlive=setTimeout(()=>{},1000);
+  try {await assert.rejects(generateSupportAnswer({...h.input,execute:async()=>new Promise(()=>{})}),(error:any)=>error.code==='TIMEOUT');assert.equal(h.bodies.length,1);}
+  finally{clearTimeout(keepAlive);}
+});
+
 test('tool query failures are distinguished from empty matches and can be clarified',async()=>{
   const h=harness([{output:[{type:'function_call',call_id:'a',name:'search_products',arguments:'{"query":"x"}'}],usage},{output_text:'查询暂时失败，请稍后重试。',usage}]);
   assert.match(await generateSupportAnswer({...h.input,execute:async()=>{throw new Error('db unavailable');}}),/失败/);

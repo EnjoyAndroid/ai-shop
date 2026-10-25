@@ -1,3 +1,4 @@
+import { getSupportPolicy, SUPPORT_CONFIG_LOCK } from './policy-store';
 import { randomBytes, randomUUID } from "crypto";
 import { cookies } from "next/headers";
 import { Prisma } from "@prisma/client";
@@ -119,17 +120,23 @@ const turnOrder = [{ createdAt: "desc" as const }, { id: "desc" as const }];
 export async function createSupportConversation(identity: SupportIdentity) {
   return prisma.supportConversation.create({ data: { userId: identity.userId, anonymousKey: identity.userId ? null : identity.anonymousKey, expiresAt: supportExpiry(identity) }, select: { id: true, title: true, createdAt: true, turns: { select: turnFields } } });
 }
+async function retainedSupportTurns() {
+  const policy=await getSupportPolicy();
+  return {clearedAt:null,createdAt:{gt:new Date(Date.now()-policy.detailRetentionDays*86400000)}};
+}
 export async function getLatestSupportConversation(identity: SupportIdentity) {
+  const retained=await retainedSupportTurns();
   const conversation = await prisma.supportConversation.findFirst({
     where: { expiresAt: { gt: new Date() }, ...supportConversationScope(identity) },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    select: { id: true, title: true, createdAt: true, turns: { orderBy: turnOrder, take: 40, select: turnFields } },
+    select: { id: true, title: true, createdAt: true, turns: { where:retained, orderBy: turnOrder, take: 40, select: turnFields } },
   });
-  return conversation ? { ...conversation, turns: conversation.turns.reverse() } : null;
+  return conversation ? { ...conversation, title:conversation.createdAt>retained.createdAt.gt?conversation.title:null, turns: conversation.turns.reverse() } : null;
 }
 export async function getSupportConversation(id: string, identity: SupportIdentity) {
-  const conversation = await prisma.supportConversation.findFirst({ where: { id, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, turns: { orderBy: turnOrder, take: 40, select: turnFields } } });
-  return conversation ? { ...conversation, turns: conversation.turns.reverse() } : null;
+  const retained=await retainedSupportTurns();
+  const conversation = await prisma.supportConversation.findFirst({ where: { id, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, createdAt:true, turns: { where:retained, orderBy: turnOrder, take: 40, select: turnFields } } });
+  return conversation ? { ...conversation, title:conversation.createdAt>retained.createdAt.gt?conversation.title:null, turns: conversation.turns.reverse() } : null;
 }
 export function fallbackAnswer(question: string, knowledgeAnswer: string, facts: SupportFacts): string {
   // Dynamic questions must be answered from current business facts before
@@ -161,20 +168,23 @@ export async function answerSupportTurn(conversationId: string, requestId: strin
   const lockToken = randomUUID();
   if (await redis.set(lockKey, lockToken, "PX", 120000, "NX") !== "OK") throw new SupportRequestError("客服正在回答，请稍后再试", 409);
   const signal = AbortSignal.any([...(requestSignal ? [requestSignal] : []), AbortSignal.timeout(SUPPORT_LIMITS.totalTimeoutMs)]);
-  try { return await answerLocked(conversationId, requestId, question, identity, clientIp, signal); }
+  let createdTurnId: string | undefined;
+  try { return await answerLocked(conversationId, requestId, question, identity, clientIp, signal, id=>{createdTurnId=id;}); }
   catch (error) {
-    await prisma.supportTurn.updateMany({ where: { conversationId, requestId, status: 'PROCESSING' }, data: { status: signal.aborted ? 'CANCELLED' : 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
+    if(createdTurnId) await prisma.supportTurn.updateMany({ where: { id:createdTurnId, conversationId, requestId, clearedAt:null, conversation:supportConversationScope(identity), status: 'PROCESSING' }, data: { status: signal.aborted ? 'CANCELLED' : 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
     throw error;
   }
   finally { await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", 1, lockKey, lockToken); }
 }
 
-async function answerLocked(conversationId: string, requestId: string, question: string, identity: SupportIdentity, clientIp: ClientIpInfo, requestSignal?: AbortSignal) {
+async function answerLocked(conversationId: string, requestId: string, question: string, identity: SupportIdentity, clientIp: ClientIpInfo, requestSignal?: AbortSignal, onCreated?: (id:string)=>void) {
   const started = Date.now();
-  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, expiresAt: true, contextSummary: true, turns: { where: { status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, take: 12, select: turnFields } } });
+  const retained=await retainedSupportTurns();
+  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, createdAt:true, expiresAt: true, contextSummary: true, turns: { where: { ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, take: 12, select: turnFields } } });
   if (!conversation) throw new SupportRequestError("客服会话不存在或已过期", 404);
-  const existing = await prisma.supportTurn.findUnique({ where: { conversationId_requestId: { conversationId, requestId } }, select: { id: true, answerText: true, status: true, ui: true } });
+  const existing = await prisma.supportTurn.findUnique({ where: { conversationId_requestId: { conversationId, requestId } }, select: { id: true, createdAt:true, clearedAt:true, answerText: true, status: true, ui: true } });
   if (existing) {
+    if(existing.clearedAt||existing.createdAt<=retained.createdAt.gt)throw new SupportRequestError("问答已超过保留期，请重新提问",410);
     if (existing.status.startsWith('RISK_')) throw new SupportRequestError(existing.answerText || '客服请求受限', 429, existing.status.slice(5), 60);
     await touchSupportConversation(conversationId, identity);
     if (!existing.answerText) throw new SupportRequestError("上次回答未完成，请重新提问", 409);
@@ -182,10 +192,22 @@ async function answerLocked(conversationId: string, requestId: string, question:
   }
   if (!await rateLimit("support-identity", identity.userId || identity.anonymousKey, 30, 60)) throw new SupportRequestError("客服请求过于频繁，请稍后再试", 429);
   await touchSupportConversation(conversationId, identity);
-  let summary = conversation.contextSummary;
+  let summary = conversation.createdAt>retained.createdAt.gt ? conversation.contextSummary : '';
+  const retainedTitle=conversation.createdAt>retained.createdAt.gt?conversation.title:null;
+  const contextDates=conversation.turns.map(turn=>turn.createdAt);
+  if(summary||retainedTitle)contextDates.push(conversation.createdAt);
   if (!summary && conversation.turns.length === 12) {
-    const older = await prisma.supportTurn.findMany({ where: { conversationId, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: 12, take: 30, select: { userText: true, answerText: true } });
+    const older = await prisma.supportTurn.findMany({ where: { conversationId, ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: 12, take: 30, select: { userText: true, answerText: true, createdAt:true } });
+    contextDates.push(...older.map(turn=>turn.createdAt));
     summary = older.reverse().map(t => `用户关注：${t.userText.slice(0, 150)}；当时回答（可能过时）：${(t.answerText || "未完成").slice(0, 120)}`).join("\n").slice(-6000);
+  }
+  async function assertContextRetained(client: Pick<Prisma.TransactionClient,'systemSetting'|'supportTurn'> = prisma) {
+    const policy=await getSupportPolicy(client);
+    const cutoff=Date.now()-policy.detailRetentionDays*86400000;
+    const cleaned=await client.supportTurn.count({where:{conversationId,clearedAt:{gte:new Date(started)}}});
+    if(cleaned || contextDates.some(date=>date.getTime()<=cutoff)) {
+      throw new SupportRequestError('对话上下文已更新，请重新提问',409,'CONTEXT_EXPIRED');
+    }
   }
   const safeQuestion = redactSupportText(question.trim());
   const trustedFaq = trustedSupportFaq(question);
@@ -194,6 +216,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
   const outOfScope = isOutOfScopeSupportQuestion(question);
   const greeting = supportGreetingAnswer(safeQuestion);
   const turn = await prisma.supportTurn.create({ data: { conversationId, requestId, userText: safeQuestion, status: "PROCESSING", clientIp: clientIp.trusted ? clientIp.value : null, clientIpTrusted: clientIp.trusted, identityHash, modelTurn: false } });
+  onCreated?.(turn.id);
   const sources: unknown[] = [];
   const evidence: Array<{ tool: string; arguments: unknown; result: unknown }> = [];
   let answer = "";
@@ -210,21 +233,31 @@ async function answerLocked(conversationId: string, requestId: string, question:
     // and tool-selection round trips. Reuse the deterministic query path below.
     status = "FAQ";
   } else if (supportModelConfigured(config)) {
+    const pendingTools = new Set<Promise<unknown>>();
     try {
       permitRelease = await acquireSupportPermit(identity, clientIp, safeQuestion);
       answer = await generateSupportAnswer({ question: safeQuestion, history: recentContext(conversation.turns), summary, config,
         beforeCall: async start => {
+          await assertContextRetained();
           if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
           await checkSupportBlock(identity, clientIp);
           await checkSupportCircuit();
           return reserveSupportCall(turn.id, start, config);
         },
-        execute: async (name, args) => {
-          if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
-          const result = await executeSupportTool(name, args, identity.userId);
-          evidence.push({ tool: name, arguments: args, result });
-          if (name === "search_knowledge" && result && typeof result === "object" && "sources" in result) sources.push(...(result as { sources: unknown[] }).sources);
-          return modelToolResult(name, result);
+        execute: (name, args, signal) => {
+          const pending = (async () => {
+            signal?.throwIfAborted();
+            await assertContextRetained();
+            if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
+            const result = await executeSupportTool(name, args, identity.userId, signal);
+            signal?.throwIfAborted();
+            evidence.push({ tool: name, arguments: args, result });
+            if (name === "search_knowledge" && result && typeof result === "object" && "sources" in result) sources.push(...(result as { sources: unknown[] }).sources);
+            return modelToolResult(name, result);
+          })();
+          pendingTools.add(pending);
+          void pending.then(() => pendingTools.delete(pending), () => pendingTools.delete(pending));
+          return pending;
         },
         recordCall: async call => {
           await settleSupportCall(call);
@@ -240,15 +273,21 @@ async function answerLocked(conversationId: string, requestId: string, question:
         await recordRisk(error.code, identity, clientIp, { retryAfter: error.retryAfter });
       } else
       if (error instanceof SupportLlmError && ["OUT_OF_SCOPE", "SCOPE_CLARIFY", "SCOPE_UNAVAILABLE"].includes(error.code)) {
+        await recordModelOutcome(error.code === 'SCOPE_UNAVAILABLE');
         answer = error.code === "OUT_OF_SCOPE" ? SUPPORT_SCOPE_REFUSAL : error.code === "SCOPE_CLARIFY" ? SUPPORT_SCOPE_CLARIFICATION : SUPPORT_SCOPE_UNAVAILABLE;
         status = error.code;
       } else {
-        if (error instanceof SupportLlmError && !['CANCELLED', 'OUT_OF_SCOPE', 'SCOPE_CLARIFY'].includes(error.code)) await recordModelOutcome(true);
+        if (error instanceof SupportLlmError && !['CANCELLED', 'BUDGET', 'INPUT_LIMIT', 'OUT_OF_SCOPE', 'SCOPE_CLARIFY'].includes(error.code)) await recordModelOutcome(true);
         status = error instanceof SupportLlmError ? error.code === 'CANCELLED' ? 'CANCELLED' : `FALLBACK_${error.code}` : 'FALLBACK_ERROR';
         // Before planning succeeds, never bypass scope checks with broad data lookup.
         answer = status === 'CANCELLED' ? '本次请求已取消，请重新提问。' : '智能回答暂时不可用，请使用常见问题或联系人工客服。';
       }
-    } finally { if (permitRelease) await permitRelease(); }
+    } finally {
+      // Cancellation returns from the model wrapper first. Keep the permit until
+      // its database tools have stopped and their transactions have rolled back.
+      await Promise.allSettled([...pendingTools]);
+      if (permitRelease) await permitRelease();
+    }
   }
   let savedFacts: unknown = { queries: evidence };
   if (!answer) {
@@ -270,9 +309,11 @@ async function answerLocked(conversationId: string, requestId: string, question:
   answer = redactSupportText(answer).replace(/^(?:参考[：:].*|知识\d+《.*》)\s*$/gm, "").trim();
   const ui = buildSupportUi(evidence, answer, identity.userId);
   answer = cleanSupportAnswer(answer, ui);
-  // An expired or retired session must not receive a late answer.
+  // Serialize with retention changes/cleanup: no stale answer or summary can revive cleared data.
   await prisma.$transaction(async tx => {
-    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: conversation.title || safeQuestion.slice(0, 40), contextSummary: ["FAQ", "COMPLETED", "FALLBACK"].includes(status) ? nextContextSummary(summary, conversation.turns) : summary } });
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SUPPORT_CONFIG_LOCK})`;
+    await assertContextRetained(tx);
+    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: retainedTitle || safeQuestion.slice(0, 40), contextSummary: ["FAQ", "COMPLETED", "FALLBACK"].includes(status) ? nextContextSummary(summary, conversation.turns) : summary } });
     if (!valid.count) throw new SupportRequestError("客服会话不存在或已过期", 404);
     await tx.supportTurn.update({ where: { id: turn.id }, data: { answerText: answer, status, latencyMs: Date.now() - started, sources: sources as Prisma.InputJsonValue, facts: JSON.parse(JSON.stringify(savedFacts)), ui: JSON.parse(JSON.stringify(ui)) } });
   });
@@ -289,16 +330,18 @@ export { supportUsageSummary, listSupportRisk, createSupportBlock, revokeSupport
 
 /** Content ages independently of conversation activity; usage keeps a longer lifetime. */
 export async function cleanupSupportData(now = new Date()) {
-  const cutoff = new Date(now.getTime() - 90 * 86400000);
-  const callCutoff = new Date(now.getTime() - 180 * 86400000);
   const result = await prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SUPPORT_CONFIG_LOCK})`;
+    const retention = await getSupportPolicy(tx);
+    const cutoff = new Date(now.getTime() - retention.detailRetentionDays * 86400000);
+    const callCutoff = new Date(now.getTime() - retention.usageRetentionDays * 86400000);
     const stale = await tx.supportTurn.findMany({ where: { createdAt: { lt: cutoff }, clearedAt: null }, select: { id: true, conversationId: true }, take: 1000 });
     const turns = await tx.supportTurn.updateMany({ where: { id: { in: stale.map(t => t.id) } }, data: { userText: '[对话内容已按保留策略清理]', answerText: null, sources: Prisma.JsonNull, facts: Prisma.JsonNull, ui: Prisma.JsonNull, clientIp: null, clientIpTrusted: false, identityHash: null, clearedAt: now } });
     // Summaries can contain excerpts from any expired turn.
     await tx.supportConversation.updateMany({ where: { id: { in: [...new Set(stale.map(t => t.conversationId))] } }, data: { contextSummary: '', title: null } });
     await tx.supportConversation.updateMany({ where: { expiresAt: { lt: cutoff } }, data: { userId: null, anonymousKey: null, contextSummary: '', title: null } });
     await tx.supportModelCall.updateMany({ where: { accountingState: 'PENDING', createdAt: { lt: new Date(now.getTime()-120000) } }, data: { accountingState: 'UNCERTAIN', usageStatus: 'MISSING', errorCode: 'INTERRUPTED' } });
-    await tx.supportTurn.updateMany({ where: { status: 'PROCESSING', createdAt: { lt: new Date(now.getTime()-120000) } }, data: { status: 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
+    await tx.supportTurn.updateMany({ where: { status: 'PROCESSING', clearedAt:null, createdAt: { lt: new Date(now.getTime()-120000) } }, data: { status: 'FAILED', answerText: '本次回答未完成，请重新提问。' } });
     const calls = await tx.supportModelCall.deleteMany({ where: { createdAt: { lt: callCutoff } } });
     await tx.supportTurn.deleteMany({ where: { createdAt: { lt: callCutoff }, modelCalls: { none: {} } } });
     await tx.supportConversation.deleteMany({ where: { expiresAt: { lt: callCutoff }, turns: { none: {} } } });

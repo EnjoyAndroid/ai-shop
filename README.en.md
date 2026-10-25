@@ -100,8 +100,8 @@ Purchase flow: **Choose a product → Enter email and lookup password → Pay �
 - **Permanent community entry:** the homepage and README share a join page; admins replace the group QR code and optionally set an expiry time. Expired codes are hidden.
 - **Admin roles:** OPERATOR handles products and delivery; ADMIN manages users and finances; SUPER_ADMIN manages system settings and Support & community configuration.
 - **Admin navigation:** management pages share a persistent sidebar; transitions load only the content area, with loading placeholders, progress indicators, and retry support.
-- **Smart support administration:** edit and publish support knowledge, configure the shop's dedicated sub2api model, and inspect input, output, cache, reasoning-token, and estimated-cost metrics.
-- **Support response time:** the six preset FAQs and complete aliases read published knowledge and current business data without model round trips; the available-stock FAQ lists only active products with stock greater than zero; free-form questions use one bounded planning call followed by one answer call, with the existing read-only tools and fixed abuse limits.
+- **Smart support administration:** edit and publish support knowledge, inspect model status and token/cost metrics, and manage the daily budget, detail/usage retention, and guest/member daily and per-minute quotas in Settings.
+- **Support response time:** the six preset FAQs and complete aliases read published knowledge and current business data without model round trips; the available-stock FAQ lists only active products with stock greater than zero; free-form questions use one bounded planning call followed by one answer call, with the existing read-only tools and configurable question quotas and fixed safety limits.
 
 ### Payments and notifications
 

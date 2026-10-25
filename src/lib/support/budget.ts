@@ -25,20 +25,20 @@ export function reservationCost(start: SupportCallStart, config: SupportConfig) 
   const inputRate = Math.max(config.inputUsdPerMillion, config.cachedInputUsdPerMillion, config.cacheWriteUsdPerMillion);
   return rounded(decimal(bytes + 2048).mul(inputRate).add(decimal(start.maxOutputTokens).mul(config.outputUsdPerMillion)).div(1_000_000).mul(config.usdCnyRate));
 }
-export async function currentSupportBudget(fallback: number) {
+export async function currentSupportBudget(fallback: number, client: Pick<Prisma.TransactionClient, 'systemSetting'> = prisma) {
   // Read the budget directly: cache failure must not reopen a disabled model.
-  const setting = await prisma.systemSetting.findUnique({ where: { key: 'supportDailyBudgetCny' }, select: { value: true } });
+  const setting = await client.systemSetting.findUnique({ where: { key: 'supportDailyBudgetCny' }, select: { value: true } });
   const amount = setting ? Number(setting.value) : fallback;
   if (!Number.isFinite(amount) || amount < 0 || amount > 100000) throw new Error('INVALID_SUPPORT_BUDGET');
   return amount;
 }
 export async function reserveSupportCall(turnId: string, start: SupportCallStart, config: SupportConfig) {
   const day = dayStartShanghai();
-  const budget = await currentSupportBudget(config.dailyBudgetCny);
-  if (budget === 0) return false;
   const amount = reservationCost(start, config);
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`support-budget:${day.toISOString()}`}))`;
+    const budget = await currentSupportBudget(config.dailyBudgetCny, tx);
+    if (budget === 0) return false;
     // Legacy calls still count when upgrading mid-day. Never fabricate missing usage.
     const legacy = await tx.supportModelCall.aggregate({ where: { accountingState: 'LEGACY', createdAt: { gte: day, lt: new Date(day.getTime() + 86400000) } }, _sum: { estimatedCost: true } });
     const account = await tx.supportBudgetDay.upsert({ where: { day }, create: { day }, update: {} });

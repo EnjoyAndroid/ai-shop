@@ -210,8 +210,82 @@ try {
     assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:0},{Cookie:cookie()})).status,200);
     const cfg=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();assert.equal(cfg.dailyBudgetCny,0);assert(!('baseUrl' in cfg));assert(!('apiKey' in cfg));
     assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:10,model:'ignored'},{Cookie:cookie()})).status,400);
+    const policyFields=['detailRetentionDays','usageRetentionDays','guestDailyModelTurns','memberDailyModelTurns','guestPerMinute','memberPerMinute'];
+    const originalPolicy=Object.fromEntries(policyFields.map(key=>[key,cfg[key]]));
+    const changedPolicy={detailRetentionDays:30,usageRetentionDays:60,guestDailyModelTurns:7,memberDailyModelTurns:17,guestPerMinute:2,memberPerMinute:4};
+    try {
+      assert.equal((await jsonPost('/api/admin/support/config',changedPolicy)).status,403);
+      assert.equal((await jsonPost('/api/admin/support/config',changedPolicy,{Cookie:cookie(),Origin:'https://untrusted.invalid'})).status,403);
+      assert.equal((await jsonPost('/api/admin/support/config',changedPolicy,{Cookie:cookie()})).status,200);
+      const fresh=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();
+      for(const key of policyFields)assert.equal(fresh[key],changedPolicy[key]);
+      assert.equal(fresh.dailyBudgetCny,0); // Partial updates preserve the budget.
+      for(const invalid of [{guestPerMinute:0},{memberDailyModelTurns:1.5},{detailRetentionDays:366},{usageRetentionDays:731},{guestDailyModelTurns:10001},{memberPerMinute:1001},{usageRetentionDays:20},{detailRetentionDays:61},{}]){
+        assert.equal((await jsonPost('/api/admin/support/config',invalid,{Cookie:cookie()})).status,400);
+      }
+      const intact=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();
+      for(const key of policyFields)assert.equal(intact[key],changedPolicy[key]);
+    } finally {
+      assert.equal((await jsonPost('/api/admin/support/config',originalPolicy,{Cookie:cookie()})).status,200);
+    }
+
     const data=await (await request('/api/admin/support/usage?q='+encodeURIComponent('SYNTHETIC-AUDIT-'+suffix),{headers:{Cookie:cookie()}})).json();
     assert.equal(data.summary.turns,1);assert.equal(data.items[0].answerText,'测试回答');assert(!JSON.stringify(data).includes('anonymousKey'));
+    const revealPath='/api/admin/support/account/reveal';
+    const revealBody={turnId:auditTurn.id};
+    assert.equal((await jsonPost(revealPath,revealBody)).status,403);
+    assert.equal((await request(revealPath,{headers:{Cookie:cookie()}})).status,405);
+    assert.equal((await jsonPost(revealPath,revealBody,{Cookie:cookie(),Origin:'https://untrusted.invalid'})).status,403);
+    assert.equal((await jsonPost(revealPath,revealBody,{Cookie:cookie()})).status,404); // guest
+    await db.supportConversation.update({where:{id:auditConversation.id},data:{userId:user.id,anonymousKey:null}});
+    await db.supportModelCall.create({data:{turnId:auditTurn.id,provider:'test',requestModel:'test',sequence:1}});
+    for(const view of ['turns','calls']){
+      const response=await request('/api/admin/support/usage?view='+view+'&q='+encodeURIComponent(email),{headers:{Cookie:cookie()}});
+      assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
+      const body=await response.json();assert.equal(body.total,1);assert(!JSON.stringify(body).includes(email));
+      const item=view==='turns'?body.items[0]:body.items[0].turn;
+      assert.equal(item.account,'sm***@example.invalid');assert.equal(item.canRevealAccount,true);
+    }
+    const focusPath='/api/admin/support/usage?turnId='+encodeURIComponent(auditTurn.id);
+    assert.equal((await request(focusPath)).status,403);
+    await db.supportTurn.update({where:{id:auditTurn.id},data:{createdAt:new Date(Date.now()-10*86400000)}});
+    const focusedResponse=await request(focusPath,{headers:{Cookie:cookie()}});
+    assert.equal(focusedResponse.status,200);assert.equal(focusedResponse.headers.get('cache-control'),'no-store');
+    const focused=await focusedResponse.json();assert.equal(focused.total,1);assert.equal(focused.items[0].id,auditTurn.id);
+    assert.equal(focused.items[0].answerText,'测试回答');assert.equal(focused.items[0].modelCalls.length,1);
+    assert.equal(focused.items[0].account,'sm***@example.invalid');assert(!JSON.stringify(focused).includes(email));
+    assert.equal((await request('/api/admin/support/usage?turnId=',{headers:{Cookie:cookie()}})).status,400);
+    const revealed=await jsonPost(revealPath,revealBody,{Cookie:cookie()});
+    assert.equal(revealed.status,200);assert.equal(revealed.headers.get('cache-control'),'no-store');
+    assert.deepEqual(await revealed.json(),{account:email});
+    const reveals=await db.supportRiskEvent.findMany({where:{category:'ADMIN_ACCOUNT_REVEAL',details:{path:['turnId'],equals:auditTurn.id}}});
+    assert.equal(reveals.length,1);assert.deepEqual(reveals[0].details,{adminId:admin.id,turnId:auditTurn.id});
+    assert(!JSON.stringify(reveals).includes(email));
+    await db.admin.update({where:{id:admin.id},data:{name:'显示昵称不是登录账号'}});
+    const riskResponse=await request('/api/admin/support/risk',{headers:{Cookie:cookie()}});
+    assert.equal(riskResponse.status,200);assert.equal(riskResponse.headers.get('cache-control'),'no-store');
+    const riskDisplay=await riskResponse.json();
+    const revealDisplay=riskDisplay.events.find(event=>event.id===reveals[0].id).display;
+    assert.deepEqual(revealDisplay,{adminAccount:username,question:'SYNTHETIC-AUDIT-'+suffix,account:'sm***@example.invalid',ip:null});
+    const configEvent=riskDisplay.events.find(event=>event.category==='ADMIN_SUPPORT_CONFIG'&&event.details.adminId===admin.id);
+    assert.equal(configEvent.display.adminAccount,username);
+    assert(!JSON.stringify(riskDisplay).includes(email));
+
+    await db.supportTurn.update({where:{id:auditTurn.id},data:{clearedAt:new Date()}});
+    assert.equal((await jsonPost(revealPath,revealBody,{Cookie:cookie()})).status,404);
+    assert.equal((await (await request(focusPath,{headers:{Cookie:cookie()}})).json()).total,0);
+    await db.supportTurn.update({where:{id:auditTurn.id},data:{clearedAt:null,createdAt:new Date(Date.now()-91*86400000)}});
+    const oldWindow=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(Date.now()-92*86400000));
+    const oldCalls=await (await request('/api/admin/support/usage?view=calls&from='+oldWindow,{headers:{Cookie:cookie()}})).json();
+    const retainedCall=oldCalls.items.find(item=>item.turn.id===auditTurn.id);assert(retainedCall);
+    assert.equal(retainedCall.turn.answerText,null);assert.equal(retainedCall.turn.clientIp,null);assert.equal(retainedCall.turn.account,null);
+    assert(!JSON.stringify(retainedCall).includes('SYNTHETIC-AUDIT-'+suffix));
+    const expiredSearch=await (await request('/api/admin/support/usage?view=calls&from='+oldWindow+'&q='+encodeURIComponent('SYNTHETIC-AUDIT-'+suffix),{headers:{Cookie:cookie()}})).json();
+    assert.equal(expiredSearch.total,0);
+
+    assert.equal((await jsonPost(revealPath,revealBody,{Cookie:cookie()})).status,404);
+    assert.equal((await (await request(focusPath,{headers:{Cookie:cookie()}})).json()).total,0);
+    await db.supportTurn.update({where:{id:auditTurn.id},data:{createdAt:new Date()}});
     assert.equal((await request('/api/admin/support/usage?page=-1',{headers:{Cookie:cookie()}})).status,400);
     assert.equal((await request('/api/admin/support/risk?page=NaN',{headers:{Cookie:cookie()}})).status,400);
     const ban={action:'block',source:'turn',id:auditTurn.id,kind:'identity',reason:'synthetic test'};
@@ -219,11 +293,12 @@ try {
     assert.equal((await jsonPost('/api/admin/support/risk',ban,{Cookie:cookie()})).status,200);
     const blocks=await db.supportBlock.findMany({where:{keyHash:'a'.repeat(64),revokedAt:null}});assert(blocks.length);
     for(const b of blocks){assert.equal((await jsonPost('/api/admin/support/risk',{action:'revoke',id:b.id},{Cookie:cookie()})).status,200);}
-    console.log('Support admin HTTP: full-range summaries, private transcripts, budget-only config, typed pagination, ban/revoke and unknown IP rejection passed.');
+    console.log('Support admin HTTP: account masking, audited reveal, expiry, CSRF, full-range summaries, private transcripts, budget-only config, typed pagination, ban/revoke and unknown IP rejection passed.');
   }finally{
     if(previousSupportBudget)await db.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:previousSupportBudget.value}});else await db.systemSetting.deleteMany({where:{key:'supportDailyBudgetCny'}});
     await redis.del('system:settings');await db.supportConversation.delete({where:{id:auditConversation.id}});
     await db.supportBlock.deleteMany({where:{keyHash:'a'.repeat(64)}});
+    await db.supportRiskEvent.deleteMany({where:{category:'ADMIN_ACCOUNT_REVEAL',details:{path:['turnId'],equals:auditTurn.id}}});
   }
 
   const productInput = { name: 'Image save regression', slug: `smoke-product-${suffix}`, categoryId: category.id, price: 19900, originalPrice: 29900, image: null };
@@ -341,7 +416,8 @@ try {
   jar.clear();
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
-  for(const path of ['/api/admin/support/usage','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
+  assert.equal((await jsonPost('/api/admin/support/account/reveal',{turnId:'any-record'},{Cookie:cookie()})).status,403);
+  for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
   for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
   assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'},{Cookie:cookie()})).status,403);
@@ -447,6 +523,25 @@ try {
   console.log('HTTP hardening checks passed: import limits, pending order quota, password byte limits, reset-token revocation and session revocation.');
   await db.user.update({where:{id:user.id},data:{sessionVersion:{increment:1}}});
   const revoked=await request('/api/auth/session',{headers:{Cookie:cookie()}});assert.equal(await revoked.json(),null);
+  // Real logout routes must invalidate copied credentials, without old logout replay evicting a new login.
+  jar.clear();
+  const loginAgain=async()=>{const r=await request('/api/auth/csrf',{headers:{Cookie:cookie()}});capture(r);const {csrfToken}=await r.json();const signed=await request('/api/auth/callback/credentials',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Auth-Return-Redirect':'1',Cookie:cookie()},body:new URLSearchParams({csrfToken,account:email,password,callbackUrl:base+'/dashboard'})});capture(signed);assert(!(await signed.json()).url.includes('error='));return csrfToken;};
+  const logoutCsrf=await loginAgain(),oldMemberCookie=cookie();
+  assert((await (await request('/api/auth/session',{headers:{Cookie:oldMemberCookie}})).json()).user);
+  const logout=await request('/api/auth/signout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Cookie:oldMemberCookie},body:new URLSearchParams({csrfToken:logoutCsrf,callbackUrl:base})});
+  assert([200,302,303].includes(logout.status));
+  assert.equal(await (await request('/api/auth/session',{headers:{Cookie:oldMemberCookie}})).json(),null);
+  jar.clear();await loginAgain();const newMemberCookie=cookie();
+  await request('/api/auth/signout',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Cookie:oldMemberCookie},body:new URLSearchParams({csrfToken:logoutCsrf,callbackUrl:base})});
+  assert((await (await request('/api/auth/session',{headers:{Cookie:newMemberCookie}})).json()).user);
+  jar.clear();capture(await jsonPost('/api/admin/auth/login',{username,password}));const oldAdminCookie=cookie();
+  assert.equal((await request('/api/admin/support/config',{headers:{Cookie:oldAdminCookie}})).status,200);
+  assert.equal((await jsonPost('/api/admin/auth/logout',{}, {Cookie:oldAdminCookie})).status,200);
+  assert.equal((await request('/api/admin/support/config',{headers:{Cookie:oldAdminCookie}})).status,403);
+  jar.clear();capture(await jsonPost('/api/admin/auth/login',{username,password}));const newAdminCookie=cookie();
+  assert.equal((await jsonPost('/api/admin/auth/logout',{}, {Cookie:oldAdminCookie})).status,200);
+  assert.equal((await request('/api/admin/support/config',{headers:{Cookie:newAdminCookie}})).status,200);
+  console.log('Logout HTTP: member/admin copied cookies revoked; old logout replay does not revoke a later session.');
   console.log('HTTP smoke checks passed: pages, real user/admin sign-in, session revocation, role restrictions, anonymous upload rejection, disabled payment rejection, and captcha/password/token/ownership order authorization.');
 } finally {
   child.kill('SIGTERM');closeSync(log);

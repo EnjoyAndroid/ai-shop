@@ -1,6 +1,6 @@
 import { logError } from "@/lib/logger";
-import prisma from "@/lib/db";
 import redis from "@/lib/redis";
+import { withSupportDbAbort } from "@/lib/support/db-abort";
 
 const SETTINGS_CACHE_KEY = "system:settings";
 const SETTINGS_CACHE_TTL = 300; // 5分钟缓存
@@ -25,16 +25,18 @@ const DEFAULT_SETTINGS = {
 /**
  * 获取所有系统设置
  */
-export async function getSettings(): Promise<Record<string, string>> {
+export async function getSettings(signal?: AbortSignal): Promise<Record<string, string>> {
   try {
+    signal?.throwIfAborted();
     // 尝试从缓存获取
     const cached = await redis.get(SETTINGS_CACHE_KEY);
+    signal?.throwIfAborted();
     if (cached) {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(cached) };
     }
 
     // 从数据库获取
-    const settingsRows = await prisma.systemSetting.findMany();
+    const settingsRows = await withSupportDbAbort(signal, tx => tx.systemSetting.findMany());
     const settings: Record<string, string> = {};
     settingsRows.forEach((row) => {
       settings[row.key] = row.value;
@@ -47,6 +49,7 @@ export async function getSettings(): Promise<Record<string, string>> {
 
     return { ...DEFAULT_SETTINGS, ...settings };
   } catch (error) {
+    if (signal?.aborted) throw error;
     logError("getSettings error", error);
     return DEFAULT_SETTINGS;
   }
@@ -55,8 +58,8 @@ export async function getSettings(): Promise<Record<string, string>> {
 /**
  * 获取单个设置值
  */
-export async function getSetting(key: string): Promise<string> {
-  const settings = await getSettings();
+export async function getSetting(key: string, signal?: AbortSignal): Promise<string> {
+  const settings = await getSettings(signal);
   return settings[key] || DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS] || "";
 }
 

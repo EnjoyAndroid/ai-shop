@@ -17,6 +17,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
     credentials: { account: {}, password: {}, captchaToken: {} },
     authorize: authenticateCredentials,
   })],
+  events: {
+    async signOut(message) {
+      const token='token' in message ? message.token : null;
+      const userId=typeof token?.id==='string'?token.id:null;
+      if(userId && typeof token?.sessionVersion==='number' && Number.isInteger(token.sessionVersion)) {
+        await prisma.user.updateMany({where:{id:userId,sessionVersion:token.sessionVersion},data:{sessionVersion:{increment:1}}});
+      }
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {

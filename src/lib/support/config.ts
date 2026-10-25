@@ -14,13 +14,31 @@ export interface SupportConfig {
   outputUsdPerMillion: number;
 }
 
+export function supportPolicy(settings: Record<string,string>) {
+  const detailRetentionDays = settingInt(settings, 'supportDetailRetentionDays', 90, 1, 365);
+  return {
+    detailRetentionDays,
+    usageRetentionDays: Math.max(detailRetentionDays, settingInt(settings, 'supportUsageRetentionDays', 180, 1, 730)),
+    guestDailyModelTurns: settingInt(settings, 'supportGuestDailyModelTurns', 50, 1, 10000),
+    memberDailyModelTurns: settingInt(settings, 'supportMemberDailyModelTurns', 200, 1, 10000),
+    guestPerMinute: settingInt(settings, 'supportGuestPerMinute', 5, 1, 1000),
+    memberPerMinute: settingInt(settings, 'supportMemberPerMinute', 10, 1, 1000),
+  };
+}
+
 function numberEnv(name: string, fallback: number): number {
   if (!process.env[name]?.trim()) return fallback;
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-export async function getSupportConfig(): Promise<SupportConfig> {
+function settingInt(settings: Record<string,string>, key: string, fallback: number, min: number, max: number): number {
+  if (!settings[key]?.trim()) return fallback;
+  const value = Number(settings[key]);
+  return Number.isInteger(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+export async function getSupportConfig(): Promise<SupportConfig & ReturnType<typeof supportPolicy>> {
   const settings = await getSettings();
   return {
     provider: process.env.SUPPORT_LLM_PROVIDER || "sub2api",
@@ -34,6 +52,7 @@ export async function getSupportConfig(): Promise<SupportConfig> {
     cachedInputUsdPerMillion: numberEnv("SUPPORT_LLM_CACHED_INPUT_USD_PER_MILLION", 0.01),
     cacheWriteUsdPerMillion: numberEnv("SUPPORT_LLM_CACHE_WRITE_USD_PER_MILLION", 0.125),
     outputUsdPerMillion: numberEnv("SUPPORT_LLM_OUTPUT_USD_PER_MILLION", 0.5),
+    ...supportPolicy(settings),
   };
 }
 

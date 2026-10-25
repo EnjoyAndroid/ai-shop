@@ -1,10 +1,10 @@
 import { z } from "zod";
-import prisma from "@/lib/db";
 import { getSettings } from "@/lib/services/settings.service";
 import { getPublicContactSettings } from "@/lib/contact-settings";
 import { isPaymentEnabled } from "@/lib/payment/config";
 import { supportPages, type SupportPage } from "./ui";
 import { searchSupportKnowledge } from "./retriever";
+import { withSupportDbAbort } from "./db-abort";
 
 const query = z.object({ query: z.string().trim().max(200) }).strict();
 const empty = z.object({}).strict();
@@ -30,20 +30,21 @@ export function validateSupportTool(name: string, raw: unknown): Record<string, 
   return empty.parse(raw);
 }
 
-export async function executeSupportTool(name: string, raw: unknown, userId?: string): Promise<unknown> {
+export async function executeSupportTool(name: string, raw: unknown, userId?: string, signal?: AbortSignal): Promise<unknown> {
+  signal?.throwIfAborted();
   validateSupportTool(name, raw);
   if (name === "search_products") {
     const { query: text } = query.parse(raw);
     const tokens = [...new Set(text.toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]+/g) || [])].slice(0, 8);
     const where = { isActive: true, category: { isActive: true }, ...(tokens.length ? { OR: tokens.flatMap(token => [{ name: { contains: token, mode: "insensitive" as const } }, { slug: { contains: token, mode: "insensitive" as const } }]) } : {}) };
-    const rows = await prisma.product.findMany({ where, orderBy: [{ sort: "asc" }, { id: "asc" }], take: 21, select: { name: true, slug: true, price: true, stock: true, minQuantity: true, maxQuantity: true, description: true } });
+    const rows = await withSupportDbAbort(signal, tx => tx.product.findMany({ where, orderBy: [{ sort: "asc" }, { id: "asc" }], take: 21, select: { name: true, slug: true, price: true, stock: true, minQuantity: true, maxQuantity: true, description: true } }));
     const products = rows.slice(0, 20).map(p => ({ name: p.name, url: `/product/${encodeURIComponent(p.slug)}`, priceCny: p.price / 100, stock: p.stock, minQuantity: p.minQuantity, maxQuantity: p.maxQuantity, description: (p.description || "").slice(0, 1000) }));
     const exact = (p: typeof products[number]) => Boolean(text) && normalize(p.name).includes(normalize(text));
     return { queriedAt: new Date().toISOString(), query: text, exactMatches: products.filter(exact), relatedProducts: products.filter(p => !exact(p)), truncated: rows.length > 20 };
   }
   if (name === "search_knowledge") {
     const { query: text } = query.parse(raw);
-    const result = await searchSupportKnowledge(text, 4);
+    const result = await searchSupportKnowledge(text, 4, signal);
     return { sources: result.sources, context: result.context.slice(0, 12000) };
   }
   if (name === "get_navigation") {
@@ -54,13 +55,13 @@ export async function executeSupportTool(name: string, raw: unknown, userId?: st
   empty.parse(raw);
   if (name === "get_payment_methods") {
     const labels = [["WECHAT", "微信支付"], ["ALIPAY", "支付宝"], ["USDT_TRC20", "USDT(TRC20)"], ["BALANCE", "账户余额"]] as const;
-    return { queriedAt: new Date().toISOString(), paymentMethods: (await Promise.all(labels.map(async ([id, label]) => await isPaymentEnabled(id) ? label : null))).filter(Boolean) };
+    return { queriedAt: new Date().toISOString(), paymentMethods: (await Promise.all(labels.map(async ([id, label]) => await isPaymentEnabled(id, signal) ? label : null))).filter(Boolean) };
   }
-  if (name === "get_contacts") return { queriedAt: new Date().toISOString(), ...getPublicContactSettings(await getSettings()) };
+  if (name === "get_contacts") return { queriedAt: new Date().toISOString(), ...getPublicContactSettings(await getSettings(signal)) };
   if (name === "get_my_orders") {
     if (!userId) return { requiresLogin: true, guidance: "请登录查看本人订单，或使用 /order 页面完成验证码和订单密码解锁。" };
-    const orders = await prisma.order.findMany({ where: { userId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 5, select: { orderNo: true, status: true, payAmount: true, createdAt: true, items: { select: { productName: true, quantity: true } } } });
+    const orders = await withSupportDbAbort(signal, tx => tx.order.findMany({ where: { userId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 5, select: { orderNo: true, status: true, payAmount: true, createdAt: true, items: { select: { productName: true, quantity: true } } } }));
     return { queriedAt: new Date().toISOString(), orders: orders.map(({ payAmount, ...order }) => ({ ...order, payAmountCny: payAmount / 100 })) };
   }
-  return { announcements: await prisma.announcement.findMany({ where: { isActive: true }, orderBy: [{ isPinned: "desc" }, { sort: "asc" }], take: 5, select: { title: true, content: true } }) };
+  return { announcements: await withSupportDbAbort(signal, tx => tx.announcement.findMany({ where: { isActive: true }, orderBy: [{ isPinned: "desc" }, { sort: "asc" }], take: 5, select: { title: true, content: true } })) };
 }

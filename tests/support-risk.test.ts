@@ -4,6 +4,7 @@ import { getClientIpInfo } from '../src/lib/get-client-ip';
 import { supportCost, reservationCost } from '../src/lib/support/budget';
 import { usageWindow } from '../src/lib/support/admin';
 import { riskKeys } from '../src/lib/support/risk';
+import { supportLimitSnapshot } from '../src/lib/support/limits';
 const rates={inputUsdPerMillion:0.1,cachedInputUsdPerMillion:0.01,cacheWriteUsdPerMillion:0.125,outputUsdPerMillion:0.5,usdCnyRate:7.2};
 test('money uses sub-cent precision and missing usage is unknown',()=>{
   const usage={inputTokens:100,outputTokens:10,cachedTokens:20,cacheWriteTokens:0,reasoningTokens:4,totalTokens:110,responseModel:'test'};
@@ -26,4 +27,9 @@ test('date windows and quota keys change at Shanghai midnight; invalid windows r
   assert.throws(()=>usageWindow({from:'2026-02-30'}));assert.throws(()=>usageWindow({from:'2026-10-24',to:'2026-10-23'}));
   const id={anonymousKey:'fixture'},ip={value:'unknown',trusted:false};
   assert.notEqual(riskKeys(id,ip,'商品',new Date('2026-10-24T15:59:59Z'))[4],riskKeys(id,ip,'商品',new Date('2026-10-24T16:00:00Z'))[4]);
+});
+
+test('support fixed safety policy exposes the documented read-only limits',()=>{
+  const limits=supportLimitSnapshot();
+  assert.deepEqual({planner:limits.plannerMaxOutputTokens,answer:limits.answerMaxOutputTokens,requestTimeout:limits.upstreamTimeoutMs,totalTimeout:limits.totalTimeoutMs,rounds:limits.maxModelRounds,tools:limits.maxToolCalls,identity:limits.identityConcurrent,ip:limits.ipConcurrent,global:limits.globalConcurrent,duplicateWindow:limits.duplicateWindowSeconds,duplicateThreshold:limits.duplicateThreshold,cooldown:limits.cooldownSeconds},{planner:256,answer:1000,requestTimeout:25000,totalTimeout:65000,rounds:4,tools:8,identity:1,ip:3,global:8,duplicateWindow:60,duplicateThreshold:4,cooldown:900});
 });

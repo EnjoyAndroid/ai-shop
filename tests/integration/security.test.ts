@@ -24,6 +24,8 @@ import { authenticateCredentials } from "../../src/lib/authenticate";
 import { createCaptcha, verifyCaptcha, consumeCaptchaToken } from "../../src/lib/captcha";
 import { listUnsoldCardKeys, readUnsoldCardKey, changeUnsoldCardKey } from "../../src/lib/services/cardkey.service";
 import { importCardKeys } from "../../src/lib/services/product.service";
+import { withSupportDbAbort, disconnectSupportCancellationClient } from "../../src/lib/support/db-abort";
+import { PrismaClient } from "@prisma/client";
 
 if (process.env.RUN_DATABASE_TESTS !== "1" || !new URL(process.env.DATABASE_URL!).pathname.endsWith("_test")) throw new Error("Tests require an isolated _test database");
 const prefix = `test-${randomBytes(6).toString("hex")}`;
@@ -44,7 +46,7 @@ before(async () => {
   categoryId = (await prisma.category.create({ data: { name: prefix, slug: prefix } })).id;
 });
 beforeEach(async () => { await redis.del('support:v2:circuit'); });
-after(async () => { await prisma.$disconnect(); await redis.quit(); });
+after(async () => { await disconnectSupportCancellationClient(); await prisma.$disconnect(); await redis.quit(); });
 
 test("unsold card listing never returns secrets; editing encrypts content and stale edits are rejected", async () => {
   const f = await fixture(23);
@@ -650,7 +652,7 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
   const envNames=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_DAILY_BUDGET_CNY'];
   const saved=envNames.map(n=>process.env[n]);
   try {
-    await prisma.supportTurn.createMany({data:Array.from({length:25},(_,i)=>({conversationId:c.id,requestId:`history-${i}`,userText:`旧问题${i}`,answerText:`旧回答${i}`,createdAt:new Date(1700000000000+i*1000)}))});
+    await prisma.supportTurn.createMany({data:Array.from({length:25},(_,i)=>({conversationId:c.id,requestId:`history-${i}`,userText:`旧问题${i}`,answerText:`旧回答${i}`,createdAt:new Date(Date.now()-60000+i*1000)}))});
     const current=await getLatestSupportConversation(identity);assert.equal(current?.turns.at(-1)?.userText,'旧问题24');
     const result=await executeSupportTool('search_products',{query:'Claude 5x'}) as any;
     assert.equal(result.exactMatches.length,0);assert(result.relatedProducts.some((r:any)=>r.name===p.name&&r.stock===0));
@@ -947,9 +949,60 @@ test('support full-range totals exceed 500, page boundaries are stable, and aged
     assert.equal(first.summary.calls,501);assert.equal(first.summary.totalTokens,7515);assert.equal(first.items.length,100);assert.equal(last.items.length,1);assert(!last.hasMore);
     const missing=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'old-privacy',userText:'old private',answerText:'old answer',identityHash:'b'.repeat(64),clientIp:'9.9.9.9',createdAt:new Date(Date.now()-91*86400000)}});
     await prisma.supportConversation.update({where:{id:c.id},data:{contextSummary:'old private',updatedAt:new Date()}});
+    assert.equal((await supportUsageSummary({q:'old private'})).total,0,'expired details stay hidden before the hourly cleanup runs');
     await cleanupSupportData();const old=await prisma.supportTurn.findUniqueOrThrow({where:{id:missing.id}});assert.equal(old.answerText,null);assert.equal(old.clientIp,null);assert.equal(old.identityHash,null);assert(old.clearedAt);
     assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:turn.id}})).answerText,'回答');assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,'');
   }finally{await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+test('support account listing masks both views, full account search works, reveal audits and rejects unavailable data',async()=>{
+  const {supportUsageSummary,revealSupportAccount}=await import('../../src/lib/support/admin');
+  const user=await prisma.user.create({data:{email:`${prefix}-privacy@example.invalid`}});
+  const c=await prisma.supportConversation.create({data:{userId:user.id,expiresAt:new Date(Date.now()+86400000)}});
+  const guest=await prisma.supportConversation.create({data:{anonymousKey:prefix+'privacy',expiresAt:new Date(Date.now()+86400000)}});
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'private',userText:'测试问题',clientIp:'203.0.113.8',clientIpTrusted:true}});
+  const guestTurn=await prisma.supportTurn.create({data:{conversationId:guest.id,requestId:'guest-private',userText:'测试问题'}});
+  await prisma.supportModelCall.create({data:{turnId:turn.id,provider:'test',requestModel:'test',sequence:1}});
+  try {
+    for(const view of ['turns','calls'] as const){
+      const result=await supportUsageSummary({q:user.email!,view});
+      assert.equal(result.total,1);assert(!JSON.stringify(result).includes(user.email!));
+      const item=result.items[0];const dto='turn' in item?item.turn:item;
+      assert.equal(dto.account,'te***@example.invalid');assert.equal(dto.canRevealAccount,true);
+    }
+    const focused=await supportUsageSummary({turnId:turn.id,view:'turns'});
+    assert.equal(focused.total,1);assert.equal(focused.items[0].id,turn.id);assert('modelCalls' in focused.items[0]);assert.equal(focused.items[0].modelCalls.length,1);
+    await prisma.supportTurn.update({where:{id:turn.id},data:{createdAt:new Date(Date.now()-10*86400000)}});
+    const older=await supportUsageSummary({turnId:turn.id,view:'turns'});
+    assert.equal(older.total,1);assert.equal(older.summary.calls,1);assert.equal(older.items[0].id,turn.id);
+    assert.equal((await supportUsageSummary({turnId:'missing-record'})).total,0);
+    assert.deepEqual(await revealSupportAccount(turn.id,prefix),{account:user.email});
+    const {listSupportRisk}=await import('../../src/lib/support/admin');
+    const risk=await listSupportRisk({pageSize:100});
+    const reveal=risk.events.find((event:any)=>event.category==='ADMIN_ACCOUNT_REVEAL'&&event.details?.turnId===turn.id) as any;
+    assert.equal(reveal.display.question,'测试问题');assert.equal(reveal.display.account,'te***@example.invalid');assert.equal(reveal.display.ip,'203.0.113.8');assert.equal(reveal.display.adminAccount,'管理员已删除');
+    assert(!JSON.stringify(reveal).includes(user.email!));
+    await prisma.supportTurn.update({where:{id:turn.id},data:{clientIpTrusted:false}});
+    const untrusted=(await listSupportRisk({pageSize:100})).events.find(event=>event.id===reveal.id)!;
+    assert.equal(untrusted.display.ip,null);
+    const events=await prisma.supportRiskEvent.findMany({where:{category:'ADMIN_ACCOUNT_REVEAL',details:{path:['adminId'],equals:prefix}}});
+    assert.equal(events.length,1);assert.deepEqual(events[0].details,{adminId:prefix,turnId:turn.id});
+    assert(!JSON.stringify(events).includes(user.email!));
+    for(const id of [guestTurn.id,'missing']) await assert.rejects(revealSupportAccount(id,prefix),(e:any)=>e.status===404);
+    await prisma.supportTurn.update({where:{id:turn.id},data:{createdAt:new Date(Date.now()-91*86400000)}});
+    await assert.rejects(revealSupportAccount(turn.id,prefix),(e:any)=>e.status===404);
+    assert.equal((await supportUsageSummary({turnId:turn.id})).total,0);
+    assert.deepEqual((await listSupportRisk({pageSize:100})).events.find(event=>event.id===reveal.id)!.display,{adminAccount:'管理员已删除',question:null,account:null,ip:null});
+    await prisma.supportTurn.update({where:{id:turn.id},data:{createdAt:new Date(),clearedAt:new Date()}});
+    await assert.rejects(revealSupportAccount(turn.id,prefix),(e:any)=>e.status===404);
+    assert.equal((await supportUsageSummary({turnId:turn.id})).total,0);
+    assert.deepEqual((await listSupportRisk({pageSize:100})).events.find(event=>event.id===reveal.id)!.display,{adminAccount:'管理员已删除',question:null,account:null,ip:null});
+    assert.equal(await prisma.supportRiskEvent.count({where:{category:'ADMIN_ACCOUNT_REVEAL',details:{path:['adminId'],equals:prefix}}}),1);
+  } finally {
+    await prisma.supportRiskEvent.deleteMany({where:{category:'ADMIN_ACCOUNT_REVEAL',details:{path:['adminId'],equals:prefix}}});
+    await prisma.supportConversation.deleteMany({where:{id:{in:[c.id,guest.id]}}});
+    await prisma.user.delete({where:{id:user.id}});
+  }
 });
 
 test('support visitor ID search matches displayed prefixes, copied labels and full hashes with consistent totals',async()=>{
@@ -969,4 +1022,402 @@ test('support visitor ID search matches displayed prefixes, copied labels and fu
     }
     const unmatched=await supportUsageSummary({q:randomBytes(32).toString('hex')});assert.equal(unmatched.total,0);
   }finally{await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+
+test('configured support quotas apply without resetting counters and retention clears details before usage',async()=>{
+  const {acquireSupportPermit,riskKeys}=await import('../../src/lib/support/risk');
+  const {getSupportConfig}=await import('../../src/lib/support/config');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const {cleanupSupportData}=await import('../../src/lib/support/service');
+  const {supportUsageSummary}=await import('../../src/lib/support/admin');
+  const values={supportDetailRetentionDays:'2',supportUsageRetentionDays:'4',supportGuestDailyModelTurns:'2',supportMemberDailyModelTurns:'3',supportGuestPerMinute:'1',supportMemberPerMinute:'2'};
+  const prior=await prisma.systemSetting.findMany({where:{key:{in:Object.keys(values)}}});
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'config',expiresAt:new Date(Date.now()+86400000)}});
+  const ip={value:'8.8.4.4',trusted:true};
+  try {
+    await getSupportConfig(); // Warm the old cache, then update like the settings API.
+    for(const [key,value] of Object.entries(values))await prisma.systemSetting.upsert({where:{key},create:{key,value},update:{value}});
+    await clearSettingsCache();
+    for(const member of [false,true]){
+      const identity={anonymousKey:randomBytes(32).toString('hex'),...(member?{userId:prefix+'configured-member'}:{})};
+      const keys=riskKeys(identity,ip,'限制测试');
+      const daily=member?3:2,minute=member?2:1;
+      await redis.set(keys[4],String(daily),'EX',60);
+      await assert.rejects(acquireSupportPermit(identity,ip,'限制测试'),(e:any)=>e.code==='DAILY_LIMIT');
+      await redis.del(keys[4]);await redis.set(keys[3],String(minute),'EX',60);
+      await assert.rejects(acquireSupportPermit(identity,ip,'限制测试'),(e:any)=>e.code==='RATE_LIMIT');
+      await redis.del(keys[3]);await(await acquireSupportPermit(identity,ip,'可通过问题'))();
+      assert.equal(Number(await redis.get(keys[4])),1);
+      await clearSettingsCache();assert.equal(Number(await redis.get(keys[4])),1);
+      await redis.del(...keys.filter(k=>!['support:v2:global','support:v2:circuit'].includes(k)));
+    }
+    const now=new Date();const ids=[];
+    for(const days of [1,3,5]){
+      const createdAt=new Date(now.getTime()-days*86400000);
+      const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:`retention-${days}`,userText:prefix+'retention',answerText:'回答',clientIp:'8.8.4.4',identityHash:'d'.repeat(64),createdAt}});
+      ids.push(turn.id);await prisma.supportModelCall.create({data:{turnId:turn.id,provider:'test',requestModel:'test',createdAt}});
+    }
+    await cleanupSupportData(now);
+    assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:ids[0]}})).answerText,'回答');
+    const cleared=await prisma.supportTurn.findUniqueOrThrow({where:{id:ids[1]}});assert(cleared.clearedAt);assert.equal(cleared.answerText,null);assert.equal(cleared.identityHash,null);assert.equal(cleared.clientIp,null);
+    assert.equal(await prisma.supportModelCall.count({where:{turnId:ids[1]}}),1);
+    assert.equal(await prisma.supportTurn.count({where:{id:ids[2]}}),0);
+    assert.equal(await prisma.supportModelCall.count({where:{turnId:ids[2]}}),0);
+    const usage=await supportUsageSummary({q:prefix+'retention'});assert.equal(usage.detailRetentionDays,2);assert.equal(usage.usageRetentionDays,4);
+  }finally{
+    await prisma.systemSetting.deleteMany({where:{key:{in:Object.keys(values)}}});
+    for(const row of prior)await prisma.systemSetting.create({data:{key:row.key,value:row.value}});
+    await clearSettingsCache();await prisma.supportConversation.delete({where:{id:c.id}});
+  }
+});
+
+test('retention protects call DTOs, searches, risk events and conversation replay before cleanup',async()=>{
+  const {supportUsageSummary,listSupportRisk,createSupportBlock}=await import('../../src/lib/support/admin');
+  const {getLatestSupportConversation,getSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const keys=['supportDetailRetentionDays','supportUsageRetentionDays'];
+  const saved=await prisma.systemSetting.findMany({where:{key:{in:keys}}});
+  const user=await prisma.user.create({data:{email:`${prefix}-expired@example.invalid`}});
+  const oldDate=new Date(Date.now()-3*86400000),tooOld=new Date(Date.now()-6*86400000);
+  const c=await prisma.supportConversation.create({data:{userId:user.id,createdAt:oldDate,title:'expired-title',contextSummary:'expired-summary',expiresAt:new Date(Date.now()+86400000)}});
+  const old=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'expired-request',userText:'EXPIRED-QUESTION',answerText:'EXPIRED-ANSWER',identityHash:'f'.repeat(64),clientIp:'203.0.113.42',clientIpTrusted:true,createdAt:oldDate}});
+  const oldCall=await prisma.supportModelCall.create({data:{turnId:old.id,provider:'test',requestModel:'test',createdAt:oldDate,inputTokens:5,outputTokens:2,totalTokens:7,usageStatus:'COMPLETE'}});
+  const removedCall=await prisma.supportModelCall.create({data:{turnId:old.id,provider:'test',requestModel:'test',createdAt:tooOld}});
+  const event=await prisma.supportRiskEvent.create({data:{category:'RATE_LIMIT',createdAt:oldDate,userId:user.id,identityHash:'f'.repeat(64),clientIp:'203.0.113.42'}});
+  const identity={userId:user.id,anonymousKey:''};
+  try {
+    for(const [key,value] of [['supportDetailRetentionDays','2'],['supportUsageRetentionDays','5']])await prisma.systemSetting.upsert({where:{key},create:{key,value},update:{value}});
+    await clearSettingsCache();
+    const from=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(tooOld);
+    const calls=await supportUsageSummary({from,view:'calls',pageSize:100});
+    const item=calls.items.find(row=>row.id===oldCall.id);assert(item&&'turn' in item);
+    const text=JSON.stringify(item);
+    for(const secret of ['EXPIRED-QUESTION','EXPIRED-ANSWER','expired-request',c.id,user.id,user.email!,'f'.repeat(64),'203.0.113.42'])assert(!text.includes(secret),secret);
+    assert.equal(item.totalTokens,7);assert.equal(item.turn.canRevealAccount,false);
+    assert(!calls.items.some(row=>row.id===removedCall.id));
+    for(const q of ['EXPIRED-QUESTION','expired-request','203.0.113.42',user.email!]){
+      for(const view of ['turns','calls'] as const)assert.equal((await supportUsageSummary({from,q,view})).total,0);
+    }
+    assert(!(await listSupportRisk({pageSize:100})).events.some(row=>row.id===event.id));
+    await assert.rejects(createSupportBlock({action:'block',source:'turn',id:old.id,kind:'ip',reason:'expired'},prefix));
+    const restored=await getLatestSupportConversation(identity);assert.equal(restored?.title,null);assert.equal(restored?.turns.length,0);
+    assert.equal((await getSupportConversation(c.id,identity))?.turns.length,0);
+    await assert.rejects(answerSupportTurn(c.id,'expired-request','重试',identity),(e:any)=>e.status===410);
+  }finally{
+    await prisma.supportRiskEvent.deleteMany({where:{id:event.id}});
+    await prisma.supportConversation.delete({where:{id:c.id}});await prisma.user.delete({where:{id:user.id}});
+    await prisma.systemSetting.deleteMany({where:{key:{in:keys}}});
+    for(const row of saved)await prisma.systemSetting.create({data:{key:row.key,value:row.value}});
+    await clearSettingsCache();
+  }
+});
+
+test('planner failures open the circuit; exhausted budget does not; FAQ stays available',async t=>{
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const names=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API'];const saved=names.map(k=>process.env[k]);
+  const budget=await prisma.systemSetting.findUnique({where:{key:'supportDailyBudgetCny'}});
+  const conversations:string[]=[];let requests=0;
+  t.mock.method(globalThis,'fetch',async()=>{requests++;return new Response(JSON.stringify({error:{}}),{status:503});});
+  async function ask(index:number,question='请介绍会员套餐'){
+    const identity={anonymousKey:randomBytes(32).toString('hex')};const c=await createSupportConversation(identity);conversations.push(c.id);
+    return answerSupportTurn(c.id,`circuit-review-${index}`,question,identity,{value:'8.8.4.4',trusted:true});
+  }
+  try{
+    process.env.SUPPORT_LLM_API_KEY='synthetic';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';
+    await prisma.systemSetting.upsert({where:{key:'supportDailyBudgetCny'},create:{key:'supportDailyBudgetCny',value:'0'},update:{value:'0'}});await clearSettingsCache();
+    for(let i=0;i<3;i++)assert.equal((await ask(i)).status,'FALLBACK_BUDGET');
+    assert.equal(requests,0);assert.equal(await redis.exists('support:v2:circuit'),0);
+    await prisma.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:'10000'}});
+    for(let i=3;i<6;i++)assert.equal((await ask(i)).status,'SCOPE_UNAVAILABLE');
+    assert.equal(requests,3);
+    await assert.rejects(ask(6),(e:any)=>e.code==='CIRCUIT');assert.equal(requests,3);
+    assert.equal((await ask(7,'怎么买商品？')).status,'FAQ');assert.equal(requests,3);
+  }finally{
+    names.forEach((k,i)=>saved[i]===undefined?delete process.env[k]:process.env[k]=saved[i]);
+    await prisma.supportConversation.deleteMany({where:{id:{in:conversations}}});
+    if(budget)await prisma.systemSetting.update({where:{key:budget.key},data:{value:budget.value}});else await prisma.systemSetting.deleteMany({where:{key:'supportDailyBudgetCny'}});
+    await clearSettingsCache();await redis.del('support:v2:circuit');
+  }
+});
+
+// Observe a real DB lock waiter rather than relying on a guessed scheduling delay.
+async function waitForAdvisoryWaiter() {
+  for(let i=0;i<100;i++){
+    const rows=await prisma.$queryRaw<Array<{waiting:boolean}>>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event='advisory') AS waiting`;
+    if(rows[0].waiting)return;
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  throw new Error('Expected transaction to wait for advisory lock');
+}
+
+test('queued budget reservations read the new budget after acquiring the day lock',async()=>{
+  const {reserveSupportCall}=await import('../../src/lib/support/budget');
+  const {getSupportConfig,dayStartShanghai}=await import('../../src/lib/support/config');
+  const saved=await prisma.systemSetting.findUnique({where:{key:'supportDailyBudgetCny'}});
+  const config={...await getSupportConfig(),dailyBudgetCny:10000};
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'budget-queue',expiresAt:new Date(Date.now()+86400000)}});
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'budget-queue',userText:'测试'}});
+  let unlock!:()=>void,locked!:()=>void;const release=new Promise<void>(r=>unlock=r),ready=new Promise<void>(r=>locked=r);
+  let reservation:Promise<unknown>|undefined;
+  await prisma.systemSetting.upsert({where:{key:'supportDailyBudgetCny'},create:{key:'supportDailyBudgetCny',value:'10000'},update:{value:'10000'}});
+  const writer=prisma.$transaction(async tx=>{
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`support-budget:${dayStartShanghai().toISOString()}`}))`;locked();await release;
+    await tx.systemSetting.update({where:{key:'supportDailyBudgetCny'},data:{value:'0'}});
+  });
+  try{
+    await ready;reservation=reserveSupportCall(turn.id,{phase:'answer',body:{input:'test'},sequence:1,maxOutputTokens:1000},config);
+    await waitForAdvisoryWaiter();unlock();await writer;
+    assert.equal(await reservation,false);assert.equal(await prisma.supportModelCall.count({where:{turnId:turn.id}}),0);
+  }finally{
+    unlock();await writer;await reservation;
+    await prisma.supportConversation.delete({where:{id:c.id}});
+    if(saved)await prisma.systemSetting.update({where:{key:saved.key},data:{value:saved.value}});else await prisma.systemSetting.deleteMany({where:{key:'supportDailyBudgetCny'}});
+    await redis.del('system:settings');
+  }
+});
+
+test('cleanup reads retention after config commits while holding the same lock',async()=>{
+  const {cleanupSupportData}=await import('../../src/lib/support/service');
+  const {SUPPORT_CONFIG_LOCK}=await import('../../src/lib/support/policy-store');
+  const key='supportDetailRetentionDays',saved=await prisma.systemSetting.findUnique({where:{key}});
+  await prisma.systemSetting.upsert({where:{key},create:{key,value:'2'},update:{value:'2'}});
+  const c=await prisma.supportConversation.create({data:{anonymousKey:prefix+'cleanup-queue',expiresAt:new Date(Date.now()+86400000)}});
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'cleanup-queue',userText:'must remain',createdAt:new Date(Date.now()-3*86400000)}});
+  let unlock!:()=>void,locked!:()=>void;const release=new Promise<void>(r=>unlock=r),ready=new Promise<void>(r=>locked=r);
+  let cleanup:Promise<unknown>|undefined;
+  const writer=prisma.$transaction(async tx=>{await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SUPPORT_CONFIG_LOCK})`;locked();await release;await tx.systemSetting.update({where:{key},data:{value:'10'}});});
+  try{
+    await ready;cleanup=cleanupSupportData();await waitForAdvisoryWaiter();unlock();await writer;await cleanup;
+    assert.equal((await prisma.supportTurn.findUniqueOrThrow({where:{id:turn.id}})).userText,'must remain');
+  }finally{
+    unlock();await writer;await cleanup;await prisma.supportConversation.delete({where:{id:c.id}});
+    if(saved)await prisma.systemSetting.update({where:{key},data:{value:saved.value}});else await prisma.systemSetting.deleteMany({where:{key}});
+    await redis.del('system:settings');
+  }
+});
+
+test('support cancellation stops real SQL even with the read pool exhausted and leaves reused connections intact', async t => {
+  const url = new URL(process.env.DATABASE_URL!);
+  url.searchParams.set('connection_limit', '1');
+  const reader = new PrismaClient({ datasources: { db: { url: url.toString() } }, log: [] });
+  let pid = 0;
+  let marker = '';
+  const controller = new AbortController();
+  const outcome = withSupportDbAbort(controller.signal, async tx => {
+    const [row] = await tx.$queryRaw<Array<{pid: number; marker: string}>>`SELECT pg_backend_pid() AS pid, current_setting('application_name') AS marker`;
+    pid = row.pid; marker = row.marker;
+    await tx.$queryRaw`SELECT 1 AS ok FROM pg_sleep(5)`;
+    return true;
+  }, reader).then(value => ({value, error: undefined}), error => ({value: undefined, error}));
+  try {
+    let active = false;
+    for (let i = 0; i < 100 && !active; i++) {
+      const rows = await prisma.$queryRaw<Array<{wait_event: string}>>`SELECT wait_event FROM pg_stat_activity WHERE pid=${pid}::int`;
+      active = rows.some(row => row.wait_event === 'PgSleep');
+      if (!active) await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert(active, 'probe SQL must be running before abort');
+    const cancelledAt = Date.now();
+    controller.abort();
+    const result = await outcome;
+    const elapsed = Date.now() - cancelledAt;
+    t.diagnostic(`PostgreSQL query settled ${elapsed}ms after abort with a saturated one-connection reader pool`);
+    assert(result.error, 'cancelled operation must reject');
+    assert(elapsed < 2000, `cancellation took ${elapsed}ms; must beat the 3s SQL timeout and 5s sleep`);
+    const activeRows = await prisma.$queryRaw<Array<{pid:number}>>`SELECT pid FROM pg_stat_activity WHERE pid=${pid}::int AND application_name=${marker}`;
+    assert.equal(activeRows.length, 0, 'transaction-local marker must be cleared before completion');
+    const normal = await reader.$queryRaw<Array<{ok:number; pid:number; marker:string}>>`SELECT 1 AS ok, pg_backend_pid() AS pid, current_setting('application_name') AS marker FROM pg_sleep(0.2)`;
+    assert.equal(normal[0].ok, 1);
+    assert.equal(normal[0].pid, pid, 'the same pooled connection remains reusable');
+    assert.notEqual(normal[0].marker, marker);
+    // A completed read must detach its abort listener before the next query uses the connection.
+    const completed = new AbortController();
+    await withSupportDbAbort(completed.signal, tx => tx.$queryRaw`SELECT 1`, reader);
+    completed.abort();
+    await reader.$queryRaw`SELECT 1 FROM pg_sleep(0.2)`;
+  } finally {
+    controller.abort(); await outcome; await reader.$disconnect();
+  }
+});
+
+async function cancellationChannelForTest() {
+  const controller = new AbortController();
+  await withSupportDbAbort(controller.signal, async tx => {
+    controller.abort();
+    return tx.$queryRaw`SELECT 1`;
+  }).catch(() => {});
+  const channel = (globalThis as unknown as {supportCancellationClient: PrismaClient}).supportCancellationClient;
+  assert(channel);
+  return channel;
+}
+
+test('support SQL timeout bounds reads if the cancel channel is unavailable, and reads cannot write', async t => {
+  const channel = await cancellationChannelForTest();
+  t.mock.method(channel, '$queryRaw', () => Promise.reject(new Error('synthetic cancel channel failure')));
+  let started!: () => void;
+  const ready = new Promise<void>(resolve => { started = resolve; });
+  const controller = new AbortController();
+  const began = Date.now();
+  const outcome = withSupportDbAbort(controller.signal, async tx => {
+    started();
+    return tx.$queryRaw`SELECT 1 FROM pg_sleep(5)`;
+  }).then(() => null, error => error);
+  await ready;
+  // Allow SQL dispatch; channel failure must fall back to server statement_timeout.
+  await new Promise(resolve => setTimeout(resolve, 100));
+  controller.abort();
+  const error = await outcome;
+  assert(error);
+  assert(Date.now() - began < 4500, 'server timeout must stop SQL without a working cancel channel');
+  await assert.rejects(withSupportDbAbort(new AbortController().signal, tx => tx.$executeRaw`UPDATE "SystemSetting" SET value=value WHERE false`));
+});
+
+test('real support tool and settings entrypoints reject cancellation without default data or late results', async () => {
+  const {executeSupportTool} = await import('../../src/lib/support/tools');
+  const {getSettings} = await import('../../src/lib/services/settings.service');
+  const cancelled = new AbortController(); cancelled.abort();
+  for (const [name, args] of [['search_products', {query: ''}], ['search_knowledge', {query: '购买'}], ['get_contacts', {}], ['get_payment_methods', {}], ['get_my_orders', {}], ['get_announcements', {}], ['get_navigation', {page: 'products'}]] as const) {
+    await assert.rejects(executeSupportTool(name, args, undefined, cancelled.signal));
+  }
+  await assert.rejects(getSettings(cancelled.signal));
+  // Block the actual ORM product query, then abort it while waiting for a table lock.
+  let locked!: () => void, release!: () => void;
+  const ready = new Promise<void>(resolve => { locked = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const locker = prisma.$transaction(async tx => {
+    await tx.$executeRaw`LOCK TABLE "Product" IN ACCESS EXCLUSIVE MODE`;
+    locked(); await gate;
+  }, {timeout: 10000});
+  const controller = new AbortController();
+  let pending: Promise<unknown> | undefined;
+  try {
+    await ready;
+    pending = executeSupportTool('search_products', {query: ''}, undefined, controller.signal).then(() => null, error => error);
+    let waiting = false;
+    for (let i=0; i<30 && !waiting; i++) {
+      const rows = await prisma.$queryRaw<Array<{pid:number}>>`SELECT pid FROM pg_stat_activity WHERE application_name LIKE 'support-read:%' AND wait_event_type='Lock'`;
+      waiting = rows.length > 0;
+      if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert(waiting, 'actual tool query must reach PostgreSQL');
+    controller.abort();
+    assert(await pending, 'cancelled tool must reject rather than return product data');
+  } finally {
+    controller.abort(); await pending; release(); await locker;
+  }
+  const result = await executeSupportTool('search_products', {query: ''}, undefined, new AbortController().signal) as {relatedProducts: unknown[]};
+  assert(Array.isArray(result.relatedProducts), 'subsequent normal tools still succeed');
+});
+
+test('cancelled support turns hold their concurrency permit until tool cleanup settles', async t => {
+  const {answerSupportTurn, createSupportConversation} = await import('../../src/lib/support/service');
+  const {riskKeys} = await import('../../src/lib/support/risk');
+  const ip = {value:'unknown',trusted:false};
+  const identity = {anonymousKey: randomBytes(32).toString('hex')};
+  const conversation = await createSupportConversation(identity);
+  const keys = ['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API'];
+  const saved = keys.map(key => process.env[key]);
+  const channel = await cancellationChannelForTest();
+  const originalCancel = channel.$queryRaw.bind(channel);
+  let releaseCancel!: () => void, cancelled!: () => void, unlock!: () => void, locked!: () => void;
+  const gate = new Promise<void>(resolve => {releaseCancel = resolve;});
+  const aborted = new Promise<void>(resolve => {cancelled = resolve;});
+  const lockGate = new Promise<void>(resolve => {unlock = resolve;});
+  const ready = new Promise<void>(resolve => {locked = resolve;});
+  const locker = prisma.$transaction(async tx => {
+    await tx.$executeRaw`LOCK TABLE "Product" IN ACCESS EXCLUSIVE MODE`; locked(); await lockGate;
+  }, {timeout:10000});
+  const controller = new AbortController();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return new Response(JSON.stringify({output_text: JSON.stringify({decision:'allow', queries:[{name:'search_products',arguments:{query:'会员'}}]}), usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+  });
+  t.mock.method(channel, '$queryRaw', async (...args: Parameters<typeof originalCancel>) => {
+    cancelled(); await gate; return originalCancel(...args);
+  });
+  let pending: Promise<Awaited<ReturnType<typeof answerSupportTurn>>> | undefined;
+  const leaseKey = riskKeys(identity, ip, '推荐适合我的会员')[0];
+  try {
+    await ready;
+    process.env.SUPPORT_LLM_API_KEY='synthetic';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';
+    pending=answerSupportTurn(conversation.id,'cancel-drain','推荐适合我的会员',identity,ip,controller.signal);
+    let waiting = false;
+    for (let i=0; i<50 && !waiting; i++) {
+      const rows = await prisma.$queryRaw<Array<{pid:number}>>`SELECT pid FROM pg_stat_activity WHERE application_name LIKE 'support-read:%' AND wait_event_type='Lock'`;
+      waiting = rows.length > 0;
+      if (!waiting) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert(waiting, 'real service tool must reach the blocked product query');
+    controller.abort(); await aborted;
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(await redis.zcard(leaseKey),1,'do not admit replacement work while an old query is cleaning up');
+    releaseCancel(); const result = await pending;
+    assert.equal(result.status,'CANCELLED');
+    assert.equal(await redis.zcard(leaseKey),0);
+    assert.equal(calls,1,'no answering model call after cancellation');
+  } finally {
+    controller.abort(); releaseCancel(); unlock(); await locker; await pending?.catch(()=>{});
+    keys.forEach((key,i)=>saved[i]===undefined?delete process.env[key]:process.env[key]=saved[i]);
+    await prisma.supportConversation.delete({where:{id:conversation.id}});
+  }
+});
+
+test('support denied requests cannot mutate another conversation or an orphaned turn',async()=>{
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const owner={anonymousKey:randomBytes(32).toString('hex')},other={anonymousKey:randomBytes(32).toString('hex')};
+  const c=await createSupportConversation(owner);
+  const turn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'orphaned-request',userText:'synthetic',status:'PROCESSING'}});
+  try{
+    await assert.rejects(answerSupportTurn(c.id,'orphaned-request','hello',other),(e:any)=>e.status===404);
+    assert.deepEqual(await prisma.supportTurn.findUnique({where:{id:turn.id}}),turn);
+    await assert.rejects(answerSupportTurn(c.id,'orphaned-request','hello',owner),(e:any)=>e.status===409);
+    assert.deepEqual(await prisma.supportTurn.findUnique({where:{id:turn.id}}),turn);
+    await redis.set(`support:turn-lock:${c.id}`,'test-locked','EX',30);
+    await assert.rejects(answerSupportTurn(c.id,'orphaned-request','hello',other),(e:any)=>e.status===409);
+    assert.deepEqual(await prisma.supportTurn.findUnique({where:{id:turn.id}}),turn);
+  }finally{await redis.del(`support:turn-lock:${c.id}`);await prisma.supportConversation.delete({where:{id:c.id}});}
+});
+
+test('in-flight support completion cannot restore purged history after retention changes',async t=>{
+  const {answerSupportTurn,cleanupSupportData}=await import('../../src/lib/support/service');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const keys=['supportDetailRetentionDays','supportUsageRetentionDays','supportDailyBudgetCny'];
+  const prior=await prisma.systemSetting.findMany({where:{key:{in:keys}}});
+  const envNames=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API'];const oldEnv=envNames.map(k=>process.env[k]);
+  const user=await prisma.user.create({data:{email:`${prefix}-cleanup-flight@example.invalid`}});
+  const identity={userId:user.id,anonymousKey:''},marker='SYNTHETIC_PURGED_SUMMARY';
+  const createdAt=new Date(Date.now()-3*86400000);
+  const c=await prisma.supportConversation.create({data:{userId:user.id,createdAt,contextSummary:marker,title:marker,expiresAt:new Date(Date.now()+86400000)}});
+  const oldTurn=await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'old-flight',userText:marker,answerText:marker,createdAt}});
+  let started!:()=>void,release!:()=>void;const ready=new Promise<void>(r=>started=r),gate=new Promise<void>(r=>release=r);
+  const bodies:any[]=[];let pending:Promise<unknown>|undefined;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+    const body=JSON.parse(init.body);bodies.push(body);
+    if(bodies.length===1){started();await gate;}
+    return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow',queries:[]}):'新的商品回答',usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+  });
+  try{
+    for(const [key,value] of [['supportDetailRetentionDays','90'],['supportUsageRetentionDays','180'],['supportDailyBudgetCny','10000']])await prisma.systemSetting.upsert({where:{key},create:{key,value},update:{value}});
+    await clearSettingsCache();process.env.SUPPORT_LLM_API_KEY='synthetic';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';
+    pending=answerSupportTurn(c.id,'flight-request','介绍一下会员',identity);
+    const rejection=assert.rejects(pending,(e:any)=>e.status===409&&e.code==='CONTEXT_EXPIRED');
+    await ready;assert(JSON.stringify(bodies[0]).includes(marker));
+    await prisma.systemSetting.update({where:{key:'supportDetailRetentionDays'},data:{value:'1'}});
+    await cleanupSupportData();assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,'');
+    release();await rejection;
+    assert.equal(bodies.length,1,'no answering model call after context is purged');
+    const purged=await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}});assert.equal(purged.contextSummary,'');assert.equal(purged.title,null);
+    const failed=await prisma.supportTurn.findUniqueOrThrow({where:{conversationId_requestId:{conversationId:c.id,requestId:'flight-request'}}});assert.equal(failed.status,'FAILED');assert(!JSON.stringify(failed).includes(marker));
+    await prisma.systemSetting.update({where:{key:'supportDetailRetentionDays'},data:{value:'90'}});
+    const result=await answerSupportTurn(c.id,'fresh-request','会员有哪些选择',identity);assert.equal(result.status,'COMPLETED');
+    assert(!JSON.stringify(bodies.slice(1)).includes(marker));
+    assert((await prisma.supportTurn.findUniqueOrThrow({where:{id:oldTurn.id}})).clearedAt);
+  }finally{
+    release();await pending?.catch(()=>{});envNames.forEach((k,i)=>oldEnv[i]===undefined?delete process.env[k]:process.env[k]=oldEnv[i]);
+    await prisma.supportConversation.delete({where:{id:c.id}});await prisma.user.delete({where:{id:user.id}});
+    await prisma.systemSetting.deleteMany({where:{key:{in:keys}}});for(const row of prior)await prisma.systemSetting.create({data:{key:row.key,value:row.value}});await clearSettingsCache();
+  }
 });

@@ -9,9 +9,10 @@ export function isPaymentConfigured(method: PaymentMethod): boolean {
   return false; // ERC20 未实现链上核验，不开放自动收款。
 }
 
-export async function isPaymentEnabled(method: PaymentMethod): Promise<boolean> {
+export async function isPaymentEnabled(method: PaymentMethod, signal?: AbortSignal): Promise<boolean> {
   const settings = { ALIPAY: "alipayEnabled", WECHAT: "wechatEnabled", USDT_TRC20: "usdtEnabled", USDT_ERC20: "usdtEnabled", BALANCE: "balanceEnabled" };
-  return isPaymentConfigured(method) && await getSetting(settings[method]) === "true";
+  signal?.throwIfAborted();
+  return isPaymentConfigured(method) && await getSetting(settings[method], signal) === "true";
 }
 
 export async function requirePaymentEnabled(method: PaymentMethod): Promise<void> {

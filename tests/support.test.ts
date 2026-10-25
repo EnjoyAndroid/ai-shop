@@ -3,7 +3,7 @@ import redis from "../src/lib/redis";
 import { readFileSync } from "node:fs";
 import { rankSupportKnowledge, type SupportKnowledgeArticle } from "../src/lib/support/retriever";
 import assert from "node:assert/strict";
-import { redactSupportText, dayStartShanghai, getSupportConfig } from "../src/lib/support/config";
+import { redactSupportText, dayStartShanghai, getSupportConfig, supportPolicy } from "../src/lib/support/config";
 import { fallbackAnswer, isSupportConversationAccessible, supportConversationScope, type SupportIdentity } from "../src/lib/support/service";
 import { shouldSubmitSupportOnEnter } from "../src/lib/support/input";
 import { SUPPORT_GREETING, SUPPORT_NAME, GUEST_SESSION_SECONDS } from "../src/lib/support/policy";
@@ -156,4 +156,11 @@ test("empty compose budget and pricing use defaults; explicit zero budget remain
   } finally {
     names.forEach((name, index) => { if (saved[index] === undefined) delete process.env[name]; else process.env[name] = saved[index]; });
   }
+});
+
+
+test('support policy defaults and safety bounds survive missing or malformed persisted settings',()=>{
+  assert.deepEqual(supportPolicy({}),{detailRetentionDays:90,usageRetentionDays:180,guestDailyModelTurns:50,memberDailyModelTurns:200,guestPerMinute:5,memberPerMinute:10});
+  const policy=supportPolicy({supportDetailRetentionDays:'400',supportUsageRetentionDays:'2',supportGuestDailyModelTurns:'',supportMemberDailyModelTurns:'10001',supportGuestPerMinute:'1.5',supportMemberPerMinute:'0'});
+  assert.deepEqual(policy,{detailRetentionDays:365,usageRetentionDays:365,guestDailyModelTurns:50,memberDailyModelTurns:10000,guestPerMinute:5,memberPerMinute:1});
 });
