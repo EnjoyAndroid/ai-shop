@@ -4,6 +4,8 @@ import sharp from "sharp";
 import { getAdminSession, hasAdminPermission } from "@/lib/admin-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
+import { boundedUploadRequest, validateUploadForm } from "@/lib/upload-limits";
+import { OrderRequestError } from "@/lib/order-errors";
 
 // 配置 Cloudinary
 cloudinary.config({
@@ -14,40 +16,21 @@ cloudinary.config({
 
 // 允许的图片类型
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-// 最大文件大小 (2MB)
-const MAX_SIZE = 2 * 1024 * 1024;
-
 export async function POST(request: NextRequest) {
   const admin = await getAdminSession();
   if (!admin) return NextResponse.json({ error: "未授权" }, { status: 401 });
   try {
     if (!await rateLimit("upload-user", admin.id, 20, 3600) || !await rateLimit("upload-total", "site", 200, 86400)) return NextResponse.json({ error: "上传额度已用完，请稍后重试" }, { status: 429 });
-    const formData = await request.formData();
-    const purpose = formData.get("purpose");
+    const formData = await boundedUploadRequest(request).formData();
+    const { purpose, file } = validateUploadForm(formData);
     if (purpose !== null && !["products", "community", "support"].includes(String(purpose))) return NextResponse.json({ error: "上传用途无效" }, { status: 400 });
     const isContactQr = purpose === "community" || purpose === "support";
     if (isContactQr && !hasAdminPermission(admin, "settings")) return NextResponse.json({ error: "无权限" }, { status: 403 });
-    const file = formData.get("file") as File | null;
-
-    if (!(file instanceof File)) {
-      return NextResponse.json(
-        { error: "请选择文件" },
-        { status: 400 }
-      );
-    }
 
     // 验证文件类型
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
         { error: "只支持 JPG、PNG、GIF、WebP 格式" },
-        { status: 400 }
-      );
-    }
-
-    // 验证文件大小
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json(
-        { error: "文件大小不能超过 2MB" },
         { status: 400 }
       );
     }
@@ -81,6 +64,9 @@ export async function POST(request: NextRequest) {
       url: result.secure_url,
     });
   } catch (error) {
+    if (error instanceof OrderRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     logError("Upload", error);
     return NextResponse.json(
       { error: "上传失败，请稍后重试" },

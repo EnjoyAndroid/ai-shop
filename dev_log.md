@@ -1,5 +1,12 @@
 # 开发日志
 
+## 2026-10-27 上传 multipart 请求边界加固
+
+- 现象：上传接口原先只在 `request.formData()` 完成后检查选中文件的 2 MiB 大小，额外字段或重复文件会先进入 multipart 解析。
+- 处理：新增请求总字节上限（2 MiB 文件上限加 64 KiB multipart 开销）、chunked body 实际读取计数，以及只允许一个 `file` 和一个可选 `purpose` 字段；结构化请求错误返回 413/400，不记录上传内容。
+- 验证：`node --import tsx --test tests/upload-limits.test.ts` 3/3 通过；`node node_modules/typescript/bin/tsc --noEmit --incremental false` 通过；`npm run build` 生产构建通过；未部署公网。
+- 状态：开发源码已修改，生产未发布；后续可在隔离 HTTP 环境补充真实 Next multipart 解析观测。
+
 ## 2026-10-26 01:06 客服后台、审计修复与取消优化已发布生产
 
 - 发布已验收候选 `20261025170119-a82f35848c93`，镜像 `sha256:777bbae6586e6fd3718cccb0a091a5a3b0ede11f67da2e62e2bc999193fbd4b5`；部署前核对源码指纹与12项门禁，复用92项单元、51项隔离集成、HTTP和生产构建结果。本条为部署后文档记录，不改变已发布业务代码。
