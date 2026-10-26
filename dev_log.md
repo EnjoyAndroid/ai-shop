@@ -1063,3 +1063,10 @@ docker exec <redis容器> redis-cli -n 1 del admin_login_fail:admin
 - Redis 存储 token 使用 `setex` 替代 `set + EX` 参数，确保过期时间正确设置
 - 前端使用 useEffect 在页面加载时调用验证 API
 - 验证中显示加载状态，过期/无效显示错误页面并引导重新获取链接
+
+## 2026-10-27 上传边界加固已发布生产
+
+- 提交 `0a0a7b2` 已推送 `origin/main`；候选 `20261026180422-1295fc7333df` 通过 install、Prisma generate、95项单元、51项隔离集成、生产构建、HTTP回归、秘密/历史/diff、镜像、预览和依赖审计门禁。
+- HTTP验收覆盖正常 multipart、2 MiB 文件超限、总包超限、重复 file/purpose、未知字段、chunked body 及无设置权限二维码上传；测试依赖和 Cloudinary 均为隔离/禁用配置。
+- 生产部署记录 `20261026180622-883bc2`，新应用镜像 `sha256:8e1dd78543e2ce167f1c74268b7d9b63aa024cc821574347ee958e56d01b2bfe`；3010 `/api/health` 返回200。仅更新 app 并重载既有 Nginx，PostgreSQL、Redis、Nginx 容器ID/镜像/启动时间未变。
+- 回退仅切换应用镜像，数据库保持不变。远程推送提示必需 `verify` 状态仍为 expected/bypassed，不能称为远程 CI 通过；本地 release 门禁已通过。
