@@ -22,10 +22,11 @@ export async function POST(request: NextRequest) {
   try {
     if (!await rateLimit("upload-user", admin.id, 20, 3600) || !await rateLimit("upload-total", "site", 200, 86400)) return NextResponse.json({ error: "上传额度已用完，请稍后重试" }, { status: 429 });
     const formData = await boundedUploadRequest(request).formData();
-    const { purpose, file } = validateUploadForm(formData);
+    const purpose = formData.get("purpose");
     if (purpose !== null && !["products", "community", "support"].includes(String(purpose))) return NextResponse.json({ error: "上传用途无效" }, { status: 400 });
     const isContactQr = purpose === "community" || purpose === "support";
     if (isContactQr && !hasAdminPermission(admin, "settings")) return NextResponse.json({ error: "无权限" }, { status: 403 });
+    const { file } = validateUploadForm(formData);
 
     // 验证文件类型
     if (!ALLOWED_TYPES.includes(file.type)) {

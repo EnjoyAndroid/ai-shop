@@ -4,8 +4,8 @@
 
 - 现象：上传接口原先只在 `request.formData()` 完成后检查选中文件的 2 MiB 大小，额外字段或重复文件会先进入 multipart 解析。
 - 处理：新增请求总字节上限（2 MiB 文件上限加 64 KiB multipart 开销）、chunked body 实际读取计数，以及只允许一个 `file` 和一个可选 `purpose` 字段；结构化请求错误返回 413/400，不记录上传内容。
-- 验证：`node --import tsx --test tests/upload-limits.test.ts` 3/3 通过；`node node_modules/typescript/bin/tsc --noEmit --incremental false` 通过；`npm run build` 生产构建通过；未部署公网。
-- 状态：开发源码已修改，生产未发布；后续可在隔离 HTTP 环境补充真实 Next multipart 解析观测。
+- 验证：定向单元3项及完整单元95项通过，TypeScript和生产构建通过。隔离HTTP覆盖正常表单（到达外部服务未配置分支）、单文件/整包超限、重复文件/用途、未知字段和无Content-Length流式超限；未调用外部图片服务。首次发布门禁发现无权限二维码请求由403变成400，恢复先校验用途权限后校验文件的顺序，重新构建与HTTP回归通过。
+- 状态：用户已授权提交、推送和生产发布；部署前继续执行完整固定候选门禁，最终上线版本以最新部署记录为准。证据：`.deploy/upload-final-build.log`、`.deploy/upload-http.log`、`.deploy/upload-release-checkpoint.json`。
 
 ## 2026-10-26 01:06 客服后台、审计修复与取消优化已发布生产
 

@@ -420,6 +420,36 @@ try {
   for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
   for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
+  // Exercise real multipart parsing without Cloudinary credentials or external uploads.
+  const uploadForm = (size = 3) => {
+    const form = new FormData();
+    form.set('file', new File([new Uint8Array(size)], 'fixture.png', {type:'image/png'}));
+    return form;
+  };
+  const postUpload = body => request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body});
+  const normalUpload = await postUpload(uploadForm());
+  assert.equal(normalUpload.status,500);
+  assert.equal((await normalUpload.json()).error,'服务器配置错误'); // accepted form, external upload disabled
+  const oversizedFile = await postUpload(uploadForm(2*1024*1024+1));
+  assert.equal(oversizedFile.status,400);assert.equal((await oversizedFile.json()).error,'文件大小不能超过 2MB');
+  for (const kind of ['unknown','duplicate-file','duplicate-purpose']) {
+    const form=uploadForm();
+    if(kind==='unknown')form.set('extra','x');
+    if(kind==='duplicate-file')form.append('file',new File(['x'],'second.png',{type:'image/png'}));
+    if(kind==='duplicate-purpose'){form.append('purpose','products');form.append('purpose','products');}
+    const response=await postUpload(form);assert.equal(response.status,400);assert.equal((await response.json()).error,'上传字段无效');
+  }
+  const oversizedForm=uploadForm();oversizedForm.set('extra','x'.repeat(2*1024*1024+65536));
+  assert.equal((await postUpload(oversizedForm)).status,413);
+  const encoded=new Request(base+'/api/upload',{method:'POST',body:oversizedForm});
+  const bytes=new Uint8Array(await encoded.arrayBuffer());let position=0;
+  const stream=new ReadableStream({pull(controller){
+    if(position===bytes.length){controller.close();return;}
+    const end=Math.min(position+16384,bytes.length);controller.enqueue(bytes.subarray(position,end));position=end;
+  }});
+  const chunkedUpload=await request('/api/upload',{method:'POST',headers:{Cookie:cookie(),'Content-Type':encoded.headers.get('content-type')},body:stream,duplex:'half'});
+  assert.equal(chunkedUpload.status,413);assert.equal((await chunkedUpload.json()).error,'请求内容过大');
+  console.log('Upload HTTP: permissions preserved; normal multipart accepted locally; file, total, duplicate/unknown fields and chunked limits passed; no external upload.');
   assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'},{Cookie:cookie()})).status,403);
   const operatorContactPage = await request('/admin/contact',{headers:{Cookie:cookie()}});
   const operatorContactHtml = await operatorContactPage.text();
