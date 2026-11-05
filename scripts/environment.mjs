@@ -1,6 +1,6 @@
 import { spawnSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { acquireLocalLease, localRuntimeEnvironment, localDocker, ensureLocalPortFree, recordLocalMode, LOCAL_PORT } from './lib/local-runtime.mjs';
+import { acquireLocalLease, localRuntimeEnvironment, localHostRuntimeEnvironment, localDocker, ensureLocalPortFree, recordLocalMode, LOCAL_PORT } from './lib/local-runtime.mjs';
 import { initializeEnvironments, isolatedEnvironment, generateEnvironment, configurationSummary } from './lib/environments.mjs';
 
 const [action, ...extra] = process.argv.slice(2);
@@ -23,8 +23,9 @@ else {
   else if (action === 'dev' || action === 'start') {
     const release = acquireLocalLease();
     try {
-      const runtimeEnv = localRuntimeEnvironment();
-      localDocker(['stop', 'app'], runtimeEnv);
+      const sharedEnv = localRuntimeEnvironment();
+      localDocker(['stop', 'app'], sharedEnv);
+      const runtimeEnv = localHostRuntimeEnvironment(sharedEnv);
       await ensureLocalPortFree();
       if (action === 'dev') runtimeEnv.NEXT_DEV_ISOLATED = '1';
       recordLocalMode(action === 'dev' ? 'development' : 'local-build', { pid: process.pid });

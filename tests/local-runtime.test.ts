@@ -9,7 +9,7 @@ import { generateEnvironment, writeEnv } from '../scripts/lib/environments.mjs';
 const moduleUrl = pathToFileURL(resolve('scripts/lib/local-runtime.mjs')).href;
 
 function execute(cwd: string, expression: string) {
-  return spawnSync(process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict'; import {acquireLocalLease, localRuntimeEnvironment, activateLocalPreview} from ${JSON.stringify(moduleUrl)}; ${expression}`], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict'; import {acquireLocalLease, localRuntimeEnvironment, localHostRuntimeEnvironment, activateLocalPreview} from ${JSON.stringify(moduleUrl)}; ${expression}`], { cwd, encoding: 'utf8' });
 }
 
 test('local development and manual preview share one configuration and canonical origin', () => {
@@ -38,5 +38,27 @@ test('unapproved or mutable candidate cannot start manual preview', () => {
   try {
     const result = execute(dir, `await assert.rejects(()=>activateLocalPreview({approved:false,imageId:'sha256:'+'a'.repeat(64)}),/accepted immutable/);await assert.rejects(()=>activateLocalPreview({approved:true,imageId:'ai-shop-app:latest'}),/accepted immutable/);`);
     assert.equal(result.status, 0, result.stderr);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('host-run development translates only the local HTTP Docker gateway without changing shared/container config', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'shop-model-address-'));
+  try {
+    writeEnv(join(dir, '.env'), { ...generateEnvironment('development'), SUPPORT_LLM_BASE_URL: 'http://host.docker.internal:8080/v1', SUPPORT_LLM_API_KEY: 'test-only' });
+    const before = readFileSync(join(dir, '.env'), 'utf8');
+    const result = execute(dir, `
+      const shared=localRuntimeEnvironment(), host=localHostRuntimeEnvironment(shared);
+      assert.equal(host.SUPPORT_LLM_BASE_URL,'http://127.0.0.1:8080/v1');
+      assert.equal(host.SUPPORT_LLM_API_KEY,shared.SUPPORT_LLM_API_KEY);
+      assert.equal(shared.SUPPORT_LLM_BASE_URL,'http://host.docker.internal:8080/v1');
+      for (const base of ['https://host.docker.internal:8443/v1','https://model.example.invalid/v1','http://127.0.0.1:8080/v1','http://host.docker.internal.example.com/v1']) {
+        assert.equal(localHostRuntimeEnvironment({...shared,SUPPORT_LLM_BASE_URL:base}).SUPPORT_LLM_BASE_URL,base);
+      }
+      const authenticated=new URL('http://host.docker.internal/v1');authenticated.username='test';authenticated.password='test';
+      assert.equal(localHostRuntimeEnvironment({...shared,SUPPORT_LLM_BASE_URL:authenticated.toString()}).SUPPORT_LLM_BASE_URL,authenticated.toString());
+      assert.equal(localHostRuntimeEnvironment({...shared,SUPPORT_LLM_BASE_URL:''}).SUPPORT_LLM_BASE_URL,'');
+    `);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(join(dir, '.env'), 'utf8'), before);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -1,0 +1,32 @@
+// Frozen evaluation baseline from d16f4fccd8feb53f15e624440bee0e04dfb32efa. Do not update with production changes.
+/** Safety limits remain code controlled; selected quotas and retention windows are runtime settings. */
+export const SUPPORT_LIMITS = {
+  plannerMaxOutputTokens: 256,
+  answerMaxOutputTokens: 1000,
+  upstreamTimeoutMs: 25_000,
+  totalTimeoutMs: 65_000,
+  maxModelRounds: 4,
+  maxToolCalls: 8,
+  guestDailyModelTurns: 50,
+  memberDailyModelTurns: 200,
+  guestPerMinute: 5,
+  memberPerMinute: 10,
+  identityConcurrent: 1,
+  ipConcurrent: 3,
+  globalConcurrent: 8,
+  ipDaily: 500,
+  leaseMs: 120_000,
+  circuitFailures: 3,
+  circuitSeconds: 300,
+  inputBytes: 32_768,
+  duplicateWindowSeconds: 60,
+  duplicateThreshold: 4,
+  cooldownSeconds: 15 * 60,
+  violationWindowSeconds: 10 * 60,
+  violationThreshold: 3,
+  riskRetentionDays: 90,
+} as const;
+
+export function supportLimitSnapshot() {
+  return { ...SUPPORT_LIMITS };
+}

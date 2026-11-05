@@ -7,9 +7,9 @@ import prisma from "@/lib/db";
 import { getSupportConfig, redactSupportText, supportModelConfigured } from "./config";
 import { getSupportFacts, searchSupportKnowledge, type SupportFacts } from "./retriever";
 import { generateSupportAnswer, SupportLlmError } from "./llm";
-import { SUPPORT_GREETING, SUPPORT_NAME, MEMBER_SESSION_SECONDS, GUEST_SESSION_SECONDS, isOutOfScopeSupportQuestion, supportGreetingAnswer, SUPPORT_SCOPE_REFUSAL, SUPPORT_SCOPE_CLARIFICATION, SUPPORT_SCOPE_UNAVAILABLE } from "./policy";
+import { SUPPORT_GREETING, SUPPORT_NAME, MEMBER_SESSION_SECONDS, GUEST_SESSION_SECONDS, isOutOfScopeSupportQuestion, supportGreetingAnswer, SUPPORT_SCOPE_REFUSAL, SUPPORT_SCOPE_CLARIFICATION, SUPPORT_SCOPE_UNAVAILABLE, hasUnsupportedSupportTask, withSupportPartialNotice } from "./policy";
 import { executeSupportTool } from "./tools";
-import { recentContext, nextContextSummary } from "./context";
+import { recentContext, nextContextSummary, mergeContextSummary, RECENT_TURNS } from "./context";
 import { buildSupportUi, modelToolResult, readSupportUi, cleanSupportAnswer } from "./ui";
 import redis from "@/lib/redis";
 import { rateLimit } from "@/lib/rate-limit";
@@ -180,7 +180,7 @@ export async function answerSupportTurn(conversationId: string, requestId: strin
 async function answerLocked(conversationId: string, requestId: string, question: string, identity: SupportIdentity, clientIp: ClientIpInfo, requestSignal?: AbortSignal, onCreated?: (id:string)=>void) {
   const started = Date.now();
   const retained=await retainedSupportTurns();
-  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, createdAt:true, expiresAt: true, contextSummary: true, turns: { where: { ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, take: 12, select: turnFields } } });
+  const conversation = await prisma.supportConversation.findFirst({ where: { id: conversationId, expiresAt: { gt: new Date() }, ...supportConversationScope(identity) }, select: { id: true, title: true, createdAt:true, expiresAt: true, contextSummary: true, turns: { where: { ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, take: RECENT_TURNS, select: turnFields } } });
   if (!conversation) throw new SupportRequestError("客服会话不存在或已过期", 404);
   const existing = await prisma.supportTurn.findUnique({ where: { conversationId_requestId: { conversationId, requestId } }, select: { id: true, createdAt:true, clearedAt:true, answerText: true, status: true, ui: true } });
   if (existing) {
@@ -196,10 +196,10 @@ async function answerLocked(conversationId: string, requestId: string, question:
   const retainedTitle=conversation.createdAt>retained.createdAt.gt?conversation.title:null;
   const contextDates=conversation.turns.map(turn=>turn.createdAt);
   if(summary||retainedTitle)contextDates.push(conversation.createdAt);
-  if (!summary && conversation.turns.length === 12) {
-    const older = await prisma.supportTurn.findMany({ where: { conversationId, ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: 12, take: 30, select: { userText: true, answerText: true, createdAt:true } });
+  if (!summary && conversation.turns.length === RECENT_TURNS) {
+    const older = await prisma.supportTurn.findMany({ where: { conversationId, ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: RECENT_TURNS, take: 31, select: { id: true, userText: true, answerText: true, createdAt:true } });
     contextDates.push(...older.map(turn=>turn.createdAt));
-    summary = older.reverse().map(t => `用户关注：${t.userText.slice(0, 150)}；当时回答（可能过时）：${(t.answerText || "未完成").slice(0, 120)}`).join("\n").slice(-6000);
+    summary = mergeContextSummary("", older.slice(0, 30).reverse(), older.length > 30);
   }
   async function assertContextRetained(client: Pick<Prisma.TransactionClient,'systemSetting'|'supportTurn'> = prisma) {
     const policy=await getSupportPolicy(client);
@@ -221,6 +221,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
   const evidence: Array<{ tool: string; arguments: unknown; result: unknown }> = [];
   let answer = "";
   let status = "FALLBACK";
+  let partialAccepted = false;
   let riskError: SupportRiskError | undefined;
   let permitRelease: (() => Promise<void>) | null = null;
   if (outOfScope) {
@@ -237,6 +238,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
     try {
       permitRelease = await acquireSupportPermit(identity, clientIp, safeQuestion);
       answer = await generateSupportAnswer({ question: safeQuestion, history: recentContext(conversation.turns), summary, config,
+        onPlan: plan => { partialAccepted = plan.decision === 'partial'; },
         beforeCall: async start => {
           await assertContextRetained();
           if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
@@ -289,6 +291,11 @@ async function answerLocked(conversationId: string, requestId: string, question:
       if (permitRelease) await permitRelease();
     }
   }
+  if (!answer && hasUnsupportedSupportTask(safeQuestion)) {
+    answer = '当前无法可靠分离这条请求，请单独发送商城相关的问题。';
+    status = 'SCOPE_UNAVAILABLE';
+  }
+  if (partialAccepted) answer = withSupportPartialNotice(answer);
   let savedFacts: unknown = { queries: evidence };
   if (!answer) {
     try {

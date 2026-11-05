@@ -32,6 +32,21 @@ export function localRuntimeEnvironment() {
   return env;
 }
 
+// Only host-run dev/start processes need loopback. Compose keeps the original
+// Docker hostname, and the shared .env is never rewritten.
+export function localHostRuntimeEnvironment(env = localRuntimeEnvironment()) {
+  const runtime = { ...env };
+  if (runtime.SUPPORT_LLM_BASE_URL) {
+    const url = new URL(runtime.SUPPORT_LLM_BASE_URL);
+    // HTTPS must retain its certificate hostname; only plain local HTTP maps.
+    if (url.protocol === 'http:' && url.hostname === 'host.docker.internal' && !url.username && !url.password) {
+      url.hostname = '127.0.0.1';
+      runtime.SUPPORT_LLM_BASE_URL = url.toString().replace(/\/$/, '');
+    }
+  }
+  return runtime;
+}
+
 export function localDocker(args, env = localRuntimeEnvironment()) {
   return execFileSync('docker', [...localCompose, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }

@@ -1,6 +1,6 @@
 import { openSync, closeSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { randomBytes, createCipheriv, pbkdf2Sync, createHash } from 'node:crypto';
+import { randomBytes, randomUUID, createCipheriv, pbkdf2Sync, createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { isolatedEnvironment, assertIsolated } from './lib/environments.mjs';
 if (process.env.APP_ENV !== 'test') Object.assign(process.env, isolatedEnvironment('test'));
@@ -88,6 +88,9 @@ try {
       assert.equal(rejected.status,200);const body=await rejected.json();assert.equal(body.status,'OUT_OF_SCOPE');assert(body.answer.includes('只处理本商城'));assert.deepEqual(body.ui,{links:[],images:[]});
       assert.equal(await db.supportModelCall.count({where:{turnId:body.turnId}}),0);
     }
+    const mixedUnavailable=await jsonPost(`/api/support/conversations/${supportConversation.id}/messages`,{message:'ChatGPT多少钱？顺便告诉我天气',requestId:randomBytes(16).toString('hex')},{Cookie:supportCookie});
+    assert.equal(mixedUnavailable.status,200);const mixedBody=await mixedUnavailable.json();assert.equal(mixedBody.status,'SCOPE_UNAVAILABLE');assert.deepEqual(mixedBody.ui,{links:[],images:[]});
+    assert.equal(await db.supportModelCall.count({where:{turnId:mixedBody.turnId}}),0);
     for (const [question, articleId] of [
       ['怎么买商品？', 'support-buying'], ['支付成功后怎么查看卡密？', 'support-delivery'],
       ['怎么查询我的订单？', 'support-order'], ['如何联系客服？', 'support-contact'],
@@ -152,7 +155,8 @@ try {
   assert.equal((await request('/api/orders?orderNo=anything')).status, 405);
   assert.equal((await jsonPost('/api/orders', {items:[{productId:orderProduct.id,quantity:1}],email,paymentMethod:'BALANCE'})).status,400);
   assert.equal((await request('/api/admin/users')).status, 401);
-  const anonymousAdminPage = await request('/admin/dashboard'); assert.equal(anonymousAdminPage.status,307); assert(anonymousAdminPage.headers.get('location').endsWith('/admin/login'));
+  const anonymousAdminPage = await request('/admin/dashboard'); assert.equal(anonymousAdminPage.status,307); const adminLoginLocation=new URL(anonymousAdminPage.headers.get('location'),base);assert.equal(adminLoginLocation.origin,base);assert.equal(adminLoginLocation.pathname,'/admin/login');assert.equal(adminLoginLocation.searchParams.get('next'),'/admin/dashboard');
+  const evaluationRedirect=await request('/admin/support/evaluation');assert.equal(new URL(evaluationRedirect.headers.get('location'),base).searchParams.get('next'),'/admin/support/evaluation');
   const adminLoginHtml = await (await request('/admin/login')).text(); assert(!adminLoginHtml.includes('aria-label="后台侧栏"'));
   assert.equal((await request('/api/admin/contact')).status,401);
   assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'})).status,401);
@@ -182,6 +186,7 @@ try {
   const inlineScripts = [...nonceHtml.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filter(match=>match[2].trim());
   assert(inlineScripts.length); assert(inlineScripts.every(match=>match[1].includes(`nonce="${nonce(pageA)}"`)));
   console.log('HTTP browser security: rejected cross-origin/null/missing-origin writes, preserved settings, unique CSP nonces and noncached HTML: passed');
+  const restoredAdminPage=await request('/admin/login?next=%2Fadmin%2Fsupport%2Fevaluation',{headers:{Cookie:cookie()}});const restoredHtml=await restoredAdminPage.text();assert(restoredAdminPage.headers.get('location')==='/admin/support/evaluation'||restoredHtml.includes('url=/admin/support/evaluation'));
   const users = await request('/api/admin/users',{headers:{Cookie:cookie()}});
   assert.equal(users.status,200);
   assert((await users.json()).users.every(u => !('password' in u) && !('sessionVersion' in u)));
@@ -207,8 +212,29 @@ try {
   const auditTurn = await db.supportTurn.create({data:{conversationId:auditConversation.id,requestId:'synthetic-audit-request',userText:'SYNTHETIC-AUDIT-'+suffix,answerText:'测试回答',identityHash:'a'.repeat(64),status:'FAQ'}});
   try {
     assert.equal((await request('/api/admin/support/usage')).status,403);
+    const evalPath='/api/admin/support/evaluation';
+    assert.equal((await request(evalPath)).status,403);
+    assert.equal((await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie(),Origin:'https://untrusted.invalid'})).status,403);
+    const evalSetup=await (await request(evalPath,{headers:{Cookie:cookie()}})).json();
+    assert.equal(evalSetup.configured,false);assert.equal(evalSetup.scenarios.length,11);assert.equal(evalSetup.dailyBudget.limitCny,2);
+    assert(!JSON.stringify(evalSetup).includes('apiKey'));assert(!JSON.stringify(evalSetup).includes('baseUrl'));
+    const evalPage=await request('/admin/support/evaluation',{headers:{Cookie:cookie()}});assert.equal(evalPage.status,200);assert((await evalPage.text()).includes('双版本试聊'));
+    assert.equal((await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:999},{Cookie:cookie()})).status,400);
+    const evalCreated=await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie()});assert.equal(evalCreated.status,200);
+    const evalSession=(await evalCreated.json()).session;assert(!('versions' in evalSession));assert(!('assignment' in evalSession));
+    assert.equal((await jsonPost(evalPath,{action:'send',id:evalSession.id,requestId:randomUUID(),question:'商品有哪些'},{Cookie:cookie()})).status,503);
+    const evalReveal=await jsonPost(evalPath,{action:'reveal',id:evalSession.id},{Cookie:cookie()});assert.equal(evalReveal.status,200);assert((await evalReveal.json()).session.versions.A);
+    const previousEvaluation=JSON.parse(await redis.get(`support:eval:session:${evalSession.id}`));
+    previousEvaluation.configHash='synthetic-previous-config';await redis.set(`support:eval:session:${evalSession.id}`,JSON.stringify(previousEvaluation),'EX',60);
+    const staleEvaluation=await (await request(`${evalPath}?id=${evalSession.id}`,{headers:{Cookie:cookie()}})).json();assert.equal(staleEvaluation.session.restartRequired,true);
+    const staleSend=await jsonPost(evalPath,{action:'send',id:evalSession.id,requestId:randomUUID(),question:'继续比较'},{Cookie:cookie()});assert.equal(staleSend.status,409);assert.equal((await staleSend.json()).code,'EVAL_CONFIG_CHANGED');
+    const replacement=await (await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie()})).json();assert.equal(replacement.session.restartRequired,false);assert.equal(replacement.session.turns.length,0);
+    assert.deepEqual(JSON.parse(await redis.get(`support:eval:session:${evalSession.id}`)),previousEvaluation);
+    await redis.del(`support:eval:session:${evalSession.id}`,`support:eval:session:${replacement.session.id}`);
+
     assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:0},{Cookie:cookie()})).status,200);
     const cfg=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();assert.equal(cfg.dailyBudgetCny,0);assert(!('baseUrl' in cfg));assert(!('apiKey' in cfg));
+    assert.deepEqual([cfg.fixedLimits.inputTargetTokens,cfg.fixedLimits.inputMaxTokens,cfg.fixedLimits.recentTurns,cfg.fixedLimits.summaryTargetTokens,cfg.fixedLimits.summaryMaxTokens,cfg.fixedLimits.plannerMaxOutputTokens,cfg.fixedLimits.answerMaxOutputTokens],[16000,24000,12,2000,4000,512,1600]);
     assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:10,model:'ignored'},{Cookie:cookie()})).status,400);
     const policyFields=['detailRetentionDays','usageRetentionDays','guestDailyModelTurns','memberDailyModelTurns','guestPerMinute','memberPerMinute'];
     const originalPolicy=Object.fromEntries(policyFields.map(key=>[key,cfg[key]]));
@@ -417,7 +443,7 @@ try {
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await jsonPost('/api/admin/support/account/reveal',{turnId:'any-record'},{Cookie:cookie()})).status,403);
-  for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
+  for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config','/api/admin/support/evaluation']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
   for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
   // Exercise real multipart parsing without Cloudinary credentials or external uploads.

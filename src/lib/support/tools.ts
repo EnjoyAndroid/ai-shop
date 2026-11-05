@@ -2,21 +2,21 @@ import { z } from "zod";
 import { getSettings } from "@/lib/services/settings.service";
 import { getPublicContactSettings } from "@/lib/contact-settings";
 import { isPaymentEnabled } from "@/lib/payment/config";
-import { supportPages, type SupportPage } from "./ui";
+import { supportPages, supportOrderAccess, supportNavigation, type SupportPage } from "./ui";
 import { searchSupportKnowledge } from "./retriever";
 import { withSupportDbAbort } from "./db-abort";
 
 const query = z.object({ query: z.string().trim().max(200) }).strict();
 const empty = z.object({}).strict();
-const queryParameters = { type: "object", properties: { query: { type: "string", description: "商品名称/型号或知识问题；商品空字符串可列目录。先查具体型号，无精确匹配可查品牌。" } }, required: ["query"], additionalProperties: false };
+const queryParameters = (description: string) => ({ type: "object", properties: { query: { type: "string", description } }, required: ["query"], additionalProperties: false });
 const emptyParameters = { type: "object", properties: {}, required: [], additionalProperties: false };
 export const supportTools = [
-  { name: "search_products", description: "查当前上架商品、价格、库存。exactMatches 是名称匹配，relatedProducts 只是相关商品，不能视为用户指定型号。超过返回上限会标明 truncated，应缩小查询。", parameters: queryParameters },
-  { name: "search_knowledge", description: "检索已发布的购买、使用、售后和账户知识。草稿不可见，不提供实时价格。", parameters: queryParameters },
+  { name: "search_products", description: "查当前上架商品、价格、库存。exactMatches 是名称匹配，relatedProducts 只是相关商品，不能视为用户指定型号。匹配分组只比较商品名称，不代表是否符合预算或用途；未指定名称时用空query列目录，再按返回价格/库存/描述选购。minQuantity/maxQuantity是每次订单中该商品的购买数量范围，不是每人累计限购；未问数量时无需主动补充。truncated表示有限结果，不代表全店。", parameters: queryParameters("只填商品名称、型号或品牌，最多200字符。预算/用途/价格问题不是名称，不填入query；未指定商品或查替代商品时传空字符串列目录。") },
+  { name: "search_knowledge", description: "检索已发布的购买、使用、售后和账户知识。草稿不可见，不提供实时价格。", parameters: queryParameters("需要了解的商城政策、购买步骤或使用故障，最多200字符；保留商品与问题要点，不查询实时价格、库存或订单状态。") },
   { name: "get_payment_methods", description: "查本轮实际启用的支付方式。", parameters: emptyParameters },
-  { name: "get_my_orders", description: "仅查询服务端认证用户的最近5笔订单摘要。无需且不接受 userId；游客返回登录/订单查询指引。", parameters: emptyParameters },
-  { name: "get_contacts", description: "查已保存的微信客服二维码、联系方式及 Telegram，不会发送消息。", parameters: emptyParameters },
-  { name: "get_navigation", description: "用户需要浏览、购买、订单查询、登录或充值等页面时，选择站内目标，由服务端生成跳转按钮。不接受URL，不会执行购买或支付。", parameters: { type: "object", properties: { page: { type: "string", enum: Object.keys(supportPages) } }, required: ["page"], additionalProperties: false } },
+  { name: "get_my_orders", description: "读取已登录账号的最近5笔订单摘要；游客不读取私人订单，返回免登录查询订单页面指引。无需且不接受userId。只问在哪里查订单时用get_navigation。", parameters: emptyParameters },
+  { name: "get_contacts", description: "用户要求联系人工或问题需人工处理时，查当前公开渠道；只提供联系指引，不发送消息、不创建工单、不转接人工。", parameters: emptyParameters },
+  { name: "get_navigation", description: "用户需要浏览、购买、订单查询、登录或充值等页面时，选择站内目标，由服务端生成跳转按钮。通用订单查询选order_query，无需登录；my_orders只用于已登录账号，游客会返回公共查询入口。不接受URL，不会执行购买或支付。", parameters: { type: "object", properties: { page: { type: "string", enum: Object.keys(supportPages) } }, required: ["page"], additionalProperties: false } },
   { name: "get_announcements", description: "查当前公开公告。", parameters: emptyParameters },
 ].map(tool => ({ type: "function" as const, strict: true, ...tool }));
 
@@ -49,7 +49,7 @@ export async function executeSupportTool(name: string, raw: unknown, userId?: st
   }
   if (name === "get_navigation") {
     const { page } = z.object({ page: z.enum(Object.keys(supportPages) as [SupportPage, ...SupportPage[]]) }).strict().parse(raw);
-    return { page, ...supportPages[page] };
+    return supportNavigation(page, Boolean(userId));
   }
   if (!supportTools.some(tool => tool.name === name)) throw new Error("UNKNOWN_TOOL");
   empty.parse(raw);
@@ -59,9 +59,9 @@ export async function executeSupportTool(name: string, raw: unknown, userId?: st
   }
   if (name === "get_contacts") return { queriedAt: new Date().toISOString(), ...getPublicContactSettings(await getSettings(signal)) };
   if (name === "get_my_orders") {
-    if (!userId) return { requiresLogin: true, guidance: "请登录查看本人订单，或使用 /order 页面完成验证码和订单密码解锁。" };
+    if (!userId) return supportOrderAccess(false);
     const orders = await withSupportDbAbort(signal, tx => tx.order.findMany({ where: { userId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 5, select: { orderNo: true, status: true, payAmount: true, createdAt: true, items: { select: { productName: true, quantity: true } } } }));
-    return { queriedAt: new Date().toISOString(), orders: orders.map(({ payAmount, ...order }) => ({ ...order, payAmountCny: payAmount / 100 })) };
+    return { ...supportOrderAccess(true), queriedAt: new Date().toISOString(), orders: orders.map(({ payAmount, ...order }) => ({ ...order, payAmountCny: payAmount / 100 })) };
   }
   return { announcements: await withSupportDbAbort(signal, tx => tx.announcement.findMany({ where: { isActive: true }, orderBy: [{ isPinned: "desc" }, { sort: "asc" }], take: 5, select: { title: true, content: true } })) };
 }

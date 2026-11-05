@@ -38,3 +38,5 @@
 验证命令见 [贡献说明](../CONTRIBUTING.md)。测试通过覆盖已验证的路径，不代表不存在漏洞；当前文件和提交邮箱扫描也不能保证所有历史对象或托管平台副本已清理。
 
 `braces` 的已知安全公告目前仍通过安装时的可校验补丁缓解，普通 `npm audit` 可能继续报告相关依赖。`npm run audit:security` 校验补丁并拒绝其他告警或联网失败；不要跳过安装脚本或降低整个审计阈值。上游修复可用后应验证升级并移除临时补丁。
+
+TypeScript ESLint解析器内部的minimatch使用限定于 `@typescript-eslint/typescript-estree` 的11.0.1覆盖，修复GHSA-g3hv-75wg-m249。该消费者只使用 `minimatch(filePath, pattern, { dot: true })`；升级前已核对CommonJS导出与Node 22兼容性并验证路径匹配，最终仍需经过干净安装、构建/lint与审计。覆盖不影响运行时业务依赖；上游声明升级到已修复范围后应移除覆盖并重新验收。

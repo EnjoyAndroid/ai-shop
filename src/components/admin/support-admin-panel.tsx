@@ -1,11 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from 'react';
 import { SupportMonitoring } from './support-monitoring';
 type Article = { id?: string; title: string; question: string; aliases: string[]; keywords: string[]; category: string; content: string; status: 'DRAFT'|'PUBLISHED'; version?: number };
 const empty: Article = {title:'',question:'',aliases:[],keywords:[],category:'general',content:'',status:'DRAFT'};
-type FixedLimits = {plannerMaxOutputTokens:number;answerMaxOutputTokens:number;upstreamTimeoutMs:number;totalTimeoutMs:number;maxModelRounds:number;maxToolCalls:number;identityConcurrent:number;ipConcurrent:number;globalConcurrent:number;duplicateWindowSeconds:number;duplicateThreshold:number;cooldownSeconds:number};
+type FixedLimits = {inputTargetTokens:number;inputMaxTokens:number;recentTurns:number;summaryTargetTokens:number;summaryMaxTokens:number;plannerMaxOutputTokens:number;answerMaxOutputTokens:number;upstreamTimeoutMs:number;totalTimeoutMs:number;maxModelRounds:number;maxToolCalls:number;identityConcurrent:number;ipConcurrent:number;globalConcurrent:number;duplicateWindowSeconds:number;duplicateThreshold:number;cooldownSeconds:number};
 type Config = {provider:string;model:string;dailyBudgetCny:number;configured:boolean;apiKeyConfigured:boolean;detailRetentionDays:number;usageRetentionDays:number;guestDailyModelTurns:number;memberDailyModelTurns:number;guestPerMinute:number;memberPerMinute:number;fixedLimits:FixedLimits};
-export function SupportAdminPanel() {
+export function SupportAdminPanel({evaluationEnabled = false}:{evaluationEnabled?: boolean}) {
   const [tab,setTab]=useState<'knowledge'|'usage'|'risk'|'config'>('usage');
   const [focusTurnId,setFocusTurnId]=useState<string|null>(null);
   const [articles,setArticles]=useState<Article[]>([]), [article,setArticle]=useState<Article>(empty);
@@ -16,6 +17,7 @@ export function SupportAdminPanel() {
   async function save(action:'save'|'publish') {setSaving(true);try{const r=await fetch('/api/admin/support/knowledge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...article,action})});const d=await r.json();if(!r.ok)throw new Error(d.error);setMessage(action==='publish'?'知识已发布':'草稿已保存');setArticle(empty);await loadArticles();}catch(e){setMessage(e instanceof Error?e.message:'保存失败');}finally{setSaving(false);}}
   async function saveConfig(){if(!config)return;setSaving(true);try{const payload={dailyBudgetCny:Number(config.dailyBudgetCny),detailRetentionDays:Number(config.detailRetentionDays),usageRetentionDays:Number(config.usageRetentionDays),guestDailyModelTurns:Number(config.guestDailyModelTurns),memberDailyModelTurns:Number(config.memberDailyModelTurns),guestPerMinute:Number(config.guestPerMinute),memberPerMinute:Number(config.memberPerMinute)};const r=await fetch('/api/admin/support/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error);setMessage('客服配置已保存，新提问按新限额检查，历史数据将在定时清理时按新保留期处理');}catch(e){setMessage(e instanceof Error?e.message:'保存失败');}finally{setSaving(false);}}
   return <div className="space-y-6">
+    {evaluationEnabled&&<div className="flex justify-end"><Link href="/admin/support/evaluation" className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm text-indigo-700">双版本试聊 →</Link></div>}
     <div><h1 className="text-2xl font-bold text-gray-800">智能客服</h1><p className="mt-2 text-sm text-gray-500">维护知识、查看咨询记录和用量，处理异常访问。</p></div>
     <div className="flex flex-wrap gap-2 border-b">{([['usage','Token 统计'],['risk','风控排查'],['config','配置'],['knowledge','知识库']] as const).map(([key,label])=><button key={key} onClick={()=>{setFocusTurnId(null);setTab(key);setMessage('');}} className={`px-4 py-2 text-sm ${tab===key?'border-b-2 border-primary font-semibold text-primary':'text-gray-500'}`}>{label}</button>)}</div>
     {message&&<p role="status" className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">{message}</p>}
@@ -27,6 +29,9 @@ export function SupportAdminPanel() {
         <div className="grid gap-x-8 gap-y-2 text-sm leading-6 text-gray-500 sm:grid-cols-2">
           <p className="break-all">当前模型：{config.model}</p>
           <p>网关：{config.provider} · 模型凭据：{config.apiKeyConfigured?'已配置':'未配置'}</p>
+          <p>输入估算目标 / 上限：{config.fixedLimits.inputTargetTokens.toLocaleString('en-US')} / {config.fixedLimits.inputMaxTokens.toLocaleString('en-US')} Token</p>
+          <p>近期完整问答：优先 {config.fixedLimits.recentTurns} 轮，超限转摘录</p>
+          <p>历史摘录目标 / 上限：{config.fixedLimits.summaryTargetTokens.toLocaleString('en-US')} / {config.fixedLimits.summaryMaxTokens.toLocaleString('en-US')} Token</p>
           <p>规划输出上限：{config.fixedLimits.plannerMaxOutputTokens.toLocaleString('en-US')} Token</p>
           <p>回答输出上限：{config.fixedLimits.answerMaxOutputTokens.toLocaleString('en-US')} Token</p>
           <p>单次模型请求超时：{config.fixedLimits.upstreamTimeoutMs/1000} 秒</p>

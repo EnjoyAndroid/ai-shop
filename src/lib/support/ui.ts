@@ -13,6 +13,21 @@ export const supportPages = {
   recharge: { label: '余额充值', href: '/balance/recharge' },
 } as const;
 export type SupportPage = keyof typeof supportPages;
+/** Public order lookup is independent of account authentication. */
+export function supportOrderAccess(authenticated: boolean) {
+  return {
+    identity: authenticated ? 'member' : 'guest',
+    canReadMyOrders: authenticated,
+    publicOrderQuery: { page: 'order_query', requiresAccountLogin: false, verification: '在订单页面完成验证码及必要的订单密码验证，勿在聊天中发送密码或卡密。' },
+    guidance: authenticated
+      ? '可直接使用免登录的查询订单页面；当前已登录，也可查看我的订单。'
+      : '订单查询页面无需登录账户。请直接点击查询订单，在该页面完成验证；不要在聊天中提供查询密码。',
+  };
+}
+export function supportNavigation(requestedPage: SupportPage, authenticated: boolean) {
+  const page = requestedPage === 'my_orders' && !authenticated ? 'order_query' : requestedPage;
+  return { page, ...supportPages[page], ...(['order_query', 'my_orders'].includes(requestedPage) ? supportOrderAccess(authenticated) : {}) };
+}
 export interface SupportUiLink { label: string; href: string; }
 export interface SupportUiImage { alt: string; url: string; }
 export interface SupportUi { links: SupportUiLink[]; images: SupportUiImage[]; }
@@ -58,10 +73,13 @@ export function buildSupportUi(evidence: SupportEvidence[], answer: string, user
       for (const p of (mentioned.length ? mentioned : products).slice(0, 6)) addLink(`查看 ${p.name}`, p.url);
     }
     if (entry.tool === 'get_my_orders') {
-      const page = supportPages[userId ? 'my_orders' : 'order_query']; addLink(page.label, page.href);
+      addLink(supportPages.order_query.label, supportPages.order_query.href);
+      if (userId) addLink(supportPages.my_orders.label, supportPages.my_orders.href);
     }
     if (entry.tool === 'get_navigation' && typeof result.page === 'string' && Object.hasOwn(supportPages, result.page)) {
-      const page = supportPages[result.page as SupportPage]; addLink(page.label, page.href);
+      const page = supportNavigation(result.page as SupportPage, Boolean(userId));
+      if (page.page === 'my_orders') addLink(supportPages.order_query.label, supportPages.order_query.href);
+      addLink(page.label, page.href);
     }
   }
   return readSupportUi(ui);
@@ -69,6 +87,7 @@ export function buildSupportUi(evidence: SupportEvidence[], answer: string, user
 
 /** Presentation URLs belong to the UI, not the model's prose or conversational memory. */
 export function modelToolResult(tool: string, result: any): unknown {
+  if (!result || typeof result !== 'object' || result.error) return result;
   if (tool === 'get_contacts') {
     const contacts = getPublicContactSettings(result);
     return { queriedAt: result.queriedAt, wechatQrConfigured: Boolean(contacts.wechatSupportQrUrl),
@@ -79,7 +98,10 @@ export function modelToolResult(tool: string, result: any): unknown {
     exactMatches: result.exactMatches.map(({ url: _url, ...p }: any) => p),
     relatedProducts: result.relatedProducts.map(({ url: _url, ...p }: any) => p),
     presentation: '已查询商品由前端显示详情按钮，回答使用商品名称，不编写链接。' };
-  if (tool === 'get_navigation') return { page: result.page, label: result.label, presentation: '该站内页面按钮会显示在答案下方。' };
+  if (tool === 'get_navigation') {
+    const { href: _href, ...data } = result;
+    return { ...data, presentation: '该站内页面按钮会显示在答案下方；查询订单按钮无需登录账户。' };
+  }
   return result;
 }
 export function cleanSupportAnswer(text: string, ui: SupportUi): string {

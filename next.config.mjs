@@ -2,6 +2,8 @@
 const nextConfig = {
   // 启用 standalone 模式（Docker 部署必需）
   output: 'standalone',
+  // Keep configured 127.0.0.1 redirects from being rewritten to localhost.
+  skipMiddlewareUrlNormalize: true,
   distDir: process.env.NEXT_DEV_ISOLATED === '1' ? '.next-dev' : '.next',
 
   experimental: {

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/db';
 import { dayStartShanghai, type SupportConfig } from './config';
-import { SUPPORT_LIMITS } from './limits';
+import { supportInputFits } from './tokens';
 import type { SupportCallRecord, SupportCallStart, SupportUsage } from './llm';
 
 const decimal = (value: number | string) => new Prisma.Decimal(value);
@@ -21,7 +21,7 @@ export function supportCost(usage: SupportUsage, rates: ReturnType<typeof suppor
 export function reservationCost(start: SupportCallStart, config: SupportConfig) {
   // UTF-8 bytes + framing margin is a conservative local estimate, not reported usage.
   const bytes = Buffer.byteLength(JSON.stringify(start.body), 'utf8');
-  if (bytes > SUPPORT_LIMITS.inputBytes) throw new Error('SUPPORT_INPUT_LIMIT');
+  if (!supportInputFits(start.body)) throw new Error('SUPPORT_INPUT_LIMIT');
   const inputRate = Math.max(config.inputUsdPerMillion, config.cachedInputUsdPerMillion, config.cacheWriteUsdPerMillion);
   return rounded(decimal(bytes + 2048).mul(inputRate).add(decimal(start.maxOutputTokens).mul(config.outputUsdPerMillion)).div(1_000_000).mul(config.usdCnyRate));
 }

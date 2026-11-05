@@ -666,12 +666,28 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
     });
     const answer=await answerSupportTurn(c.id,'agent-request','Claude 5x多少钱？',identity);
     assert.equal(answer.status,'COMPLETED');assert.equal(count,3);assert(!('sources' in answer));assert(!('facts' in answer));
-    const firstInput=JSON.stringify(bodies[0].input);assert(firstInput.includes('旧问题24'));assert(firstInput.includes('旧问题24'));assert(!firstInput.includes('priceCny'));
+    const scopeContext=JSON.parse(bodies[0].input[0].content);
+    assert.equal(scopeContext.history.length,24);
+    for(let i=0;i<13;i++)assert(scopeContext.summary.includes(`旧问题${i}`));
+    assert.equal(scopeContext.history[0].content,'旧问题13');assert.equal(scopeContext.history.at(-1).content,'旧回答24');
+    assert(!JSON.stringify(scopeContext).includes('priceCny'));
     assert(JSON.stringify(bodies[2].input).includes('priceCny'));
     const stored=await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId},include:{modelCalls:true}});
     assert.equal(stored.modelCalls.length,3);assert(stored.modelCalls.every(call=>call.totalTokens===30));assert((stored.sources as any[]).length>0);assert((stored.facts as any).queries.length===2);
     assert((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary.includes('旧问题13'));
     const replay=await answerSupportTurn(c.id,'agent-request','Claude 5x多少钱？',identity);assert.equal(replay.turnId,answer.turnId);assert.equal(count,3);
+    t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+      const body=JSON.parse(init.body);bodies.push(body);count++;
+      return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow',queries:[]}):'继续比较套餐',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
+    });
+    await answerSupportTurn(c.id,'memory-followup','继续比较这些套餐',identity);
+    const nextContext=JSON.parse(bodies[3].input[0].content);
+    assert(nextContext.summary.includes('旧问题13'));assert(!nextContext.history.some((m:any)=>m.content==='旧问题13'));
+    assert.equal(nextContext.history[0].content,'旧问题14');assert.equal(nextContext.history.at(-2).content,'Claude 5x多少钱？');
+    assert.equal(count,5);
+    const serialized=(await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary;
+    assert.equal(JSON.parse(serialized).version,2);
+    assert.equal(await prisma.supportTurn.count({where:{conversationId:c.id,clearedAt:null}}),27,'summarization does not delete original turns');
     // Distributed lock refuses concurrent messages without another paid request.
     await redis.set(`support:turn-lock:${c.id}`,'another-worker','EX',5);
     await assert.rejects(answerSupportTurn(c.id,'concurrent-request','另一个问题',identity),/正在回答/);
@@ -739,7 +755,7 @@ test('support scope denies weather and keyword bypasses without calls; classifie
   try {
     process.env.SUPPORT_LLM_API_KEY='synthetic-test-only';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';
     await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'earlier-valid',userText:'Claude会员多少钱',answerText:'可以查询商品。'}});
-    for (const question of ['今天天气怎么样','AIShop今天天气怎么样','Claude多少钱，顺便告诉我天气','帮商城写商品购买接口','那明天天气呢']) {
+    for (const question of ['今天天气怎么样','AIShop今天天气怎么样','帮商城写商品购买接口','那明天天气呢']) {
       const result=await answerSupportTurn(c.id,randomBytes(8).toString('hex'),question,identity);
       assert.equal(result.status,'OUT_OF_SCOPE');assert.equal(result.answer,SUPPORT_SCOPE_REFUSAL);assert.deepEqual(result.ui,{links:[],images:[]});
       assert.equal(await prisma.supportModelCall.count({where:{turnId:result.turnId}}),0);
@@ -801,13 +817,14 @@ test('trusted FAQs skip all model calls with live facts and UI; mixed questions 
     assert.equal((await answerSupportTurn(c.id,'faq-budget','怎么买商品？',identity)).status,'FAQ');assert.equal(calls,before);
     process.env.SUPPORT_DAILY_BUDGET_CNY='10000';mode='503';
     const unknown=await answerSupportTurn(c.id,'faq-unknown','支持哪些支付方式？另外做一份旅行计划',identity);assert.equal(unknown.status,'SCOPE_UNAVAILABLE');assert.deepEqual(unknown.ui,{links:[],images:[]});
-    assert.equal((await answerSupportTurn(c.id,'faq-weather','支持哪些支付方式？今天天气如何',identity)).status,'OUT_OF_SCOPE');
-    assert.equal(calls,1,'only the unrecognized mixed question reaches classification');
+    assert.equal((await answerSupportTurn(c.id,'faq-weather','支持哪些支付方式？今天天气如何',identity)).status,'SCOPE_UNAVAILABLE');
+    assert.equal(calls,2,'mixed questions must be classified before executing any query');
+    await redis.del('support:v2:circuit');
     mode='deny';assert.equal((await answerSupportTurn(c.id,'faq-denied','怎么买商品？另外帮我规划出游路线',identity)).status,'OUT_OF_SCOPE');
     mode='timeout';assert.equal((await answerSupportTurn(c.id,'unknown-timeout','帮我挑选一个适合我的会员',identity)).status,'SCOPE_UNAVAILABLE');
     mode='invalid';assert.equal((await answerSupportTurn(c.id,'unknown-invalid','帮我挑选一个适合我的会员',identity)).status,'SCOPE_UNAVAILABLE');
-    assert.equal(calls,4);
-    const alias=await answerSupportTurn(c.id,'faq-alias','如何购买商品',identity);assert.equal(alias.status,'FAQ');assert.equal(alias.answer,results[0].answer);assert.equal(calls,4);
+    assert.equal(calls,5);
+    const alias=await answerSupportTurn(c.id,'faq-alias','如何购买商品',identity);assert.equal(alias.status,'FAQ');assert.equal(alias.answer,results[0].answer);assert.equal(calls,5);
     const replay=await answerSupportTurn(c.id,'faq-timeout','哪些商品有库存？',identity);assert.equal(replay.answer,latest.answer);assert.deepEqual(replay.ui,latest.ui);
     assert((await getLatestSupportConversation(identity))?.turns.some(t=>t.id===latest.turnId&&t.answerText===latest.answer));
   } finally {
@@ -1420,4 +1437,109 @@ test('in-flight support completion cannot restore purged history after retention
     await prisma.supportConversation.delete({where:{id:c.id}});await prisma.user.delete({where:{id:user.id}});
     await prisma.systemSetting.deleteMany({where:{key:{in:keys}}});for(const row of prior)await prisma.systemSetting.create({data:{key:row.key,value:row.value}});await clearSettingsCache();
   }
+});
+
+test('evaluation isolates ownership, fixtures, budget and replay; prompt follow-ups require a rating',async t=>{
+  const {createEvaluation,loadEvaluation,evaluationView,sendEvaluation,rateEvaluation,revealEvaluation}=await import('../../src/lib/support/evaluation/store');
+  const names=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API'];const saved=names.map(n=>process.env[n]);
+  process.env.SUPPORT_LLM_API_KEY='synthetic-eval';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';
+  const owner=`eval-${prefix}`;let calls=0;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+    calls++;const body=JSON.parse(init.body);const scope=body.instructions.includes('查询参数定义');
+    return new Response(JSON.stringify({output_text:scope?JSON.stringify({decision:'allow',queries:[{name:'search_products',arguments:{query:'ChatGPT'}}]}):'ChatGPT Plus 测试月卡99元，有货。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
+  });
+  const turnCount=await prisma.supportTurn.count(),ledgerCount=await prisma.supportModelCall.count();
+  try{
+    const view=await createEvaluation(owner,'prompt','memory',0.5);
+    assert(!('assignment' in view));assert(!('versions' in view));
+    await assert.rejects(loadEvaluation(view.id,'other'),(e:any)=>e.status===404);
+    const id=randomBytes(16).toString('hex');
+    const first=await sendEvaluation(view.id,owner,id,'现在推荐什么？');assert.equal(calls,4);assert.equal(first.turns.length,1);assert(first.spentCny>0);assert.equal(first.heldCny,0);
+    await sendEvaluation(view.id,owner,id,'现在推荐什么？');assert.equal(calls,4);
+    await assert.rejects(sendEvaluation(view.id,owner,id,'不同问题'),(e:any)=>e.status===409);
+    await assert.rejects(sendEvaluation(view.id,owner,'next','继续'),/先评价/);
+    await rateEvaluation(view.id,owner,id,'B');const next=await sendEvaluation(view.id,owner,'next','按刚才的条件继续');assert.equal(next.turns.length,2);assert.equal(calls,8);
+    await assert.rejects(rateEvaluation(view.id,owner,id,'A'),/最新一轮/);
+    const revealed=await revealEvaluation(view.id,owner);assert(revealed.versions?.A);assert.notEqual(revealed.versions?.A,revealed.versions?.B);
+    assert.equal(await prisma.supportTurn.count(),turnCount);assert.equal(await prisma.supportModelCall.count(),ledgerCount,'evaluation does not pollute customer usage');
+    await redis.set(`support:eval:pending:${view.id}`,'interrupted','EX',60);
+    assert((await evaluationView(await loadEvaluation(view.id,owner))).pending);
+    await assert.rejects(sendEvaluation(view.id,owner,'retry','继续'),(e:any)=>e.status===409);
+    assert.equal(calls,8);
+    await redis.del(`support:eval:pending:${view.id}`);
+    process.env.SUPPORT_LLM_BASE_URL='https://changed.invalid/v1';
+    await rateEvaluation(view.id,owner,'next','tie');
+    const oldSession=await loadEvaluation(view.id,owner);
+    assert((await evaluationView(oldSession)).restartRequired);
+    await assert.rejects(sendEvaluation(view.id,owner,'changed','继续'),(e:any)=>e.status===409&&e.code==='EVAL_CONFIG_CHANGED');
+    assert.equal(calls,8,'config change must not send a paid request');
+    const replacement=await createEvaluation(owner,oldSession.mode,oldSession.scenario,oldSession.budgetCny);
+    assert.notEqual(replacement.id,view.id);assert.equal(replacement.restartRequired,false);assert.equal(replacement.turns.length,0);
+    assert.equal(replacement.mode,oldSession.mode);assert.equal(replacement.scenario,oldSession.scenario);assert.equal(replacement.budgetCny,oldSession.budgetCny);
+    assert.deepEqual(await loadEvaluation(view.id,owner),oldSession,'new evaluation keeps old results intact');assert.equal(calls,8);
+    const session=await loadEvaluation(view.id,owner);session.expiresAt=new Date(Date.now()-1).toISOString();await redis.set(`support:eval:session:${view.id}`,JSON.stringify(session));
+    await assert.rejects(loadEvaluation(view.id,owner),(e:any)=>e.status===404);
+  }finally{names.forEach((n,i)=>saved[i]===undefined?delete process.env[n]:process.env[n]=saved[i]);const keys=await redis.keys('support:eval:*');if(keys.length)await redis.del(...keys);}
+});
+
+test('evaluation budget reservations are atomic, unknown usage holds money, settlement is idempotent and daily cap spans sessions',async()=>{
+  const {evaluationLedger,evaluationDailyBudget}=await import('../../src/lib/support/evaluation/store');
+  const config={provider:'test',baseUrl:'https://example.invalid/v1',model:'test',wireApi:'responses' as const,apiKey:'',dailyBudgetCny:999,usdCnyRate:1,inputUsdPerMillion:100,cachedInputUsdPerMillion:100,cacheWriteUsdPerMillion:100,outputUsdPerMillion:0};
+  const start={phase:'answer' as const,body:{input:'test'},sequence:1,maxOutputTokens:1600};
+  const ledger=evaluationLedger({id:'ledger-test',budgetCny:0.3},config);
+  const before=await prisma.supportBudgetDay.count();
+  try{
+    const both=await Promise.all([ledger.reserve(start),ledger.reserve(start)]);assert.equal(both.filter(Boolean).length,1);
+    const reservation=both.find(Boolean)!;assert(reservation);
+    const record={phase:'answer' as const,sequence:1,latencyMs:1,success:true,sent:true,callId:reservation.callId,usage:{inputTokens:null,outputTokens:null,cachedTokens:null,cacheWriteTokens:null,reasoningTokens:null,totalTokens:null,responseModel:'test'}};
+    await ledger.settle(record);assert.equal(await ledger.reserve(start),false);
+    const known={...record,usage:{...record.usage,inputTokens:1,outputTokens:0,totalTokens:1}};
+    await ledger.settle(known);const first=await redis.hgetall('support:eval:budget:ledger-test');await ledger.settle(known);assert.deepEqual(await redis.hgetall('support:eval:budget:ledger-test'),first);
+    const costly={...config,inputUsdPerMillion:600,cachedInputUsdPerMillion:600,cacheWriteUsdPerMillion:600};
+    const r=await evaluationLedger({id:'daily-a',budgetCny:2},costly).reserve(start);assert(r);
+    assert.equal(await evaluationLedger({id:'daily-b',budgetCny:2},costly).reserve(start),false);
+    assert((await evaluationDailyBudget()).heldCny>1);
+    assert.equal(await prisma.supportBudgetDay.count(),before);
+  }finally{const keys=await redis.keys('support:eval:*');if(keys.length)await redis.del(...keys);}
+});
+
+test('evaluation serializes simultaneous paid sends and keeps session lock through both sides',async t=>{
+  const {createEvaluation,sendEvaluation}=await import('../../src/lib/support/evaluation/store');
+  const names=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API'];const saved=names.map(n=>process.env[n]);
+  process.env.SUPPORT_LLM_API_KEY='synthetic';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';
+  let started!:()=>void,release!:()=>void;const ready=new Promise<void>(r=>started=r),gate=new Promise<void>(r=>release=r);let count=0;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{count++;started();await gate;const body=JSON.parse(init.body);return new Response(JSON.stringify({output_text:body.instructions.includes('查询参数定义')?JSON.stringify({decision:'allow',queries:[]}):'测试回答',usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));});
+  let pending:Promise<unknown>|undefined;
+  try{
+    const owner=`eval-concurrent-${prefix}`,session=await createEvaluation(owner,'full','shopping',0.5),other=await createEvaluation(owner,'full','shopping',0.5);
+    pending=sendEvaluation(session.id,owner,'first','会员有什么选择');await ready;
+    await assert.rejects(sendEvaluation(session.id,owner,'second','其他选择'),(e:any)=>e.status===409);
+    await assert.rejects(sendEvaluation(other.id,owner,'parallel','其他选择'),(e:any)=>e.status===409);
+    release();await pending;assert.equal(count,4);
+  }finally{release();await pending?.catch(()=>{});names.forEach((n,i)=>saved[i]===undefined?delete process.env[n]:process.env[n]=saved[i]);const keys=await redis.keys('support:eval:*');if(keys.length)await redis.del(...keys);}
+});
+
+test('mixed shop requests execute only approved shop queries, preserve public order buttons and fail closed without a model',async t=>{
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const keys=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_DAILY_BUDGET_CNY'];const saved=keys.map(k=>process.env[k]);
+  const identity={anonymousKey:randomBytes(32).toString('hex')};const c=await createSupportConversation(identity);let calls=0;
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+    const body=JSON.parse(init.body);calls++;
+    const scope=body.instructions.includes('查询参数定义');
+    if(!scope){assert(!JSON.stringify(body.input).includes('Python'));assert(JSON.stringify(body.input).includes('无需登录'));}
+    return new Response(JSON.stringify({output_text:scope?JSON.stringify({decision:'partial',shopQuestion:'订单在哪里查询？',queries:[{name:'get_navigation',arguments:{page:'my_orders'}}]}):'无需登录，请点击下方查询订单。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
+  });
+  try{
+    process.env.SUPPORT_LLM_API_KEY='synthetic-only';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';await clearSettingsCache();
+    const answer=await answerSupportTurn(c.id,'mixed-order','订单在哪里查询？另外帮我写Python爬虫。',identity);
+    assert.equal(answer.status,'COMPLETED');assert.equal(calls,2);assert.match(answer.answer,/其余请求不在客服服务范围/);
+    assert.deepEqual(answer.ui.links.map(l=>l.href),['/order']);
+    const stored=await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId}});assert.equal((stored.facts as any).queries[0].result.page,'order_query');
+    assert.equal((await answerSupportTurn(c.id,'mixed-order','订单在哪里查询？另外帮我写Python爬虫。',identity)).turnId,answer.turnId);assert.equal(calls,2);
+    process.env.SUPPORT_LLM_API_KEY='';await clearSettingsCache();
+    const unavailable=await answerSupportTurn(c.id,'mixed-no-model','ChatGPT多少钱？顺便告诉我天气',identity);
+    assert.equal(unavailable.status,'SCOPE_UNAVAILABLE');assert.deepEqual(unavailable.ui,{links:[],images:[]});assert.equal(calls,2);
+    const pure=await answerSupportTurn(c.id,'pure-unrelated','帮商城写购买接口',identity);assert.equal(pure.status,'OUT_OF_SCOPE');assert.equal(calls,2);
+  }finally{keys.forEach((k,i)=>saved[i]===undefined?delete process.env[k]:process.env[k]=saved[i]);await clearSettingsCache();await prisma.supportConversation.delete({where:{id:c.id}});}
 });

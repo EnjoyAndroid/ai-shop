@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
+import { adminLoginUrl } from "@/lib/admin-navigation";
 import { getAdminSecret } from "@/lib/security-config";
 import { browserWriteAllowed, contentSecurityPolicy } from "@/lib/browser-security";
 
@@ -28,7 +29,7 @@ export async function middleware(request: NextRequest) {
 
     // 未登录，重定向到登录页
     if (!adminToken) {
-      const loginUrl = new URL("/admin/login", request.url);
+      const loginUrl = adminLoginUrl(pathname, process.env.NEXTAUTH_URL, request.url);
       return NextResponse.redirect(loginUrl);
     }
 
@@ -43,7 +44,7 @@ export async function middleware(request: NextRequest) {
     } catch (error) {
       // Token 无效或过期，清除 cookie 并重定向到登录页
       const response = NextResponse.redirect(
-        new URL("/admin/login", request.url)
+        adminLoginUrl(pathname, process.env.NEXTAUTH_URL, request.url)
       );
       response.cookies.delete("admin_token");
       return response;
