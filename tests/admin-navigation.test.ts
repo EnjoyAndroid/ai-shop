@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { adminDestination, adminLoginUrl } from "../src/lib/admin-navigation";
 
 test("admin login preserves the configured origin and intended internal page", () => {
-  const url = adminLoginUrl("/admin/support/evaluation", "http://127.0.0.1:3013", "http://localhost:3013/admin/support/evaluation");
+  const url = adminLoginUrl("/admin/support", "http://127.0.0.1:3013", "http://localhost:3013/admin/support");
   assert.equal(url.origin, "http://127.0.0.1:3013");
   assert.equal(url.pathname, "/admin/login");
-  assert.equal(url.searchParams.get("next"), "/admin/support/evaluation");
+  assert.equal(url.searchParams.get("next"), "/admin/support");
   assert.equal(adminDestination("/admin/orders/order-123"), "/admin/orders/order-123");
 });
 test("admin return destinations reject external URLs, encodings and login loops", () => {

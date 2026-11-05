@@ -4,7 +4,7 @@
 
 **开始开发前，先阅读 `dev_log.md`**，了解历史问题和注意事项，避免重复踩坑。
 
-功能与部署说明维护在中英文 README 中；涉及交流群入口时，同步核对 `docs/community/README.md`。
+README 只维护项目介绍、当前功能概述、架构、部署和必要配置，中英文同步。每轮优化原因、提示词调整、上下文参数、调试和验收过程写入 `dev_log.md`；当前技术细节维护在专题文档，不逐轮追加到 README。详细归属见 `CONTRIBUTING.md`。涉及交流群入口时，同步核对 `docs/community/README.md`。
 
 ## 提交前必须执行
 

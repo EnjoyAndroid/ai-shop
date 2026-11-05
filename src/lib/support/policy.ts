@@ -13,9 +13,12 @@ export function supportGreetingAnswer(value: string): string | null {
   if (/^(你是谁|叫什么名字|你叫什么)$/i.test(text)) return SUPPORT_GREETING;
   return null;
 }
+function normalizeSupportQuestion(value: string): string {
+  return value.normalize("NFKC").replace(/[\u200b-\u200d\ufeff]/g, "");
+}
 /** Detect explicit unsupported tasks; not a scope authorization decision. */
 export function hasUnsupportedSupportTask(value: string): boolean {
-  const text = value.normalize("NFKC").replace(/[\u200b-\u200d\ufeff]/g, "")
+  const text = normalizeSupportQuestion(value)
     // Product-purpose descriptions are not requests to perform that task.
     // Explicit additional requests remain in the text and still require filtering.
     .replace(/(?:适合|用于|用来|辅助|主要(?:用于|用来)?)(?:编写|写|生成|调试)?(?:代码|程序|编程)/g, "商品用途");
@@ -25,10 +28,17 @@ export function hasUnsupportedSupportTask(value: string): boolean {
 /** A separable shop clause may proceed to the planner, never straight to tools. */
 export function isOutOfScopeSupportQuestion(value: string): boolean {
   if (!hasUnsupportedSupportTask(value)) return false;
-  const clauses = value.split(/[，,。！？!?；;\n]|顺便|另外|同时|以及|还有|并且|然后|并(?=告诉|帮|写|查询|给|提供)/).map(s => s.trim()).filter(Boolean);
-  return !clauses.some(clause => !hasUnsupportedSupportTask(clause)
-    && /商品|套餐|会员|订单|支付|付款|退款|充值|余额|登录|注册|客服|卡密|chatgpt|gpt|claude|cursor|gemini/i.test(clause)
-    && /多少钱|价格|库存|有货|缺货|购买|怎么买|在哪|哪里|查询|怎么查|推荐|选择|售后|退款|支付|订单|充值|用不了|无法使用/.test(clause));
+  const clauses = normalizeSupportQuestion(value).split(/[，,。！？!?；;\n]|顺便|顺带|另外|同时|以及|还有(?!货|库存)|并且|然后|并(?=告诉|帮|写|查询|给|提供)/).map(s => s.trim()).filter(Boolean);
+  return !clauses.some(clause => {
+    if (hasUnsupportedSupportTask(clause)) return false;
+    // This only lets the scope planner inspect a possible shop request. It is
+    // not permission to execute a purchase or to answer the unrelated clause.
+    const shopSubject = /商品|产品|套餐|会员|订单|支付|付款|退款|充值|余额|账号|账户|登录|注册|客服|人工|卡密|兑换码|激活码|chatgpt|gpt|claude|cursor|gemini/i.test(clause);
+    const shopAction = /多少钱|多少[钱米]|价格|售价|月费|贵不贵|便宜|优惠|库存|有货|缺货|补货|买|购买|下单|入手|开通|订阅|续费|续订|有卖|卖不卖|卖吗|在哪|哪里|查询|怎么查|推荐|选择|怎么选|哪个好|区别|适合|支持|售后|退款|退钱|支付|付款|订单|充值|到账|扣款|发货|没收到|未收到|用不了|不能用|无法使用|打不开|登不上|登录不了|激活不了|兑换不了|报错|失败|联系|转人工|找客服/.test(clause);
+    // Explicit buying language also covers products not hard-coded above.
+    const purchase = /(?:我?(?:想|要|打算|准备|需要)(?:要)?(?:买|购买|入手|订阅|开通|续费)|(?:怎么买|哪里买|哪儿买|有卖|卖不卖))\s*[^\s，,。！？!?；;]{2,}/.test(clause);
+    return (shopSubject && shopAction) || purchase;
+  });
 }
 export const SUPPORT_PARTIAL_NOTICE = '本次仅处理商城相关咨询，其余请求不在客服服务范围内。';
 export function withSupportPartialNotice(answer: string): string {
@@ -40,6 +50,8 @@ export const SUPPORT_SCOPE_INSTRUCTIONS = `<role>
 <scope>
 允许：本商城商品/套餐选购与比较、价格库存、购买支付、本人订单、充值、账户、商品使用、退款售后指引和联系人工。未知商品也可查询是否销售。
 拒绝：天气、新闻、百科、写作、翻译、计算、编程调试等通用任务。出现商城或商品名称不代表属于商城服务。只有无关任务则deny；混合请求存在可独立完成的商城子问题时partial，只提取商城原文片段并查询这部分。
+“我要买Claude”“想入手Gemini”“有卖某个新套餐吗”“会员怎么续费”“兑换码激活不了”都是商城意图；与无关任务混合时仍提取原文商城片段，不因口语表达而整句拒绝。
+例如“我要买Claude，今天天气如何”应partial，shopQuestion为“我要买Claude”。
 例如“ChatGPT多少钱？顺便告诉我天气”应partial，shopQuestion为“ChatGPT多少钱”；“订单在哪里查，帮我写Python爬虫”仅提取订单查询问题。没有独立商城问题的“帮商城写购买接口”仍deny。
 例如：询问“Cursor适合编程吗”属于售前咨询；“帮商城写购买接口”属于代码生成，应拒绝。
 </scope>

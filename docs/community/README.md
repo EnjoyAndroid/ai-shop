@@ -9,7 +9,7 @@
 - **Telegram**：填写用户名或官方链接，清空后隐藏入口。帮助页同时展示已配置的联系方式，订单/支付页的「联系客服」优先打开微信弹窗，没有微信配置时跳转 Telegram。
 - **邮件**：前台已移除发送邮件入口；SMTP 仍用于密码重置和付款通知，配置见项目 README。
 
-微信客服二维码用于联系个人客服，微信群二维码用于加入群聊，两处应分别配置。客服二维码没有群邀请的过期时间设置；上传或粘贴图片后，应在帮助页打开弹窗确认图片可用。图片加载失败时，关闭并重新打开弹窗可重试。
+微信客服二维码用于联系个人客服，微信群二维码用于加入群聊，两处应分别配置。客服二维码没有群邀请的过期时间设置；上传或粘贴图片后，应在商城客服联系入口打开弹窗确认图片可用。图片加载失败时，关闭并重新打开弹窗可重试。
 
 首页和项目 README 的二维码指向站点的 `/community` 页面，页面显示后台配置的最新微信群二维码。更换微信群二维码时，固定入口和 README 图片无需更换。
 
@@ -22,7 +22,7 @@
 
 上传图片复用现有 Cloudinary 配置，重新编码、移除图片元数据并使用无损压缩。更换图片后，打开页面即可看到新码；已经打开的页面每分钟检查更新，也可手动刷新。未配置图片时提示交流群暂未开放；未设置有效期时展示图片直到管理员更换或移除。
 
-设置过期时间后，服务端停止返回过期图片，已打开页面也会在到期后隐藏它。页面分别处理未配置、已过期、网络失败和图片加载失败。固定入口不会延长微信邀请的有效期，应用不自动创建或刷新微信群二维码。
+设置过期时间后，服务端停止返回过期群码，自动展示后台「微信客服」中配置的客服二维码，并提示联系客服协助入群。已打开页面也会在到期时切换，即使刷新请求失败仍可使用已获取的客服码；客服码不沿用群邀请的过期时间。若客服码未配置或无效，页面显示群码更新中的提示。群码恢复有效后，刷新页面或等待下一次自动刷新即可重新展示群码。页面分别处理未配置、网络失败和图片加载失败。固定入口不会延长微信邀请的有效期，应用不自动创建或刷新微信群二维码。
 
 ## 自托管或更换站点域名
 
@@ -50,6 +50,6 @@ Telegram accepts a username or official link and is hidden when blank. The smart
 
 The homepage and README QR codes open `/community`, which displays the latest group invitation configured by a super administrator. Replace the group QR image and optionally set its expiry under Support & community → WeChat community, then save. Existing pages check for updates every minute and offer a manual refresh button.
 
-Expired images are hidden, but WeChat invitations are not automatically renewed. Joining remains subject to WeChat group and invitation limits. Uploaded QR images use lossless compression through the existing Cloudinary integration.
+Expired group images automatically switch to the configured WeChat support QR code, with instructions to contact support for help joining. Open pages switch at expiry even if the refresh fails, using the last fetched support code. The support code has no group expiry; if it is missing or invalid, the page shows an updating notice. A renewed group code returns on the next refresh. WeChat invitations are not automatically renewed. Joining remains subject to WeChat group and invitation limits. Uploaded QR images use lossless compression through the existing Cloudinary integration.
 
 For a self-hosted instance or domain change, set `NEXT_PUBLIC_SITE_URL`, rebuild, update both README links, and run `npm run community:qr -- https://example.com`. Commit the generated entry image and README changes together. Group invitation images do not need to be committed to Git.

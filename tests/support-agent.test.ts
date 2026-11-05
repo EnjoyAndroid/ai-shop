@@ -281,3 +281,30 @@ test('purchase-purpose descriptions remain eligible while explicit code tasks st
   assert.equal(hasUnsupportedSupportTask('推荐适合写代码的套餐，另外帮我写Python爬虫'),true);
   assert.equal(isOutOfScopeSupportQuestion('帮商城写商品购买接口'),true);
 });
+
+test('colloquial shop clauses reach planning in mixed questions without admitting standalone unrelated tasks', () => {
+  const shopClauses = [
+    '我要买 Claude', '我想买Claude', '我想要买Claude', '想入手Gemini', 'Claude能买不',
+    '给我买一个Claude会员', '开通ChatGPT会员', 'Claude怎么订阅', '会员怎么续费', 'Claude续订',
+    '有卖DeepSeek吗', '卖不卖Claude', '哪里买DeepSeek', '我要买DeepSeek',
+    'Claude多少米', 'GPT贵不贵', '套餐有什么优惠', '会员月费多少', 'Claude还有货吗', 'Claude什么时候补货',
+    'Cursor适合写代码吗', '这两个套餐哪个好', 'Claude登录不了', '我的账号登不上',
+    '兑换码激活不了', '卡密没收到', '付款后没到账', '订单怎么退钱', '怎么联系人工',
+    '我要买Ｃｌａｕｄｅ', '我要买Clau\u200bde',
+  ];
+  for (const clause of shopClauses) {
+    for (const join of ['，', '；', '顺便', '顺带', '并且']) {
+      assert.equal(isOutOfScopeSupportQuestion(`${clause}${join}今天天气如何`), false, clause + join);
+      assert.equal(isOutOfScopeSupportQuestion(`今天天气如何${join}${clause}`), false, clause + join);
+    }
+  }
+  for (const question of [
+    '我要买Claude，帮我写Python爬虫', '我想入手适合写代码的套餐，帮我写Python代码',
+  ]) assert.equal(isOutOfScopeSupportQuestion(question), false, question);
+  for (const question of [
+    'Claude，今天天气如何', '我要买Claude今天天气如何', 'AIShop今天的天气',
+    '帮商城写商品购买接口', '帮我写Claude购买脚本，告诉我天气', '我想买房，天气如何',
+  ]) {
+    assert.equal(isOutOfScopeSupportQuestion(question), true, question);
+  }
+});

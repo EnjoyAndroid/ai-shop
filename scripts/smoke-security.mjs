@@ -78,6 +78,7 @@ try {
     const result = await response.json();
     assert.equal(result.status, message === 'gpt plus多少钱一个月？' ? 'FALLBACK' : 'FAQ');
     assert(!('sources' in result)); assert(!('facts' in result));
+    assert.equal(result.createdAt, (await db.supportTurn.findUniqueOrThrow({ where: { id: result.turnId } })).createdAt.toISOString());
     assert(!/知识\d+《|参考：/.test(result.answer));
     return result;
   };
@@ -116,6 +117,7 @@ try {
     assert(productAnswer.ui.links.some(link => link.href === `/product/${supportCatalogProduct.slug}`));
     const restoredUi = await (await request('/api/support/conversations',{headers:{Cookie:supportCookie}})).json();
     assert.deepEqual(restoredUi.conversation.turns.find(turn => turn.id === contactAnswer.turnId).ui,contactAnswer.ui);
+    assert.equal(restoredUi.conversation.turns.find(turn => turn.id === contactAnswer.turnId).createdAt,contactAnswer.createdAt);
     const orderHelp=await supportAsk('怎么查询我的订单？');
     assert(orderHelp.ui.links.some(link => link.href === '/order'));
     // Give this synthetic fixture precedence over products from previous test runs.
@@ -128,7 +130,8 @@ try {
       const fresh = await supportAsk('哪些商品有库存？');
       assert(!fresh.answer.includes('客服库存回归商品'));
       assert(!fresh.ui.links.some(link => link.href === `/product/${supportProduct.slug}`));
-      assert.equal((await supportAsk('哪些商品有库存？', requestId)).answer, first.answer);
+      const replay = await supportAsk('哪些商品有库存？', requestId);
+      assert.equal(replay.answer, first.answer); assert.equal(replay.createdAt, first.createdAt);
       assert(!(await db.supportTurn.findUniqueOrThrow({where:{id:fresh.turnId}})).facts.products.some(product => product.slug === supportProduct.slug));
     } finally { await db.product.delete({where:{id:supportProduct.id}}); }
     const resumed = await request('/api/support/conversations', {headers:{Cookie:supportCookie}});
@@ -156,7 +159,7 @@ try {
   assert.equal((await jsonPost('/api/orders', {items:[{productId:orderProduct.id,quantity:1}],email,paymentMethod:'BALANCE'})).status,400);
   assert.equal((await request('/api/admin/users')).status, 401);
   const anonymousAdminPage = await request('/admin/dashboard'); assert.equal(anonymousAdminPage.status,307); const adminLoginLocation=new URL(anonymousAdminPage.headers.get('location'),base);assert.equal(adminLoginLocation.origin,base);assert.equal(adminLoginLocation.pathname,'/admin/login');assert.equal(adminLoginLocation.searchParams.get('next'),'/admin/dashboard');
-  const evaluationRedirect=await request('/admin/support/evaluation');assert.equal(new URL(evaluationRedirect.headers.get('location'),base).searchParams.get('next'),'/admin/support/evaluation');
+  const supportRedirect=await request('/admin/support');assert.equal(new URL(supportRedirect.headers.get('location'),base).searchParams.get('next'),'/admin/support');
   const adminLoginHtml = await (await request('/admin/login')).text(); assert(!adminLoginHtml.includes('aria-label="后台侧栏"'));
   assert.equal((await request('/api/admin/contact')).status,401);
   assert.equal((await jsonPost('/api/admin/contact',{wechatSupportText:'test'})).status,401);
@@ -186,7 +189,7 @@ try {
   const inlineScripts = [...nonceHtml.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].filter(match=>match[2].trim());
   assert(inlineScripts.length); assert(inlineScripts.every(match=>match[1].includes(`nonce="${nonce(pageA)}"`)));
   console.log('HTTP browser security: rejected cross-origin/null/missing-origin writes, preserved settings, unique CSP nonces and noncached HTML: passed');
-  const restoredAdminPage=await request('/admin/login?next=%2Fadmin%2Fsupport%2Fevaluation',{headers:{Cookie:cookie()}});const restoredHtml=await restoredAdminPage.text();assert(restoredAdminPage.headers.get('location')==='/admin/support/evaluation'||restoredHtml.includes('url=/admin/support/evaluation'));
+  const restoredAdminPage=await request('/admin/login?next=%2Fadmin%2Fsupport',{headers:{Cookie:cookie()}});const restoredHtml=await restoredAdminPage.text();assert(restoredAdminPage.headers.get('location')==='/admin/support'||restoredHtml.includes('url=/admin/support'));
   const users = await request('/api/admin/users',{headers:{Cookie:cookie()}});
   assert.equal(users.status,200);
   assert((await users.json()).users.every(u => !('password' in u) && !('sessionVersion' in u)));
@@ -212,25 +215,11 @@ try {
   const auditTurn = await db.supportTurn.create({data:{conversationId:auditConversation.id,requestId:'synthetic-audit-request',userText:'SYNTHETIC-AUDIT-'+suffix,answerText:'测试回答',identityHash:'a'.repeat(64),status:'FAQ'}});
   try {
     assert.equal((await request('/api/admin/support/usage')).status,403);
-    const evalPath='/api/admin/support/evaluation';
-    assert.equal((await request(evalPath)).status,403);
-    assert.equal((await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie(),Origin:'https://untrusted.invalid'})).status,403);
-    const evalSetup=await (await request(evalPath,{headers:{Cookie:cookie()}})).json();
-    assert.equal(evalSetup.configured,false);assert.equal(evalSetup.scenarios.length,11);assert.equal(evalSetup.dailyBudget.limitCny,2);
-    assert(!JSON.stringify(evalSetup).includes('apiKey'));assert(!JSON.stringify(evalSetup).includes('baseUrl'));
-    const evalPage=await request('/admin/support/evaluation',{headers:{Cookie:cookie()}});assert.equal(evalPage.status,200);assert((await evalPage.text()).includes('双版本试聊'));
-    assert.equal((await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:999},{Cookie:cookie()})).status,400);
-    const evalCreated=await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie()});assert.equal(evalCreated.status,200);
-    const evalSession=(await evalCreated.json()).session;assert(!('versions' in evalSession));assert(!('assignment' in evalSession));
-    assert.equal((await jsonPost(evalPath,{action:'send',id:evalSession.id,requestId:randomUUID(),question:'商品有哪些'},{Cookie:cookie()})).status,503);
-    const evalReveal=await jsonPost(evalPath,{action:'reveal',id:evalSession.id},{Cookie:cookie()});assert.equal(evalReveal.status,200);assert((await evalReveal.json()).session.versions.A);
-    const previousEvaluation=JSON.parse(await redis.get(`support:eval:session:${evalSession.id}`));
-    previousEvaluation.configHash='synthetic-previous-config';await redis.set(`support:eval:session:${evalSession.id}`,JSON.stringify(previousEvaluation),'EX',60);
-    const staleEvaluation=await (await request(`${evalPath}?id=${evalSession.id}`,{headers:{Cookie:cookie()}})).json();assert.equal(staleEvaluation.session.restartRequired,true);
-    const staleSend=await jsonPost(evalPath,{action:'send',id:evalSession.id,requestId:randomUUID(),question:'继续比较'},{Cookie:cookie()});assert.equal(staleSend.status,409);assert.equal((await staleSend.json()).code,'EVAL_CONFIG_CHANGED');
-    const replacement=await (await jsonPost(evalPath,{action:'create',mode:'full',scenario:'shopping',budgetCny:0.5},{Cookie:cookie()})).json();assert.equal(replacement.session.restartRequired,false);assert.equal(replacement.session.turns.length,0);
-    assert.deepEqual(JSON.parse(await redis.get(`support:eval:session:${evalSession.id}`)),previousEvaluation);
-    await redis.del(`support:eval:session:${evalSession.id}`,`support:eval:session:${replacement.session.id}`);
+    for (const path of ['/admin/support/evaluation', '/api/admin/support/evaluation']) {
+      assert.equal((await request(path, { headers: { Cookie: cookie() } })).status, 404);
+    }
+    assert.equal((await jsonPost('/api/admin/support/evaluation', { action: 'create' }, { Cookie: cookie() })).status, 404);
+    assert(!(await (await request('/admin/support', { headers: { Cookie: cookie() } })).text()).includes('双版本试聊'));
 
     assert.equal((await jsonPost('/api/admin/support/config',{dailyBudgetCny:0},{Cookie:cookie()})).status,200);
     const cfg=await (await request('/api/admin/support/config',{headers:{Cookie:cookie()}})).json();assert.equal(cfg.dailyBudgetCny,0);assert(!('baseUrl' in cfg));assert(!('apiKey' in cfg));
@@ -412,7 +401,7 @@ try {
     await db.systemSetting.deleteMany({where:{key:'privateSmokeSetting'}});
   }
 
-  const previousCommunity = { wechatGroupQrUrl: previousContactSettings.wechatGroupQrUrl || '', wechatGroupExpiresAt: previousContactSettings.wechatGroupExpiresAt || '' };
+  const previousCommunity = { wechatSupportQrUrl: previousContactSettings.wechatSupportQrUrl || '', wechatGroupQrUrl: previousContactSettings.wechatGroupQrUrl || '', wechatGroupExpiresAt: previousContactSettings.wechatGroupExpiresAt || '' };
   try {
     assert.equal((await request('/community')).status,200);
     assert((await (await request('/')).text()).includes('href="/community"'));
@@ -420,19 +409,23 @@ try {
     assert(entryQr.headers.get('content-type').startsWith('image/png'));
     assert.deepEqual([...new Uint8Array(await entryQr.arrayBuffer()).slice(0,8)], [137,80,78,71,13,10,26,10]);
     const image = 'https://example.com/test-group.png';
+    const supportImage = 'https://example.com/test-support.png';
     const future = new Date(Date.now()+60000).toISOString();
     assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'javascript:alert(1)'},{Cookie:cookie()})).status,400);
-    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:image,wechatGroupExpiresAt:future},{Cookie:cookie()})).status,200);
+    assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:image,wechatGroupExpiresAt:future,wechatSupportQrUrl:supportImage},{Cookie:cookie()})).status,200);
     const active = await request('/api/community'); assert.equal(active.status,200);
     assert(active.headers.get('cache-control').includes('no-store'));
-    assert.deepEqual(await active.json(), {status:'active',qrCodeUrl:image,expiresAt:future});
+    assert.deepEqual(await active.json(), {status:'active',qrCodeUrl:image,expiresAt:future,supportQrCodeUrl:supportImage});
     assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'https://example.com/rejected.png',wechatGroupExpiresAt:'tomorrow'},{Cookie:cookie()})).status,400);
-    assert.deepEqual(await (await request('/api/community')).json(), {status:'active',qrCodeUrl:image,expiresAt:future});
+    assert.deepEqual(await (await request('/api/community')).json(), {status:'active',qrCodeUrl:image,expiresAt:future,supportQrCodeUrl:supportImage});
     assert.equal((await jsonPost('/api/admin/contact',{wechatGroupExpiresAt:new Date(Date.now()-1000).toISOString()},{Cookie:cookie()})).status,200);
-    const expired = await (await request('/api/community')).json(); assert.equal(expired.status,'expired'); assert.equal(expired.qrCodeUrl,'');
-    const expiredPage = await (await request('/community')).text(); assert(expiredPage.includes('群二维码正在更新')); assert(!expiredPage.includes(image));
+    const expired = await (await request('/api/community')).json(); assert.equal(expired.status,'support'); assert.equal(expired.qrCodeUrl,supportImage); assert.equal(expired.expiresAt,'');
+    const expiredPage = await (await request('/community')).text(); assert(expiredPage.includes('群二维码已过期')); assert(expiredPage.includes('alt="微信客服二维码"')); assert(expiredPage.includes(supportImage)); assert(!expiredPage.includes(image));
+    assert.equal((await jsonPost('/api/admin/contact',{wechatSupportQrUrl:''},{Cookie:cookie()})).status,200);
+    const noFallback = await (await request('/api/community')).json(); assert.equal(noFallback.status,'expired'); assert.equal(noFallback.qrCodeUrl,'');
+    assert((await (await request('/community')).text()).includes('群二维码正在更新'));
     assert.equal((await jsonPost('/api/admin/contact',{wechatGroupQrUrl:'',wechatGroupExpiresAt:''},{Cookie:cookie()})).status,200);
-    assert.deepEqual(await (await request('/api/community')).json(), {status:'unconfigured',qrCodeUrl:'',expiresAt:''});
+    assert.deepEqual(await (await request('/api/community')).json(), {status:'unconfigured',qrCodeUrl:'',expiresAt:'',supportQrCodeUrl:''});
     assert((await (await request('/community')).text()).includes('交流群暂未开放'));
     console.log('Community entry, QR response, configuration validation, cache invalidation, expiry and public settings isolation: passed');
   } finally {
@@ -443,7 +436,7 @@ try {
   const operatorLogin = await jsonPost('/api/admin/auth/login', { username: operator.username, password }); capture(operatorLogin);
   assert.equal((await request('/api/admin/settings',{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await jsonPost('/api/admin/support/account/reveal',{turnId:'any-record'},{Cookie:cookie()})).status,403);
-  for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config','/api/admin/support/evaluation']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
+  for(const path of ['/api/admin/support/usage','/api/admin/support/usage?turnId=any-record','/api/admin/support/risk','/api/admin/support/config']) assert.equal((await request(path,{headers:{Cookie:cookie()}})).status,403);
   assert.equal((await request('/api/admin/contact',{headers:{Cookie:cookie()}})).status,403);
   for (const purpose of ['support','community']) { const form = new FormData(); form.set('purpose',purpose); assert.equal((await request('/api/upload',{method:'POST',headers:{Cookie:cookie()},body:form})).status,403); }
   // Exercise real multipart parsing without Cloudinary credentials or external uploads.

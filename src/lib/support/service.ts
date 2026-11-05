@@ -188,7 +188,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
     if (existing.status.startsWith('RISK_')) throw new SupportRequestError(existing.answerText || '客服请求受限', 429, existing.status.slice(5), 60);
     await touchSupportConversation(conversationId, identity);
     if (!existing.answerText) throw new SupportRequestError("上次回答未完成，请重新提问", 409);
-    return { turnId: existing.id, answer: existing.answerText, status: existing.status, ui: readSupportUi(existing.ui) };
+    return { turnId: existing.id, createdAt: existing.createdAt, answer: existing.answerText, status: existing.status, ui: readSupportUi(existing.ui) };
   }
   if (!await rateLimit("support-identity", identity.userId || identity.anonymousKey, 30, 60)) throw new SupportRequestError("客服请求过于频繁，请稍后再试", 429);
   await touchSupportConversation(conversationId, identity);
@@ -325,7 +325,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
     await tx.supportTurn.update({ where: { id: turn.id }, data: { answerText: answer, status, latencyMs: Date.now() - started, sources: sources as Prisma.InputJsonValue, facts: JSON.parse(JSON.stringify(savedFacts)), ui: JSON.parse(JSON.stringify(ui)) } });
   });
   if (riskError) throw new SupportRequestError(riskError.message, 429, riskError.code, riskError.retryAfter);
-  return { turnId: turn.id, answer, status, ui };
+  return { turnId: turn.id, createdAt: turn.createdAt, answer, status, ui };
 }
 
 export async function setSupportFeedback(turnId: string, value: number, identity: SupportIdentity): Promise<boolean> {

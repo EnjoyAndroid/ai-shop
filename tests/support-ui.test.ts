@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SupportMessageUi } from '../src/components/shop/support-message-ui';
+import { SupportMessageTime, SupportMessageUi } from '../src/components/shop/support-message-ui';
 import { buildSupportUi, readSupportUi, modelToolResult, cleanSupportAnswer, isSupportPath } from '../src/lib/support/ui';
 import { executeSupportTool } from '../src/lib/support/tools';
 import redis from '../src/lib/redis';
@@ -64,4 +64,23 @@ test('tool presentation preserves explicit query failures without inventing empt
   assert.deepEqual(modelToolResult('search_products',failure),failure);
   assert.deepEqual(modelToolResult('get_navigation',failure),failure);
   assert.deepEqual(buildSupportUi([{tool:'search_products',result:failure}],'有货'),{links:[],images:[]});
+});
+
+test('support timestamps shorten today and this year using Beijing calendar boundaries', () => {
+  const cases = [
+    ['2026-11-05T16:03:59.999Z', '2026-11-05T18:02:00Z', '00:03'],
+    ['2026-11-05T15:59:59Z', '2026-11-05T16:00:00Z', '11-05 23:59'],
+    ['2026-01-01T00:00:00Z', '2026-11-05T18:02:00Z', '01-01 08:00'],
+    ['2025-12-31T15:59:00Z', '2025-12-31T16:00:00Z', '2025-12-31 23:59'],
+    ['2025-12-31T16:01:00Z', '2025-12-31T16:02:00Z', '00:01'],
+  ];
+  for (const [value, now, label] of cases) {
+    const html = renderToStaticMarkup(createElement(SupportMessageTime, { value, now: new Date(now) }));
+    assert.equal(html.match(/>([^<]*)<\/time>/)?.[1], label);
+    assert(html.includes(`dateTime="${new Date(value).toISOString()}"`));
+    assert(html.includes('北京时间'));
+  }
+  const full = renderToStaticMarkup(createElement(SupportMessageTime, { value: '2026-11-05T16:03:59.999Z', now: new Date('2026-11-05T18:02:00Z') }));
+  assert(full.includes('title="2026-11-06 00:03（北京时间）"'));
+  for (const value of ['invalid', undefined]) assert.equal(renderToStaticMarkup(createElement(SupportMessageTime, { value })), '');
 });

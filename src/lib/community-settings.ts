@@ -9,22 +9,31 @@ export const wechatGroupExpiresAtSchema = z.union([
 ]);
 
 export interface CommunitySettings {
-  status: "active" | "expired" | "unconfigured";
+  status: "active" | "support" | "expired" | "unconfigured";
   qrCodeUrl: string;
   expiresAt: string;
+  supportQrCodeUrl: string;
 }
 
-// Only expose a current QR image, never private system settings or expired codes.
+/** Reused in the browser so an open page switches at expiry, even offline. */
+export function resolveCommunitySettings(settings: CommunitySettings, now = Date.now()): CommunitySettings {
+  const expired = settings.status === "expired" || (settings.status === "active" && !!settings.expiresAt && Date.parse(settings.expiresAt) <= now);
+  if (!expired) return settings;
+  return settings.supportQrCodeUrl
+    ? { ...settings, status: "support", qrCodeUrl: settings.supportQrCodeUrl, expiresAt: "" }
+    : { ...settings, status: "expired", qrCodeUrl: "" };
+}
+
+// Only expose public QR settings, never private settings or expired group images.
 export function getCommunitySettings(settings: Record<string, string>, now = Date.now()): CommunitySettings {
   const image = wechatGroupQrUrlSchema.safeParse(settings.wechatGroupQrUrl || "");
   const expiry = wechatGroupExpiresAtSchema.safeParse(settings.wechatGroupExpiresAt || "");
+  const support = qrImageUrlSchema.safeParse(settings.wechatSupportQrUrl || "");
+  const supportQrCodeUrl = support.success ? support.data : "";
   if (!image.success || !image.data || !expiry.success) {
-    return { status: "unconfigured", qrCodeUrl: "", expiresAt: "" };
+    return { status: "unconfigured", qrCodeUrl: "", expiresAt: "", supportQrCodeUrl };
   }
-  if (expiry.data && Date.parse(expiry.data) <= now) {
-    return { status: "expired", qrCodeUrl: "", expiresAt: expiry.data };
-  }
-  return { status: "active", qrCodeUrl: image.data, expiresAt: expiry.data };
+  return resolveCommunitySettings({ status: "active", qrCodeUrl: image.data, expiresAt: expiry.data, supportQrCodeUrl }, now);
 }
 
 export function getCommunityEntryUrl(siteUrl: string): string {

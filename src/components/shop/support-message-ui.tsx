@@ -23,3 +23,23 @@ export function SupportMessageUi({ value, onNavigate }: { value: unknown; onNavi
     </nav>}
   </>;
 }
+
+const messageDateFormat = new Intl.DateTimeFormat("en", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" });
+function messageDateParts(date: Date) {
+  return Object.fromEntries(messageDateFormat.formatToParts(date).map(part => [part.type, part.value]));
+}
+
+/** Keep full timestamps accessible while shortening the visible date. */
+export function SupportMessageTime({ value, now = new Date(), className = "" }: { value?: string; now?: Date; className?: string }) {
+  if (!value || !Number.isFinite(Date.parse(value))) return null;
+  const date = new Date(value);
+  const parts = messageDateParts(date);
+  const today = messageDateParts(now);
+  const time = date.toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const fullDate = `${parts.year}-${parts.month}-${parts.day}`;
+  const sameYear = parts.year === today.year;
+  const sameDay = sameYear && parts.month === today.month && parts.day === today.day;
+  const label = sameDay ? time : `${sameYear ? `${parts.month}-${parts.day}` : fullDate} ${time}`;
+  const fullLabel = `${fullDate} ${time}（北京时间）`;
+  return <time dateTime={date.toISOString()} title={fullLabel} aria-label={fullLabel} className={`block whitespace-nowrap text-[10px] font-normal leading-4 text-slate-400 ${className}`}>{label}</time>;
+}
