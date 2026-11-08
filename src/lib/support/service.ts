@@ -218,7 +218,8 @@ async function answerLocked(conversationId: string, requestId: string, question:
   const turn = await prisma.supportTurn.create({ data: { conversationId, requestId, userText: safeQuestion, status: "PROCESSING", clientIp: clientIp.trusted ? clientIp.value : null, clientIpTrusted: clientIp.trusted, identityHash, modelTurn: false } });
   onCreated?.(turn.id);
   const sources: unknown[] = [];
-  const evidence: Array<{ tool: string; arguments: unknown; result: unknown }> = [];
+  const evidence: Array<{ tool: string; arguments: unknown; result: unknown; modelResult?: unknown }> = [];
+  const toolCalls: Array<Omit<import('./llm').SupportToolCallRecord, 'result'>> = [];
   let answer = "";
   let status = "FALLBACK";
   let partialAccepted = false;
@@ -253,13 +254,20 @@ async function answerLocked(conversationId: string, requestId: string, question:
             if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
             const result = await executeSupportTool(name, args, identity.userId, signal);
             signal?.throwIfAborted();
-            evidence.push({ tool: name, arguments: args, result });
-            if (name === "search_knowledge" && result && typeof result === "object" && "sources" in result) sources.push(...(result as { sources: unknown[] }).sources);
+            evidence.push({ tool: name, arguments: args, result, modelResult: null });
+            if ((name === "search_knowledge" || name === "read_knowledge_article") && result && typeof result === "object" && "sources" in result) sources.push(...(result as { sources: unknown[] }).sources);
             return modelToolResult(name, result);
           })();
           pendingTools.add(pending);
           void pending.then(() => pendingTools.delete(pending), () => pendingTools.delete(pending));
           return pending;
+        },
+        onToolCall: record => {
+          const { result, ...metrics } = record;
+          toolCalls.push(metrics);
+          const entry = evidence.find(e => e.tool === record.tool && (e.modelResult === null || record.cacheHit) && JSON.stringify(e.arguments) === JSON.stringify(record.arguments));
+          if (entry) entry.modelResult = result;
+          else evidence.push({ tool: record.tool, arguments: record.arguments, result, modelResult: result });
         },
         recordCall: async call => {
           await settleSupportCall(call);
@@ -296,7 +304,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
     status = 'SCOPE_UNAVAILABLE';
   }
   if (partialAccepted) answer = withSupportPartialNotice(answer);
-  let savedFacts: unknown = { queries: evidence };
+  let savedFacts: unknown = { queries: evidence, toolCalls };
   if (!answer) {
     try {
       const fallbackQuestion = trustedFaq || safeQuestion;

@@ -28,6 +28,7 @@ export interface SupportKnowledgeArticle extends SupportSource {
 }
 
 export interface SupportKnowledgeResult {
+  articles: SupportKnowledgeArticle[];
   sources: SupportSource[];
   context: string;
   answer: string;
@@ -52,7 +53,7 @@ function terms(text: string): string[] {
 /** Keep model context separate from the single published answer used on fallback. */
 export function rankSupportKnowledge(query: string, articles: SupportKnowledgeArticle[], limit = 6): SupportKnowledgeResult {
   const normalizedQuery = normalize(query);
-  if (!normalizedQuery || limit <= 0) return { sources: [], context: "", answer: "" };
+  if (!normalizedQuery || limit <= 0) return { articles: [], sources: [], context: "", answer: "" };
   const queryTerms = terms(query);
   const ranked = articles.map(article => {
     const phrases = [article.question, ...article.aliases].map(normalize).filter(Boolean);
@@ -66,6 +67,7 @@ export function rankSupportKnowledge(query: string, articles: SupportKnowledgeAr
   // An exact standard question/alias needs no loosely related supplementary articles.
   const selected = (ranked[0]?.exact ? ranked.filter(item => item.exact) : ranked).slice(0, limit);
   return {
+    articles: selected.map(({ article }) => article),
     sources: selected.map(({ article }) => ({ id: article.id, title: article.title, category: article.category, version: article.version })),
     context: selected.map(({ article }, index) => `知识${index + 1}《${article.title}》\n${article.content}`).join("\n\n"),
     answer: selected[0]?.article.content.trim() || "",

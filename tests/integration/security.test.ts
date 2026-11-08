@@ -1499,3 +1499,71 @@ for (const wire of ['responses', 'chat_completions']) test(`colloquial purchase 
     await clearSettingsCache(); await prisma.supportConversation.delete({ where: { id: conversation.id } });
   }
 });
+
+
+test('support product filters and exact-name priority precede pagination; long rows reach model and UI consistently', async t => {
+  const {executeSupportTool}=await import('../../src/lib/support/tools');
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const token=`Catalog${randomBytes(6).toString('hex')}`;
+  const data=Array.from({length:30},(_,i)=>({categoryId,name:`${token} ${i===29?'Target':`套餐${i}`}`,slug:`${prefix}-catalog-${i}`,
+    price:i<24?25000:9900,stock:i<24?0:3,sort:i,description:'原文限制不可省略。'.repeat(50)}));
+  await prisma.product.createMany({data});
+  const items=(r:any)=>[...r.exactMatches,...r.relatedProducts];
+  const selected=await executeSupportTool('search_products',{query:token,maxPriceCny:100,inStockOnly:true}) as any;
+  assert(items(selected).length>0);assert(items(selected).every((p:any)=>p.priceCny===99&&p.stock===3));
+  const names:string[]=[];let offset:number|null=0;
+  while(offset!==null){const page=await executeSupportTool('search_products',{query:token,maxPriceCny:100,inStockOnly:true,offset}) as any;names.push(...items(page).map((p:any)=>p.name));offset=page.nextOffset;}
+  assert.deepEqual(names,data.slice(24).map(p=>p.name));
+  const specific=await executeSupportTool('search_products',{query:`${token} Target`,limit:1}) as any;
+  assert.equal(specific.exactMatches[0].name,data[29].name);
+  assert.equal(items(await executeSupportTool('search_products',{query:token,maxPriceCny:0})).length,0);
+  const original=await prisma.product.findFirstOrThrow({where:{slug:data[29].slug}});
+  await prisma.product.update({where:{id:original.id},data:{isActive:false}});
+  assert.equal((await executeSupportTool('search_products',{query:`${token} Target`,limit:1}) as any).exactMatches.length,0);
+  await prisma.product.update({where:{id:original.id},data:{isActive:true}});
+  const identity={anonymousKey:randomBytes(32).toString('hex')};const conversation=await createSupportConversation(identity);
+  const keys=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_DAILY_BUDGET_CNY'];const saved=keys.map(k=>process.env[k]);
+  let delivered:any;let calls=0;
+  try{
+    Object.assign(process.env,{SUPPORT_LLM_API_KEY:'synthetic-test-only',SUPPORT_LLM_BASE_URL:'https://example.invalid/v1',SUPPORT_LLM_WIRE_API:'responses',SUPPORT_DAILY_BUDGET_CNY:'10000'});
+    t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+      const body=JSON.parse(init.body);calls++;
+      if(calls===1)return new Response(JSON.stringify({output_text:JSON.stringify({decision:'allow',queries:[{name:'search_products',arguments:{query:token,maxPriceCny:100,inStockOnly:true}}]}),usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+      const message=body.input.find((m:any)=>m.content?.startsWith('服务端本轮查询结果'));
+      delivered=JSON.parse(message.content.slice(message.content.indexOf('[')))[0].result;
+      assert(!delivered.error);assert(Buffer.byteLength(JSON.stringify(delivered))<=6000);
+      return new Response(JSON.stringify({output_text:items(delivered).map((p:any)=>`${p.name} 99元有货`).join('；'),usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+    });
+    const answer=await answerSupportTurn(conversation.id,'bounded-products',`${token}预算100元，有货的有哪些？`,identity);
+    assert.equal(answer.status,'COMPLETED');assert.equal(calls,2);
+    assert.deepEqual(answer.ui.links.map((l:any)=>l.href),items(delivered).map((p:any)=>`/product/${p.productRef}`));
+    const turn=await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId}});
+    const facts=turn.facts as any;assert.deepEqual(facts.queries[0].modelResult,delivered);
+    assert.equal(facts.toolCalls[0].bytes,Buffer.byteLength(JSON.stringify(delivered)));assert.equal(facts.toolCalls[0].truncated,true);
+    const replay=await answerSupportTurn(conversation.id,'bounded-products',`${token}预算100元，有货的有哪些？`,identity);
+    assert.deepEqual(replay.ui,answer.ui);assert.equal(calls,2);
+  }finally{
+    keys.forEach((k,i)=>{if(saved[i]===undefined)delete process.env[k];else process.env[k]=saved[i];});
+    await prisma.supportConversation.delete({where:{id:conversation.id}});
+    await prisma.product.deleteMany({where:{slug:{in:data.map(p=>p.slug)}}});
+  }
+});
+
+test('knowledge continuation reads only published current versions and preserves late policy exceptions', async()=>{
+  const {executeSupportTool}=await import('../../src/lib/support/tools');
+  const token=`Policy${randomBytes(6).toString('hex')}`;
+  const content='一般说明。\n\n'.repeat(600)+'例外：已激活订单不能退款。';
+  const article=await prisma.supportArticle.create({data:{title:token,question:token,content,status:'PUBLISHED',version:1,publishedAt:new Date()}});
+  try{
+    const result=await executeSupportTool('search_knowledge',{query:token}) as any;
+    assert.equal(result.articles.length,1);const first=result.articles[0];assert(!first.contentComplete);
+    let cursor=first.nextCursor, text=first.content;
+    while(cursor!==null){const page=await executeSupportTool('read_knowledge_article',{articleId:article.id,version:1,cursor}) as any;text+=page.content;cursor=page.nextCursor;}
+    assert.equal(text,content);
+    await prisma.supportArticle.update({where:{id:article.id},data:{version:2}});
+    await assert.rejects(executeSupportTool('read_knowledge_article',{articleId:article.id,version:1,cursor:first.nextCursor}),(e:any)=>e.code==='KNOWLEDGE_CHANGED');
+    await prisma.supportArticle.update({where:{id:article.id},data:{status:'DRAFT'}});
+    await assert.rejects(executeSupportTool('read_knowledge_article',{articleId:article.id,version:2,cursor:0}),(e:any)=>e.code==='KNOWLEDGE_UNAVAILABLE');
+    assert.equal((await executeSupportTool('search_knowledge',{query:token}) as any).articles.length,0);
+  }finally{await prisma.supportArticle.delete({where:{id:article.id}});}
+});

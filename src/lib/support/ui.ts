@@ -31,7 +31,7 @@ export function supportNavigation(requestedPage: SupportPage, authenticated: boo
 export interface SupportUiLink { label: string; href: string; }
 export interface SupportUiImage { alt: string; url: string; }
 export interface SupportUi { links: SupportUiLink[]; images: SupportUiImage[]; }
-export interface SupportEvidence { tool: string; result: unknown; }
+export interface SupportEvidence { tool: string; result: unknown; modelResult?: unknown; }
 export const emptySupportUi = (): SupportUi => ({ links: [], images: [] });
 
 export function isSupportPath(value: string): boolean {
@@ -60,7 +60,8 @@ export function buildSupportUi(evidence: SupportEvidence[], answer: string, user
   };
   for (const entry of evidence) {
     const result = entry.result as any;
-    if (!result || typeof result !== 'object' || result.error) continue;
+    const visible = entry.modelResult === undefined ? result : entry.modelResult as any;
+    if (!result || typeof result !== 'object' || result.error || !visible || visible.error) continue;
     if (entry.tool === 'get_contacts') {
       const contact = getPublicContactSettings(result);
       // Latest successful contact query in this turn wins, including removal.
@@ -68,7 +69,8 @@ export function buildSupportUi(evidence: SupportEvidence[], answer: string, user
     }
     if (entry.tool === 'search_products') {
       const products = [...(Array.isArray(result.exactMatches) ? result.exactMatches : []), ...(Array.isArray(result.relatedProducts) ? result.relatedProducts : [])]
-        .filter(p => typeof p?.name === 'string' && typeof p?.url === 'string');
+        .filter(p => typeof p?.name === 'string' && typeof p?.url === 'string')
+        .filter(p => [...(visible.exactMatches || []), ...(visible.relatedProducts || [])].some(v => p.productRef ? v.productRef === p.productRef : v.name === p.name));
       const mentioned = products.filter(p => answer.includes(p.name));
       for (const p of (mentioned.length ? mentioned : products).slice(0, 6)) addLink(`查看 ${p.name}`, p.url);
     }
@@ -88,6 +90,10 @@ export function buildSupportUi(evidence: SupportEvidence[], answer: string, user
 /** Presentation URLs belong to the UI, not the model's prose or conversational memory. */
 export function modelToolResult(tool: string, result: any): unknown {
   if (!result || typeof result !== 'object' || result.error) return result;
+  if (tool === 'search_knowledge' || tool === 'read_knowledge_article') {
+    const { sources: _sources, ...data } = result;
+    return data;
+  }
   if (tool === 'get_contacts') {
     const contacts = getPublicContactSettings(result);
     return { queriedAt: result.queriedAt, wechatQrConfigured: Boolean(contacts.wechatSupportQrUrl),

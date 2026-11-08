@@ -39,7 +39,11 @@ function settingInt(settings: Record<string,string>, key: string, fallback: numb
 }
 
 export async function getSupportConfig(): Promise<SupportConfig & ReturnType<typeof supportPolicy>> {
-  const settings = await getSettings();
+  return supportConfigFromSettings(await getSettings());
+}
+
+/** Pure configuration reader also used by isolated, synthetic CLI evaluations. */
+export function supportConfigFromSettings(settings: Record<string, string> = {}): SupportConfig & ReturnType<typeof supportPolicy> {
   return {
     provider: process.env.SUPPORT_LLM_PROVIDER || "sub2api",
     baseUrl: (process.env.SUPPORT_LLM_BASE_URL || "http://127.0.0.1:8080/v1").replace(/\/$/, ""),

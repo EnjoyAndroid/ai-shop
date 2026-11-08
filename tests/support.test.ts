@@ -74,7 +74,7 @@ test("support agent understands context, calls a read-only tool, then answers", 
   ];
   const answer = await generateSupportAnswer({
     question: "Claude 5x多少钱？", history: [{ role: "user", content: "我想了解 Claude" }, { role: "assistant", content: "请问你想了解哪个套餐？" }], summary: "用户正在咨询 Claude 会员。", config: { provider: "test", baseUrl: "https://example.invalid/v1", model: "test-model", wireApi: "responses", apiKey: "test", dailyBudgetCny: 10, usdCnyRate: 7.2, inputUsdPerMillion: 0.1, cachedInputUsdPerMillion: 0.01, cacheWriteUsdPerMillion: 0.125, outputUsdPerMillion: 0.5 },
-    execute: async (name, args) => { assert.equal(name, "search_products"); assert.deepEqual(args, { query: "Claude 5x" }); return { exactMatches: [], relatedProducts: [{ name: "Claude Pro", priceCny: 129, stock: 0 }] }; },
+    execute: async (name, args) => { assert.equal(name, "search_products"); assert.deepEqual(args, { query: "Claude 5x", minPriceCny:null, maxPriceCny:null, inStockOnly:false, limit:5, offset:0 }); return { exactMatches: [], relatedProducts: [{ name: "Claude Pro", priceCny: 129, stock: 0 }] }; },
     beforeCall: async () => true,
     recordCall: async call => { requests.push(call); },
     fetcher: async (_url, init) => { const body = JSON.parse(String(init?.body)); answers.length; const data = answers.shift()!; requests.push({ body }); return new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } }); },

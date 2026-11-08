@@ -1,4 +1,6 @@
-import { supportTools, validateSupportTool } from "./tools";
+import { supportTools, validateSupportTool, supportToolFailure, SupportToolError, type SupportToolArguments } from "./tool-contract";
+import { boundedSupportResult, toolResultBytes } from './tool-results';
+import { supportTextTokens } from './tokens';
 import { SUPPORT_INSTRUCTIONS, SUPPORT_SCOPE_INSTRUCTIONS, hasUnsupportedSupportTask, withSupportPartialNotice } from "./policy";
 import { type SupportConfig } from "./config";
 import { SUPPORT_LIMITS } from "./limits";
@@ -55,9 +57,12 @@ export interface SupportCallRecord {
 }
 export const MAX_AGENT_ROUNDS = SUPPORT_LIMITS.maxModelRounds;
 export const MAX_AGENT_TOOLS = SUPPORT_LIMITS.maxToolCalls;
-const queryFailure = { error: 'QUERY_FAILED', message: '查询失败或参数无效，不能视作无商品/无订单；请澄清或稍后重试。' };
+export interface SupportToolCallRecord {
+  tool: string; arguments: SupportToolArguments; result: unknown;
+  cacheHit: boolean; latencyMs: number; bytes: number; estimatedTokens: number; truncated: boolean; errorCode: string | null;
+}
 
-export type SupportPlan = { decision: 'allow' | 'partial' | 'deny' | 'clarify'; shopQuestion?: string; queries: Array<{ name: string; arguments: Record<string,string> }> };
+export type SupportPlan = { decision: 'allow' | 'partial' | 'deny' | 'clarify'; shopQuestion?: string; queries: Array<{ name: string; arguments: SupportToolArguments }> };
 export function parseSupportPlan(text: string, question?: string): SupportPlan {
   const data = JSON.parse(text);
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('INVALID_PLAN');
@@ -75,15 +80,10 @@ export function parseSupportPlan(text: string, question?: string): SupportPlan {
   const queries = data.queries.map((q: {name: string; arguments: unknown}) => {
     if (!q || Object.keys(q).sort().join(',') !== 'arguments,name' || typeof q.name !== 'string') throw new Error('INVALID_PLAN');
     const args = validateSupportTool(q.name, q.arguments);
-    if (partial && Object.values(args).some(value => hasUnsupportedSupportTask(value))) throw new Error('UNSUPPORTED_QUERY');
+    if (partial && Object.values(args).some(value => typeof value === 'string' && hasUnsupportedSupportTask(value))) throw new Error('UNSUPPORTED_QUERY');
     return { name: q.name, arguments: args };
   });
   return { decision: partial ? 'partial' : 'allow', ...(partial ? { shopQuestion: data.shopQuestion } : {}), queries };
-}
-function boundedResult(value: unknown): unknown {
-  if (Buffer.byteLength(JSON.stringify(value) || 'null') <= 6000) return value;
-  // Oversized tool results are explicitly unavailable; never truncate serialized JSON.
-  return { error: 'RESULT_TOO_LARGE', message: '查询结果过长，请缩小商品名称或问题范围；不能据此判断无商品。' };
 }
 export async function generateSupportAnswer(input: {
   question: string; history: ContextMessage[]; summary: string; config: SupportConfig;
@@ -93,6 +93,7 @@ export async function generateSupportAnswer(input: {
   signal?: AbortSignal; fetcher?: typeof fetch;
   instructions?: { scope: string; answer: string };
   onPlan?: (plan: SupportPlan) => void;
+  onToolCall?: (record: SupportToolCallRecord) => void;
 }): Promise<string> {
   const { config } = input;
   if (!config.apiKey) throw new SupportLlmError('NOT_CONFIGURED', '模型未配置');
@@ -103,7 +104,7 @@ export async function generateSupportAnswer(input: {
   const context = createSupportContext(input.history, input.summary);
   const followups: any[] = [];
   let answerQuestion = input.question, partialAnswer = false;
-  let planned: Array<{ tool: string; arguments: Record<string, string>; result: unknown }> = [];
+  let planned: Array<{ tool: string; arguments: SupportToolArguments; result: unknown }> = [];
   const scopeInstructions = `${input.instructions?.scope ?? SUPPORT_SCOPE_INSTRUCTIONS}\n查询参数定义（不是可直接执行的工具）：${JSON.stringify(supportTools)}`;
   function scopeBody() {
     const { history, summary } = context.snapshot();
@@ -187,16 +188,34 @@ export async function generateSupportAnswer(input: {
   let toolCount = 0;
   const cache = new Map<string, Promise<unknown>>();
   async function execute(name: string, args: unknown): Promise<unknown> {
-    check(); const parsed = validateSupportTool(name,args), key = `${name}:${JSON.stringify(parsed)}`;
-    if (partialAnswer && Object.values(parsed).some(value => hasUnsupportedSupportTask(value))) throw new SupportLlmError('INVALID_TOOL_CALL', '查询包含服务范围外任务');
-    if (!cache.has(key)) cache.set(key, new Promise<unknown>((resolve,reject)=>{
-      const abort=()=>reject(new SupportLlmError(input.signal?.aborted?'CANCELLED':'TIMEOUT','客服请求已取消或超时'));
-      signal.addEventListener('abort',abort,{once:true});
-      const pending=Promise.resolve().then(()=>{check();return input.execute(name,parsed,signal);}).then(boundedResult);
-      pending.then(resolve,()=>resolve(queryFailure)).finally(()=>signal.removeEventListener('abort',abort));
-      if(signal.aborted)abort();
-    }));
-    const result = await cache.get(key); check(); return result;
+    const started = Date.now();
+    let parsed: SupportToolArguments = {}, cacheHit = false, result: unknown;
+    try {
+      check(); parsed = validateSupportTool(name, args);
+      const key = `${name}:${JSON.stringify(parsed)}`;
+      if (partialAnswer && Object.values(parsed).some(value => typeof value === 'string' && hasUnsupportedSupportTask(value))) {
+        throw new SupportToolError('INVALID_ARGUMENTS', '查询包含服务范围外任务，请仅查询本轮商城子问题。');
+      }
+      cacheHit = cache.has(key);
+      if (!cacheHit) cache.set(key, new Promise<unknown>((resolve,reject)=>{
+        const abort=()=>reject(new SupportLlmError(input.signal?.aborted?'CANCELLED':'TIMEOUT','客服请求已取消或超时'));
+        signal.addEventListener('abort',abort,{once:true});
+        const pending=Promise.resolve().then(()=>{check();return input.execute(name,parsed,signal);}).then(boundedSupportResult);
+        pending.then(resolve,error=>resolve(supportToolFailure(error))).finally(()=>signal.removeEventListener('abort',abort));
+        if(signal.aborted)abort();
+      }));
+      result = await cache.get(key); check();
+    } catch (error) { check(); result = supportToolFailure(error); }
+    const metadata = result && typeof result === 'object' ? result as { error?: string; truncated?: boolean; contentComplete?: boolean; nextCursor?: number | null } : {};
+    if (metadata.error === 'KNOWLEDGE_CHANGED' || metadata.error === 'KNOWLEDGE_UNAVAILABLE') {
+      // Re-search must reach the publication source instead of replaying the
+      // stale reference that caused this error. Keep failed reads cached.
+      for (const key of cache.keys()) if (key.startsWith('search_knowledge:')) cache.delete(key);
+    }
+    input.onToolCall?.({ tool: name, arguments: parsed, result, cacheHit, latencyMs: Date.now() - started,
+      bytes: toolResultBytes(result), estimatedTokens: supportTextTokens(JSON.stringify(result) || 'null'),
+      truncated: Boolean(metadata.truncated || metadata.contentComplete === false), errorCode: metadata.error || null });
+    return result;
   }
   // Whole plan has already been validated before any tool executes.
   toolCount += plan.queries.length;
@@ -217,8 +236,13 @@ export async function generateSupportAnswer(input: {
     if(chat) followups.push(data.choices[0].message); else followups.push(...data.output);
     for (const c of calls) {
       let output;
-      try { if(typeof c.arguments!=='string' || c.arguments.length>2048) throw new Error(); output=await execute(c.name,JSON.parse(c.arguments)); }
-      catch(error) { check(); output=queryFailure; }
+      try { if(typeof c.arguments!=='string' || c.arguments.length>2048) throw new SyntaxError(); output=await execute(c.name,JSON.parse(c.arguments)); }
+      catch(error) {
+        check(); output=supportToolFailure(error);
+        input.onToolCall?.({tool: String(c.name || '').slice(0, 100), arguments: {}, result: output,
+          cacheHit: false, latencyMs: 0, bytes: toolResultBytes(output), estimatedTokens: supportTextTokens(JSON.stringify(output)),
+          truncated: false, errorCode: output.error});
+      }
       followups.push(chat ? {role:'tool',tool_call_id:c.id,content:JSON.stringify(output)} : {type:'function_call_output',call_id:c.id,output:JSON.stringify(output)});
     }
   }

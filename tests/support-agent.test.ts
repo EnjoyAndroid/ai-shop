@@ -104,7 +104,7 @@ for (const wire of ['responses','chat_completions'] as const) test(`context ${wi
 
 test('invalid or unauthorized tools return a query error, never execute arbitrary actions',async()=>{
   const h=harness([{output:[{type:'function_call',call_id:'a',name:'refund_order',arguments:'{}'},{type:'function_call',call_id:'b',name:'search_products',arguments:'{broken'}],usage},{output_text:'需要进一步确认。',usage}]);
-  await generateSupportAnswer(h.input);assert.equal(h.executed.length,0);assert.match(JSON.stringify(h.bodies[2]),/QUERY_FAILED/);
+  await generateSupportAnswer(h.input);assert.equal(h.executed.length,0);assert.match(JSON.stringify(h.bodies[2]),/UNKNOWN_TOOL/);assert.match(JSON.stringify(h.bodies[2]),/INVALID_ARGUMENTS/);
   await assert.rejects(executeSupportTool('get_my_orders',{userId:'someone-else'},'self'));
   await assert.rejects(executeSupportTool('refund_order',{}));
   const guest=await executeSupportTool('get_my_orders',{}) as any;assert.equal(guest.publicOrderQuery.requiresAccountLogin,false);
@@ -265,7 +265,7 @@ test('partial follow-up query cannot reintroduce the unsupported task',async()=>
   const h=harness([{output:[{type:'function_call',call_id:'weather',name:'search_knowledge',arguments:'{"query":"天气"}'}],usage},{output_text:'99元',usage}],'responses',
     {decision:'partial',shopQuestion:'ChatGPT多少钱',queries:[]});
   await generateSupportAnswer({...h.input,question:'ChatGPT多少钱？顺便问天气'});
-  assert.equal(h.executed.length,0);assert.match(JSON.stringify(h.bodies[2]),/QUERY_FAILED/);
+  assert.equal(h.executed.length,0);assert.match(JSON.stringify(h.bodies[2]),/INVALID_ARGUMENTS/);
 });
 
 test('purchase-purpose descriptions remain eligible while explicit code tasks stay filtered',async()=>{
@@ -307,4 +307,37 @@ test('colloquial shop clauses reach planning in mixed questions without admittin
   ]) {
     assert.equal(isOutOfScopeSupportQuestion(question), true, question);
   }
+});
+
+
+test('typed filters use canonical cache keys and record both cache hits and distinct queries',async()=>{
+  const plan={decision:'allow',queries:[{name:'search_products',arguments:{query:'',maxPriceCny:100,inStockOnly:true}}]};
+  const h=harness([{output:[
+    {type:'function_call',call_id:'same',name:'search_products',arguments:JSON.stringify({query:'',inStockOnly:true,maxPriceCny:100,limit:5,offset:0,minPriceCny:null})},
+    {type:'function_call',call_id:'different',name:'search_products',arguments:JSON.stringify({query:'',inStockOnly:true,maxPriceCny:200})},
+  ],usage},{output_text:'按本轮价格和库存选择。',usage}],'responses',plan);
+  const events:any[]=[];
+  await generateSupportAnswer({...h.input,onToolCall:r=>events.push(r)});
+  assert.equal(h.executed.length,2);assert.deepEqual(events.map(e=>e.cacheHit),[false,true,false]);
+  assert(events.every(e=>e.bytes>0&&e.estimatedTokens>0&&e.errorCode===null));
+  assert.equal(events[2].arguments.maxPriceCny,200);
+});
+
+
+for(const wire of ['responses','chat_completions'] as const)test(`knowledge ${wire}: version changes invalidate stale search references without retrying failed reads`,async()=>{
+  const tool=(id:string,name:string,args:unknown)=>wire==='responses'?{output:[{type:'function_call',call_id:id,name,arguments:JSON.stringify(args)}],usage}:{choices:[{message:{role:'assistant',tool_calls:[{id,type:'function',function:{name,arguments:JSON.stringify(args)}}]}}],usage};
+  const h=harness([
+    tool('read','read_knowledge_article',{articleId:'policy',version:1,cursor:100}),
+    tool('search','search_knowledge',{query:'退款条件'}),
+    wire==='responses'?{output_text:'新版本要求人工核实。',usage}:{choices:[{message:{role:'assistant',content:'新版本要求人工核实。'}}],usage},
+  ],wire,{decision:'allow',queries:[{name:'search_knowledge',arguments:{query:'退款条件'}}]});
+  let searches=0;
+  await generateSupportAnswer({...h.input,execute:async(name:string)=>{
+    if(name==='search_knowledge'){searches++;return {articles:[{articleId:'policy',version:searches,content:'需要核实。'}]};}
+    return {error:'KNOWLEDGE_CHANGED',message:'重新检索'};
+  }});
+  assert.equal(searches,2,'same search must reach the source after a version change');
+  const body=h.bodies.at(-1);
+  const returned=wire==='responses'?body.input.find((m:any)=>m.type==='function_call_output'&&m.call_id==='search').output:body.messages.find((m:any)=>m.role==='tool'&&m.tool_call_id==='search').content;
+  assert.equal(JSON.parse(returned).articles[0].version,2);
 });

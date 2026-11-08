@@ -32,7 +32,8 @@
     "release:deploy": "node scripts/release.mjs deploy",
     "release:rollback": "node scripts/release.mjs rollback",
     "env:status": "node scripts/environment.mjs status",
-    "preview": "node scripts/local-preview.mjs"
+    "preview": "node scripts/local-preview.mjs",
+    "support:eval": "node --import tsx scripts/evaluate-support-tools.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
