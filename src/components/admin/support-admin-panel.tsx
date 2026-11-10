@@ -4,7 +4,7 @@ import { SupportMonitoring } from './support-monitoring';
 type Article = { id?: string; title: string; question: string; aliases: string[]; keywords: string[]; category: string; content: string; status: 'DRAFT'|'PUBLISHED'; version?: number };
 const empty: Article = {title:'',question:'',aliases:[],keywords:[],category:'general',content:'',status:'DRAFT'};
 type FixedLimits = {inputTargetTokens:number;inputMaxTokens:number;recentTurns:number;summaryTargetTokens:number;summaryMaxTokens:number;plannerMaxOutputTokens:number;answerMaxOutputTokens:number;upstreamTimeoutMs:number;totalTimeoutMs:number;maxModelRounds:number;maxToolCalls:number;identityConcurrent:number;ipConcurrent:number;globalConcurrent:number;duplicateWindowSeconds:number;duplicateThreshold:number;cooldownSeconds:number};
-type Config = {provider:string;model:string;dailyBudgetCny:number;configured:boolean;apiKeyConfigured:boolean;detailRetentionDays:number;usageRetentionDays:number;guestDailyModelTurns:number;memberDailyModelTurns:number;guestPerMinute:number;memberPerMinute:number;fixedLimits:FixedLimits};
+type Config = {context?:{enabled:boolean;inputMaxTokens:number;compactThreshold:number};provider:string;model:string;dailyBudgetCny:number;configured:boolean;apiKeyConfigured:boolean;detailRetentionDays:number;usageRetentionDays:number;guestDailyModelTurns:number;memberDailyModelTurns:number;guestPerMinute:number;memberPerMinute:number;fixedLimits:FixedLimits};
 export function SupportAdminPanel() {
   const [tab,setTab]=useState<'knowledge'|'usage'|'risk'|'config'>('usage');
   const [focusTurnId,setFocusTurnId]=useState<string|null>(null);
@@ -27,9 +27,9 @@ export function SupportAdminPanel() {
         <div className="grid gap-x-8 gap-y-2 text-sm leading-6 text-gray-500 sm:grid-cols-2">
           <p className="break-all">当前模型：{config.model}</p>
           <p>网关：{config.provider} · 模型凭据：{config.apiKeyConfigured?'已配置':'未配置'}</p>
-          <p>输入估算目标 / 上限：{config.fixedLimits.inputTargetTokens.toLocaleString('en-US')} / {config.fixedLimits.inputMaxTokens.toLocaleString('en-US')} Token</p>
-          <p>近期完整问答：优先 {config.fixedLimits.recentTurns} 轮，超限转摘录</p>
-          <p>历史摘录目标 / 上限：{config.fixedLimits.summaryTargetTokens.toLocaleString('en-US')} / {config.fixedLimits.summaryMaxTokens.toLocaleString('en-US')} Token</p>
+          <p>{config.context?.enabled?'原生压缩触发 / 输入保护上限':'本地摘录目标 / 输入上限'}：{(config.context?.enabled?config.context.compactThreshold:config.fixedLimits.inputTargetTokens).toLocaleString('en-US')} / {(config.context?.enabled?config.context.inputMaxTokens:config.fixedLimits.inputMaxTokens).toLocaleString('en-US')} Token</p>
+          <p>对话历史：{config.context?.enabled?'按容量连续追加，达到阈值原生压缩':`优先 ${config.fixedLimits.recentTurns} 轮，超限转摘录`}</p>
+          <p>降级摘录目标 / 上限：{config.fixedLimits.summaryTargetTokens.toLocaleString('en-US')} / {config.fixedLimits.summaryMaxTokens.toLocaleString('en-US')} Token</p>
           <p>规划输出上限：{config.fixedLimits.plannerMaxOutputTokens.toLocaleString('en-US')} Token</p>
           <p>回答输出上限：{config.fixedLimits.answerMaxOutputTokens.toLocaleString('en-US')} Token</p>
           <p>单次模型请求超时：{config.fixedLimits.upstreamTimeoutMs/1000} 秒</p>

@@ -48,6 +48,114 @@ before(async () => {
 beforeEach(async () => { await redis.del('support:v2:circuit'); });
 after(async () => { await disconnectSupportCancellationClient(); await prisma.$disconnect(); await redis.quit(); });
 
+for(const wire of ['responses','chat_completions'] as const) test(`answer mode is enforced through the support service and persisted state (${wire})`,async t=>{
+  const {createSupportConversation,answerSupportTurn}=await import('../../src/lib/support/service');
+  const {clearSettingsCache}=await import('../../src/lib/services/settings.service');
+  const names=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_CONTEXT_MODE','SUPPORT_LLM_MODEL'];const saved=names.map(n=>process.env[n]);
+  const settingNames=['supportLlmModel','supportDailyBudgetCny'];const prior=await prisma.systemSetting.findMany({where:{key:{in:settingNames}}});
+  const identity={anonymousKey:randomBytes(32).toString('hex')},c=await createSupportConversation(identity);
+  let phase:'recall'|'recommend'|'unexpected-tool'='recall';const bodies:any[]=[];
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
+    const body=JSON.parse(init.body);bodies.push(body);const scope=(body.instructions||body.messages?.[0]?.content||'').includes('查询参数定义');
+    let data:any;
+    if(scope){
+      const plan=phase==='recommend'?{decision:'allow',answerMode:'tools_allowed',queries:[{name:'search_products',arguments:{query:'',inStockOnly:true,maxPriceCny:200}}]}:{decision:'allow',answerMode:'context_only',queries:[]};
+      data=wire==='responses'?{output_text:JSON.stringify(plan)}:{choices:[{message:{role:'assistant',content:JSON.stringify(plan)}}]};
+    }else if(phase==='unexpected-tool'){
+      assert.equal(body.tool_choice,'none');
+      data=wire==='responses'?{output:[{type:'function_call',call_id:'ignore-none',name:'search_products',arguments:'{}'}]}:{choices:[{message:{role:'assistant',content:null,tool_calls:[{id:'ignore-none',type:'function',function:{name:'search_products',arguments:'{}'}}]}}]};
+    }else{
+      assert.equal(body.tool_choice,phase==='recall'?'none':'auto');
+      const text=phase==='recall'?'200元、写代码、月付。':'已按预算和用途查询当前有货商品。';
+      data=wire==='responses'?{output_text:text}:{choices:[{message:{role:'assistant',content:text}}]};
+    }
+    return new Response(JSON.stringify({...data,usage:{input_tokens:100,output_tokens:20,total_tokens:120}}));
+  });
+  try{
+    for(const[key,value]of [['supportLlmModel','gpt-6-luna'],['supportDailyBudgetCny','10000']])await prisma.systemSetting.upsert({where:{key},create:{key,value},update:{value}});
+    await clearSettingsCache();Object.assign(process.env,{SUPPORT_LLM_API_KEY:'synthetic-mode',SUPPORT_LLM_BASE_URL:'https://example.invalid/v1',SUPPORT_LLM_WIRE_API:wire,SUPPORT_CONTEXT_MODE:'native',SUPPORT_LLM_MODEL:'gpt-6-luna'});
+    await prisma.supportTurn.create({data:{conversationId:c.id,requestId:'seed-mode',userText:'预算从100改为200元，写代码，只要月付。',answerText:'已更新选购条件。'}});
+    const answer=await answerSupportTurn(c.id,'mode-recall','我后来确定的预算、用途和付款周期是什么？',identity);
+    assert.equal(answer.status,'COMPLETED');assert.deepEqual(answer.ui.links,[]);
+    const recall=await prisma.supportTurn.findUniqueOrThrow({where:{id:answer.turnId},include:{modelCalls:true}});
+    assert.equal((recall.facts as any).answerMode,'context_only');assert.deepEqual((recall.facts as any).queries,[]);assert.deepEqual((recall.facts as any).toolCalls,[]);assert.equal(recall.modelCalls.length,2);
+    phase='recommend';
+    const recommended=await answerSupportTurn(c.id,'mode-recommend','按这个预算和用途推荐目前有库存的套餐。',identity);
+    assert.equal(recommended.status,'COMPLETED');const rec=await prisma.supportTurn.findUniqueOrThrow({where:{id:recommended.turnId}});
+    assert.equal((rec.facts as any).answerMode,'tools_allowed');assert.equal((rec.facts as any).queries[0].tool,'search_products');
+    const state=(await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary;
+    phase='unexpected-tool';
+    const refused=await answerSupportTurn(c.id,'mode-violate','再复述一下我最后的预算和付款周期。',identity);
+    assert.equal(refused.status,'FALLBACK_TOOLS_DISABLED');assert.deepEqual(refused.ui.links,[]);
+    const failed=await prisma.supportTurn.findUniqueOrThrow({where:{id:refused.turnId},include:{modelCalls:true}});
+    assert.deepEqual((failed.facts as any).queries,[]);assert.equal(failed.modelCalls.at(-1)?.errorCode,'TOOLS_DISABLED');
+    assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,state);
+    assert.equal(bodies.length,6);
+  }finally{
+    names.forEach((n,i)=>saved[i]===undefined?delete process.env[n]:process.env[n]=saved[i]);
+    await prisma.supportConversation.delete({where:{id:c.id}});await prisma.systemSetting.deleteMany({where:{key:{in:settingNames}}});for(const row of prior)await prisma.systemSetting.create({data:{key:row.key,value:row.value}});await clearSettingsCache();
+  }
+});
+
+test('native support state persists through real entry, replays with deduplication and clears on retention cleanup', async t => {
+  const { createSupportConversation, answerSupportTurn, cleanupSupportData, getSupportConversation } = await import('../../src/lib/support/service');
+  const { clearSettingsCache } = await import('../../src/lib/services/settings.service');
+  const envNames = ['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_CONTEXT_MODE','SUPPORT_LLM_MODEL'];
+  const priorEnv = envNames.map(k => process.env[k]);
+  const settingNames = ['supportLlmModel','supportDailyBudgetCny','supportDetailRetentionDays','supportUsageRetentionDays'];
+  const prior = await prisma.systemSetting.findMany({ where: { key: { in: settingNames } } });
+  const identity = { anonymousKey: randomBytes(32).toString('hex') };
+  const c = await createSupportConversation(identity), other = await createSupportConversation({ anonymousKey: randomBytes(32).toString('hex') });
+  const bodies: any[] = [];
+  let rejectAnswer = false;
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: any) => {
+    const body = JSON.parse(init.body); bodies.push(body);
+    const scope = body.instructions.includes('查询参数定义');
+    if (rejectAnswer && !scope) return new Response(JSON.stringify({error:{message:'synthetic upstream failure'}}), {status:503});
+    const text = scope ? JSON.stringify({ decision: 'allow', answerMode: 'tools_allowed', queries: [] }) : '预算237元，月付且不选Claude';
+    return new Response(JSON.stringify({ status:'completed', output: [
+      {type:'compaction',id:scope?'scope-memory':'answer-memory',encrypted_content:scope?'OPAQUE_SCOPE':'OPAQUE_ANSWER'},
+      {type:'message',role:'assistant',content:[{type:'output_text',text,annotations:[]}]},
+    ], usage:{input_tokens:3000,output_tokens:100,total_tokens:3100} }));
+  });
+  try {
+    for (const [key,value] of [['supportLlmModel','gpt-6-luna'],['supportDailyBudgetCny','10000'],['supportDetailRetentionDays','90'],['supportUsageRetentionDays','180']])
+      await prisma.systemSetting.upsert({ where:{key},create:{key,value},update:{value} });
+    await clearSettingsCache();
+    Object.assign(process.env,{SUPPORT_LLM_API_KEY:'synthetic-native',SUPPORT_LLM_BASE_URL:'https://example.invalid/v1',SUPPORT_LLM_WIRE_API:'responses',SUPPORT_CONTEXT_MODE:'native',SUPPORT_LLM_MODEL:'gpt-6-luna'});
+    await prisma.supportTurn.createMany({data:Array.from({length:30},(_,i)=>({conversationId:c.id,requestId:`native-history-${i}`,userText:i===0?'预算100，只要月付，不要Claude':i===7?'预算改为237':`资料${i}`,answerText:`答复${i}`,createdAt:new Date(Date.now()-120000+i*1000)}))});
+    const first = await answerSupportTurn(c.id,'native-first','我确定的选购条件是什么？',identity);
+    assert.equal(first.status,'COMPLETED'); assert.equal(bodies[0].input.length,61);
+    assert.equal(bodies[0].input[0].content,'预算100，只要月付，不要Claude');
+    const state = JSON.parse((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary);
+    assert.equal(state.version,3); assert.equal(state.through.id,first.turnId);
+    assert.equal(state.stages.scope.items[0].encrypted_content,'OPAQUE_SCOPE');
+    assert.equal(state.stages.answer.items[0].encrypted_content,'OPAQUE_ANSWER');
+    assert(!JSON.stringify(await getSupportConversation(c.id,identity)).includes('OPAQUE_'));
+    const repeated=await answerSupportTurn(c.id,'native-first','我确定的选购条件是什么？',identity);
+    assert.equal(repeated.turnId,first.turnId); assert.equal(bodies.length,2);
+    await answerSupportTurn(c.id,'native-second','月付这个条件仍然有效吗？',identity);
+    assert.equal(bodies[2].input[0].encrypted_content,'OPAQUE_SCOPE');
+    assert.equal(bodies[3].input[0].encrypted_content,'OPAQUE_ANSWER');
+    assert(!JSON.stringify(bodies[3]).includes('资料29'));
+    assert.equal(JSON.stringify(bodies[3]).split('我确定的选购条件是什么').length-1,0,'covered plaintext is not duplicated after native state');
+    const accepted=(await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary;
+    rejectAnswer=true;
+    await answerSupportTurn(c.id,'native-failed','现在帮我继续选购套餐',identity);
+    assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,accepted,'failed answer must not advance stage state or coverage');
+    await assert.rejects(answerSupportTurn(other.id,'not-owner','查订单',identity));
+    await prisma.supportTurn.updateMany({where:{conversationId:c.id},data:{createdAt:new Date(Date.now()-91*86400000)}});
+    await cleanupSupportData();
+    assert.equal((await prisma.supportConversation.findUniqueOrThrow({where:{id:c.id}})).contextSummary,'');
+  } finally {
+    envNames.forEach((k,i)=>priorEnv[i]===undefined?delete process.env[k]:process.env[k]=priorEnv[i]);
+    await prisma.supportConversation.deleteMany({where:{id:{in:[c.id,other.id]}}});
+    await prisma.systemSetting.deleteMany({where:{key:{in:settingNames}}});
+    for (const row of prior) await prisma.systemSetting.create({data:{key:row.key,value:row.value}});
+    await clearSettingsCache();
+  }
+});
+
 test("unsold card listing never returns secrets; editing encrypts content and stale edits are rejected", async () => {
   const f = await fixture(23);
   const first = await listUnsoldCardKeys({ productId: f.product.id });
@@ -649,7 +757,7 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
   const identity={anonymousKey:randomBytes(32).toString('hex')};
   const c=await createSupportConversation(identity);
   const p=await prisma.product.create({data:{categoryId,name:'Claude Pro 会员 1个月',slug:`${prefix}-support-claude`,price:12900,stock:0,sort:-99999}});
-  const envNames=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_DAILY_BUDGET_CNY'];
+  const envNames=['SUPPORT_LLM_API_KEY','SUPPORT_LLM_BASE_URL','SUPPORT_LLM_WIRE_API','SUPPORT_DAILY_BUDGET_CNY','SUPPORT_CONTEXT_MODE'];
   const saved=envNames.map(n=>process.env[n]);
   try {
     await prisma.supportTurn.createMany({data:Array.from({length:25},(_,i)=>({conversationId:c.id,requestId:`history-${i}`,userText:`旧问题${i}`,answerText:`旧回答${i}`,createdAt:new Date(Date.now()-60000+i*1000)}))});
@@ -657,11 +765,11 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
     const result=await executeSupportTool('search_products',{query:'Claude 5x'}) as any;
     assert.equal(result.exactMatches.length,0);assert(result.relatedProducts.some((r:any)=>r.name===p.name&&r.stock===0));
     const noResult=await executeSupportTool('search_products',{query:'nonexistent-unique-model-xyz'}) as any;assert.equal(noResult.exactMatches.length,0);assert.equal(noResult.relatedProducts.length,0);
-    process.env.SUPPORT_LLM_API_KEY='synthetic-test-only';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';
+    process.env.SUPPORT_CONTEXT_MODE='local';process.env.SUPPORT_LLM_API_KEY='synthetic-test-only';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';
     let count=0;const bodies:any[]=[];
     t.mock.method(globalThis,'fetch',async (_url:unknown,init:any)=>{
       const body=JSON.parse(init.body);bodies.push(body);count++;
-      const data=count===1?{output_text:JSON.stringify({decision:'allow',queries:[]})}:count===2?{output:[{type:'function_call',call_id:'products',name:'search_products',arguments:'{"query":"Claude 5x"}'},{type:'function_call',call_id:'knowledge',name:'search_knowledge',arguments:'{"query":"购买流程"}'}]}:{output_text:'当前未找到 Claude 5x，相关 Claude Pro 月付129元，当前缺货。'};
+      const data=count===1?{output_text:JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[]})}:count===2?{output:[{type:'function_call',call_id:'products',name:'search_products',arguments:'{"query":"Claude 5x"}'},{type:'function_call',call_id:'knowledge',name:'search_knowledge',arguments:'{"query":"购买流程"}'}]}:{output_text:'当前未找到 Claude 5x，相关 Claude Pro 月付129元，当前缺货。'};
       return new Response(JSON.stringify({...data,usage:{input_tokens:20,output_tokens:10,total_tokens:30},model:'test'}));
     });
     const answer=await answerSupportTurn(c.id,'agent-request','Claude 5x多少钱？',identity);
@@ -678,7 +786,7 @@ test('support retrieves latest messages beyond 20, summarizes older context, exe
     const replay=await answerSupportTurn(c.id,'agent-request','Claude 5x多少钱？',identity);assert.equal(replay.turnId,answer.turnId);assert.equal(count,3);
     t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
       const body=JSON.parse(init.body);bodies.push(body);count++;
-      return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow',queries:[]}):'继续比较套餐',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
+      return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[]}):'继续比较套餐',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
     });
     await answerSupportTurn(c.id,'memory-followup','继续比较这些套餐',identity);
     const nextContext=JSON.parse(bodies[3].input[0].content);
@@ -718,7 +826,7 @@ test('support attachments persist across replay and restore, hide QR URLs from m
     t.mock.method(globalThis,'fetch',async (_url:unknown,init:any)=>{
       requests++;const body=JSON.parse(init.body);
       if(requests===3){assert(!JSON.stringify(body.input).includes(qr));assert(JSON.stringify(body.input).includes('wechatQrConfigured'));}
-      return new Response(JSON.stringify({usage:{input_tokens:10,output_tokens:10,total_tokens:20},...(requests===1?{output_text:JSON.stringify({decision:'allow',queries:[]})}:requests===2?{output:[{type:'function_call',name:'get_contacts',call_id:'contact-ui',arguments:'{}'},{type:'function_call',name:'get_navigation',call_id:'nav-ui',arguments:'{"page":"order_query"}'}]}:{output_text:'请扫描下方二维码，或点击订单查询按钮。'})}));
+      return new Response(JSON.stringify({usage:{input_tokens:10,output_tokens:10,total_tokens:20},...(requests===1?{output_text:JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[]})}:requests===2?{output:[{type:'function_call',name:'get_contacts',call_id:'contact-ui',arguments:'{}'},{type:'function_call',name:'get_navigation',call_id:'nav-ui',arguments:'{"page":"order_query"}'}]}:{output_text:'请扫描下方二维码，或点击订单查询按钮。'})}));
     });
     const result=await answerSupportTurn(c.id,'attachment-request','想找人工顺便查订单',identity);
     assert.equal(result.status,'COMPLETED');assert.equal(result.ui.images[0].url,qr);assert.equal(result.ui.links[0].href,'/order');
@@ -881,7 +989,7 @@ test('support planner executes real tools in two calls; records identity, phase,
   await redis.del('support:v2:circuit');
   try{
     process.env.SUPPORT_LLM_API_KEY='synthetic-test';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';
-    let calls=0;t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({output_text:++calls===1?JSON.stringify({decision:'allow',queries:[{name:'get_contacts',arguments:{}},{name:'get_navigation',arguments:{page:'order_query'}}]}):'请使用订单查询页面。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}})));
+    let calls=0;t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({output_text:++calls===1?JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[{name:'get_contacts',arguments:{}},{name:'get_navigation',arguments:{page:'order_query'}}]}):'请使用订单查询页面。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}})));
     const r=await answerSupportTurn(c.id,'planned-request','想找人工顺便了解订单入口',identity,{value:'8.8.4.4',trusted:true});
     assert.equal(calls,2);assert.equal(r.status,'COMPLETED');assert(r.ui.links.some(l=>l.href==='/order'));
     const saved=await prisma.supportTurn.findUniqueOrThrow({where:{id:r.turnId},include:{modelCalls:{orderBy:{sequence:'asc'}}}});
@@ -1350,7 +1458,7 @@ test('cancelled support turns hold their concurrency permit until tool cleanup s
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     calls++;
-    return new Response(JSON.stringify({output_text: JSON.stringify({decision:'allow', queries:[{name:'search_products',arguments:{query:'会员'}}]}), usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+    return new Response(JSON.stringify({output_text: JSON.stringify({decision:'allow', answerMode: 'tools_allowed', queries:[{name:'search_products',arguments:{query:'会员'}}]}), usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
   });
   t.mock.method(channel, '$queryRaw', async (...args: Parameters<typeof originalCancel>) => {
     cancelled(); await gate; return originalCancel(...args);
@@ -1414,7 +1522,7 @@ test('in-flight support completion cannot restore purged history after retention
   t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
     const body=JSON.parse(init.body);bodies.push(body);
     if(bodies.length===1){started();await gate;}
-    return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow',queries:[]}):'新的商品回答',usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+    return new Response(JSON.stringify({output_text:body.instructions?.includes('查询参数定义')?JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[]}):'新的商品回答',usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
   });
   try{
     for(const [key,value] of [['supportDetailRetentionDays','90'],['supportUsageRetentionDays','180'],['supportDailyBudgetCny','10000']])await prisma.systemSetting.upsert({where:{key},create:{key,value},update:{value}});
@@ -1448,7 +1556,7 @@ test('mixed shop requests execute only approved shop queries, preserve public or
     const body=JSON.parse(init.body);calls++;
     const scope=body.instructions.includes('查询参数定义');
     if(!scope){assert(!JSON.stringify(body.input).includes('Python'));assert(JSON.stringify(body.input).includes('无需登录'));}
-    return new Response(JSON.stringify({output_text:scope?JSON.stringify({decision:'partial',shopQuestion:'订单在哪里查询？',queries:[{name:'get_navigation',arguments:{page:'my_orders'}}]}):'无需登录，请点击下方查询订单。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
+    return new Response(JSON.stringify({output_text:scope?JSON.stringify({decision:'partial', answerMode: 'tools_allowed',shopQuestion:'订单在哪里查询？',queries:[{name:'get_navigation',arguments:{page:'my_orders'}}]}):'无需登录，请点击下方查询订单。',usage:{input_tokens:20,output_tokens:10,total_tokens:30}}));
   });
   try{
     process.env.SUPPORT_LLM_API_KEY='synthetic-only';process.env.SUPPORT_LLM_BASE_URL='https://example.invalid/v1';process.env.SUPPORT_LLM_WIRE_API='responses';process.env.SUPPORT_DAILY_BUDGET_CNY='10000';await clearSettingsCache();
@@ -1482,7 +1590,7 @@ for (const wire of ['responses', 'chat_completions']) test(`colloquial purchase 
       assert(messages.some((m: any) => m.content === '我要买Claude'));
       assert(!JSON.stringify(messages).includes('天气'));
     }
-    const content = scope ? JSON.stringify({ decision: 'partial', shopQuestion: '我要买Claude', queries: [{ name: 'get_navigation', arguments: { page: 'products' } }] }) : '请查看商城在售套餐。';
+    const content = scope ? JSON.stringify({ decision: 'partial', answerMode: 'tools_allowed', shopQuestion: '我要买Claude', queries: [{ name: 'get_navigation', arguments: { page: 'products' } }] }) : '请查看商城在售套餐。';
     return new Response(JSON.stringify({ ...(wire === 'responses' ? { output_text: content } : { choices: [{ message: { role: 'assistant', content } }] }), usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 } }));
   });
   try {
@@ -1528,7 +1636,7 @@ test('support product filters and exact-name priority precede pagination; long r
     Object.assign(process.env,{SUPPORT_LLM_API_KEY:'synthetic-test-only',SUPPORT_LLM_BASE_URL:'https://example.invalid/v1',SUPPORT_LLM_WIRE_API:'responses',SUPPORT_DAILY_BUDGET_CNY:'10000'});
     t.mock.method(globalThis,'fetch',async(_url:unknown,init:any)=>{
       const body=JSON.parse(init.body);calls++;
-      if(calls===1)return new Response(JSON.stringify({output_text:JSON.stringify({decision:'allow',queries:[{name:'search_products',arguments:{query:token,maxPriceCny:100,inStockOnly:true}}]}),usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
+      if(calls===1)return new Response(JSON.stringify({output_text:JSON.stringify({decision:'allow', answerMode: 'tools_allowed',queries:[{name:'search_products',arguments:{query:token,maxPriceCny:100,inStockOnly:true}}]}),usage:{input_tokens:10,output_tokens:10,total_tokens:20}}));
       const message=body.input.find((m:any)=>m.content?.startsWith('服务端本轮查询结果'));
       delivered=JSON.parse(message.content.slice(message.content.indexOf('[')))[0].result;
       assert(!delivered.error);assert(Buffer.byteLength(JSON.stringify(delivered))<=6000);

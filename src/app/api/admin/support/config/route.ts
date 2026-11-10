@@ -9,6 +9,7 @@ import { clearSettingsCache } from '@/lib/services/settings.service';
 import { Prisma } from '@prisma/client';
 import { getSupportPolicy, SUPPORT_CONFIG_LOCK } from '@/lib/support/policy-store';
 import { supportLimitSnapshot } from '@/lib/support/limits';
+import { nativePolicy } from '@/lib/support/native-context';
 export const dynamic='force-dynamic';
 const integerSetting=(min:number,max:number)=>z.number().int().min(min).max(max);
 const schema=z.object({
@@ -21,7 +22,7 @@ export async function GET() {
   const admin=await getAdminSession();
   if(!admin || !hasAdminPermission(admin,'settings')) return orderJson({error:'无权限'},403);
   try {
-    const c={...await getSupportConfig(),...await getSupportPolicy()}, limits=supportLimitSnapshot();return orderJson({provider:c.provider,model:c.model,dailyBudgetCny:await currentSupportBudget(c.dailyBudgetCny),configured:supportModelConfigured(c),apiKeyConfigured:Boolean(c.apiKey),detailRetentionDays:c.detailRetentionDays,usageRetentionDays:c.usageRetentionDays,guestDailyModelTurns:c.guestDailyModelTurns,memberDailyModelTurns:c.memberDailyModelTurns,guestPerMinute:c.guestPerMinute,memberPerMinute:c.memberPerMinute,fixedLimits:{inputTargetTokens:limits.inputTargetTokens,inputMaxTokens:limits.inputMaxTokens,recentTurns:limits.recentTurns,summaryTargetTokens:limits.summaryTargetTokens,summaryMaxTokens:limits.summaryMaxTokens,plannerMaxOutputTokens:limits.plannerMaxOutputTokens,answerMaxOutputTokens:limits.answerMaxOutputTokens,upstreamTimeoutMs:limits.upstreamTimeoutMs,totalTimeoutMs:limits.totalTimeoutMs,maxModelRounds:limits.maxModelRounds,maxToolCalls:limits.maxToolCalls,identityConcurrent:limits.identityConcurrent,ipConcurrent:limits.ipConcurrent,globalConcurrent:limits.globalConcurrent,duplicateWindowSeconds:limits.duplicateWindowSeconds,duplicateThreshold:limits.duplicateThreshold,cooldownSeconds:limits.cooldownSeconds}});
+    const c={...await getSupportConfig(),...await getSupportPolicy()}, limits=supportLimitSnapshot();return orderJson({provider:c.provider,model:c.model,dailyBudgetCny:await currentSupportBudget(c.dailyBudgetCny),context:nativePolicy(c),configured:supportModelConfigured(c),apiKeyConfigured:Boolean(c.apiKey),detailRetentionDays:c.detailRetentionDays,usageRetentionDays:c.usageRetentionDays,guestDailyModelTurns:c.guestDailyModelTurns,memberDailyModelTurns:c.memberDailyModelTurns,guestPerMinute:c.guestPerMinute,memberPerMinute:c.memberPerMinute,fixedLimits:{inputTargetTokens:limits.inputTargetTokens,inputMaxTokens:limits.inputMaxTokens,recentTurns:limits.recentTurns,summaryTargetTokens:limits.summaryTargetTokens,summaryMaxTokens:limits.summaryMaxTokens,plannerMaxOutputTokens:limits.plannerMaxOutputTokens,answerMaxOutputTokens:limits.answerMaxOutputTokens,upstreamTimeoutMs:limits.upstreamTimeoutMs,totalTimeoutMs:limits.totalTimeoutMs,maxModelRounds:limits.maxModelRounds,maxToolCalls:limits.maxToolCalls,identityConcurrent:limits.identityConcurrent,ipConcurrent:limits.ipConcurrent,globalConcurrent:limits.globalConcurrent,duplicateWindowSeconds:limits.duplicateWindowSeconds,duplicateThreshold:limits.duplicateThreshold,cooldownSeconds:limits.cooldownSeconds}});
   } catch(e) {return orderError('Support config',e);}
 }
 export async function POST(request:Request) {

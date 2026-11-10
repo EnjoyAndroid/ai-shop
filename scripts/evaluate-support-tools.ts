@@ -65,7 +65,7 @@ async function main(){
     const implementations={baseline:await load(baselineDir),candidate:await load(process.cwd())};
     for(const task of tasks){
       for(const side of ['baseline','candidate'] as const){
-        const api=implementations[side],history=fixtureHistory(task.scenario);let summary='';
+        const api=implementations[side],history=fixtureHistory(task.scenario);let summary='',memory:any,covered=0;
         for(let index=0;index<task.questions.length;index++){
           const file=join(output,`${task.id}.${index}.${side}.json`);
           let result:any=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):undefined;
@@ -73,7 +73,7 @@ async function main(){
           if(!result){
             if(JSON.stringify(hashes)!==JSON.stringify(fingerprint()))throw new Error('Source changed during evaluation');
             const question=task.questions[index],calls:SupportCallRecord[]=[],evidence:any[]=[],toolCalls:any[]=[],requests:any[]=[];
-            const started=Date.now();let answer='',status='COMPLETED',error:string|null=null;
+            const started=Date.now();let answer='',status='COMPLETED',error:string|null=null,nextMemory:any;
             try{
               const greeting=api.policy.supportGreetingAnswer(question),faq=api.faq.trustedSupportFaq(question);
               if(api.policy.isOutOfScopeSupportQuestion(question)){answer=api.policy.SUPPORT_SCOPE_REFUSAL;status='OUT_OF_SCOPE';}
@@ -81,7 +81,10 @@ async function main(){
               else if(faq){
                 const products=fixtureProducts(task.scenario).map(({price,...p})=>({...p,priceCny:price/100,description:p.description||''}));
                 answer=fallbackAnswer(question,fixtureArticle(task.scenario).content,{siteName:'Test',products,orders:[],paymentMethods:['账户余额','支付宝'],contacts:{telegramUrl:'',wechatSupportText:'测试客服',wechatSupportQrUrl:''},announcements:[]});status='FAQ';
-              }else answer=await api.llm.generateSupportAnswer({question,history:api.context.recentContext([...history].reverse()),summary,config,
+              }else answer=await api.llm.generateSupportAnswer({question,
+                history:api.context.fullContext ? api.context.fullContext(history.slice(memory&&!memory.disabledReason?covered:0)) : api.context.recentContext([...history].reverse()),
+                fallbackHistory:api.context.recentContext([...history].reverse()),summary,config,memory,memoryBinding:`${task.id}:${side}`,
+                onMemory:(value:any)=>{nextMemory=value;},
                 execute:async(name:string,args:unknown)=>{
                   const parsed=api.tools.validateSupportTool(name,args),raw=fixtureTool(task.scenario,name,parsed,side==='baseline');
                   evidence.push({tool:name,arguments:parsed,result:raw,modelResult:side==='candidate'?null:undefined});
@@ -105,7 +108,7 @@ async function main(){
               else{status='ERROR';error=code;}
             }
             result={id:task.id,index,side,scenario:task.scenario,question,expected:task.expected[index],answer,status,error,
-              latencyMs:Date.now()-started,ui:api.ui.buildSupportUi(evidence,answer,fixtureAuthenticated(task.scenario)?'synthetic-member':undefined),calls,toolCalls,evidence,requests};
+              latencyMs:Date.now()-started,ui:api.ui.buildSupportUi(evidence,answer,fixtureAuthenticated(task.scenario)?'synthetic-member':undefined),calls,toolCalls,evidence,requests,memory:nextMemory};
             atomic(file,result);
             console.log(JSON.stringify({id:task.id,index,side,status,error,calls:calls.length,tools:evidence.length,occupiedCny:occupiedCny(ledger).toString()}));
             await new Promise(resolve=>setTimeout(resolve,2000));
@@ -114,6 +117,7 @@ async function main(){
           if(['COMPLETED','FAQ','GREETING'].includes(result.status)){
             summary=api.context.nextContextSummary(summary,[...history].reverse());
             history.push({id:`${task.id}-${index}`,userText:result.question,answerText:result.answer});
+            if(result.memory){memory=result.memory;covered=history.length;}
           }else if(index+1<task.questions.length)throw new Error('Multi-turn chain did not complete; do not invent missing history');
         }
       }

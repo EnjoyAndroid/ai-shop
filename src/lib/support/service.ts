@@ -6,10 +6,11 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/db";
 import { getSupportConfig, redactSupportText, supportModelConfigured } from "./config";
 import { getSupportFacts, searchSupportKnowledge, type SupportFacts } from "./retriever";
-import { generateSupportAnswer, SupportLlmError } from "./llm";
+import { generateSupportAnswer, SupportLlmError, supportMemoryFingerprint } from "./llm";
 import { SUPPORT_GREETING, SUPPORT_NAME, MEMBER_SESSION_SECONDS, GUEST_SESSION_SECONDS, isOutOfScopeSupportQuestion, supportGreetingAnswer, SUPPORT_SCOPE_REFUSAL, SUPPORT_SCOPE_CLARIFICATION, SUPPORT_SCOPE_UNAVAILABLE, hasUnsupportedSupportTask, withSupportPartialNotice } from "./policy";
 import { executeSupportTool } from "./tools";
-import { recentContext, nextContextSummary, mergeContextSummary, RECENT_TURNS } from "./context";
+import { recentContext, fullContext, nextContextSummary, mergeContextSummary, RECENT_TURNS, type ContextTurn } from "./context";
+import { readNativeMemory, nativePolicy, legacyMemory, disabledNativeMemory, NATIVE_REQUEST_BYTES, NATIVE_STATE_BYTES, type NativeMemory } from './native-context';
 import { buildSupportUi, modelToolResult, readSupportUi, cleanSupportAnswer } from "./ui";
 import redis from "@/lib/redis";
 import { rateLimit } from "@/lib/rate-limit";
@@ -192,7 +193,15 @@ async function answerLocked(conversationId: string, requestId: string, question:
   }
   if (!await rateLimit("support-identity", identity.userId || identity.anonymousKey, 30, 60)) throw new SupportRequestError("客服请求过于频繁，请稍后再试", 429);
   await touchSupportConversation(conversationId, identity);
-  let summary = conversation.createdAt>retained.createdAt.gt ? conversation.contextSummary : '';
+  const config = await getSupportConfig();
+  const persisted = conversation.createdAt>retained.createdAt.gt ? conversation.contextSummary : '';
+  let summary = legacyMemory(persisted);
+  let memory = nativePolicy(config).enabled ? readNativeMemory(persisted, supportMemoryFingerprint(config), conversationId) : null;
+  if (memory && !memory.disabledReason && (!memory.through || !memory.stages.scope || !memory.stages.answer)) memory = null;
+  let memoryUpdate: NativeMemory | undefined;
+  let history = recentContext(conversation.turns);
+  const contextEvents: Array<{ mode: 'native' | 'local'; reason?: string; compactions?: number }> = [];
+  let answerMode: string | undefined;
   const retainedTitle=conversation.createdAt>retained.createdAt.gt?conversation.title:null;
   const contextDates=conversation.turns.map(turn=>turn.createdAt);
   if(summary||retainedTitle)contextDates.push(conversation.createdAt);
@@ -200,6 +209,26 @@ async function answerLocked(conversationId: string, requestId: string, question:
     const older = await prisma.supportTurn.findMany({ where: { conversationId, ...retained, status: { in: ["FAQ", "COMPLETED", "FALLBACK"] } }, orderBy: turnOrder, skip: RECENT_TURNS, take: 31, select: { id: true, userText: true, answerText: true, createdAt:true } });
     contextDates.push(...older.map(turn=>turn.createdAt));
     summary = mergeContextSummary("", older.slice(0, 30).reverse(), older.length > 30);
+  }
+  if (nativePolicy(config).enabled && !memory?.disabledReason) {
+    if (memory?.through && !await prisma.supportTurn.findFirst({ where: { id: memory.through.id, conversationId, ...retained,
+      status: { in: ['FAQ','COMPLETED','FALLBACK'] }, AND: [{ createdAt: new Date(memory.through.at) }] }, select: { id: true } })) memory = null;
+    const rows: ContextTurn[] = [];
+    let after = memory?.through, bytes = 0;
+    for (;;) {
+      const page = await prisma.supportTurn.findMany({ where: { conversationId, ...retained, status: { in: ['FAQ','COMPLETED','FALLBACK'] },
+        ...(after ? { OR: [{ createdAt: { gt: new Date(after.at) } }, { createdAt: new Date(after.at), id: { gt: after.id } }] } : {}) },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 100, select: { id: true, createdAt: true, userText: true, answerText: true } });
+      for (const row of page) { bytes += Buffer.byteLength(row.userText + (row.answerText || ''), 'utf8'); rows.push(row); }
+      if (bytes > NATIVE_REQUEST_BYTES || rows.length > 10_000) {
+        memory = disabledNativeMemory(supportMemoryFingerprint(config), conversationId, summary, 'HISTORY_BYTES');
+        memoryUpdate = memory; break;
+      }
+      if (page.length < 100) { history = fullContext(rows); break; }
+      const last = page[page.length - 1]; after = { id: last.id, at: last.createdAt.toISOString() };
+    }
+    if (rows[0]?.createdAt) contextDates.push(new Date(rows[0].createdAt));
+    if (memory?.through) contextDates.push(new Date(memory.through.at));
   }
   async function assertContextRetained(client: Pick<Prisma.TransactionClient,'systemSetting'|'supportTurn'> = prisma) {
     const policy=await getSupportPolicy(client);
@@ -212,7 +241,6 @@ async function answerLocked(conversationId: string, requestId: string, question:
   const safeQuestion = redactSupportText(question.trim());
   const trustedFaq = trustedSupportFaq(question);
   const identityHash = supportIdentityHash(identity);
-  const config = await getSupportConfig();
   const outOfScope = isOutOfScopeSupportQuestion(question);
   const greeting = supportGreetingAnswer(safeQuestion);
   const turn = await prisma.supportTurn.create({ data: { conversationId, requestId, userText: safeQuestion, status: "PROCESSING", clientIp: clientIp.trusted ? clientIp.value : null, clientIpTrusted: clientIp.trusted, identityHash, modelTurn: false } });
@@ -238,8 +266,10 @@ async function answerLocked(conversationId: string, requestId: string, question:
     const pendingTools = new Set<Promise<unknown>>();
     try {
       permitRelease = await acquireSupportPermit(identity, clientIp, safeQuestion);
-      answer = await generateSupportAnswer({ question: safeQuestion, history: recentContext(conversation.turns), summary, config,
-        onPlan: plan => { partialAccepted = plan.decision === 'partial'; },
+      answer = await generateSupportAnswer({ question: safeQuestion, history, summary, config,
+        memory, memoryBinding: conversationId, fallbackHistory: recentContext(conversation.turns),
+        onMemory: value => { memoryUpdate = value; }, onContext: event => { contextEvents.push(event); },
+        onPlan: plan => { partialAccepted = plan.decision === 'partial'; answerMode = plan.answerMode; },
         beforeCall: async start => {
           await assertContextRetained();
           if (!await getSupportConversation(conversationId, identity)) throw new SupportRequestError("客服会话不存在或已过期", 404);
@@ -304,7 +334,7 @@ async function answerLocked(conversationId: string, requestId: string, question:
     status = 'SCOPE_UNAVAILABLE';
   }
   if (partialAccepted) answer = withSupportPartialNotice(answer);
-  let savedFacts: unknown = { queries: evidence, toolCalls };
+  let savedFacts: unknown = { queries: evidence, toolCalls, context: contextEvents, ...(answerMode ? { answerMode } : {}) };
   if (!answer) {
     try {
       const fallbackQuestion = trustedFaq || safeQuestion;
@@ -328,7 +358,21 @@ async function answerLocked(conversationId: string, requestId: string, question:
   await prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SUPPORT_CONFIG_LOCK})`;
     await assertContextRetained(tx);
-    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: retainedTitle || safeQuestion.slice(0, 40), contextSummary: ["FAQ", "COMPLETED", "FALLBACK"].includes(status) ? nextContextSummary(summary, conversation.turns) : summary } });
+    const accepted = ['FAQ', 'COMPLETED', 'FALLBACK'].includes(status);
+    const fallbackSummary = accepted ? nextContextSummary(summary, conversation.turns) : summary;
+    let nextSummary = fallbackSummary;
+    if (status === 'COMPLETED' && memoryUpdate && !memoryUpdate.disabledReason) {
+      nextSummary = JSON.stringify({ ...memoryUpdate, fallbackSummary, through: { id: turn.id, at: turn.createdAt.toISOString() } });
+    } else if (memoryUpdate?.disabledReason) {
+      nextSummary = JSON.stringify({ ...memoryUpdate, fallbackSummary });
+    } else if (memory) {
+      // FAQ and unsuccessful requests do not advance native coverage. Their
+      // accepted plaintext is appended from the database on the next model turn.
+      nextSummary = JSON.stringify({ ...memory, fallbackSummary });
+    }
+    if (Buffer.byteLength(nextSummary, 'utf8') > NATIVE_STATE_BYTES) nextSummary = JSON.stringify(disabledNativeMemory(
+      supportMemoryFingerprint(config), conversationId, fallbackSummary, 'STATE_BYTES'));
+    const valid = await tx.supportConversation.updateMany({ where: { id: conversationId, ...supportConversationScope(identity), expiresAt: { gt: new Date() } }, data: { updatedAt: new Date(), ...(!identity.userId ? { expiresAt: supportExpiry(identity) } : {}), title: retainedTitle || safeQuestion.slice(0, 40), contextSummary: nextSummary } });
     if (!valid.count) throw new SupportRequestError("客服会话不存在或已过期", 404);
     await tx.supportTurn.update({ where: { id: turn.id }, data: { answerText: answer, status, latencyMs: Date.now() - started, sources: sources as Prisma.InputJsonValue, facts: JSON.parse(JSON.stringify(savedFacts)), ui: JSON.parse(JSON.stringify(ui)) } });
   });

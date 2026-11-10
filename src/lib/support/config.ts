@@ -12,6 +12,9 @@ export interface SupportConfig {
   cachedInputUsdPerMillion: number;
   cacheWriteUsdPerMillion: number;
   outputUsdPerMillion: number;
+  contextMode?: 'native' | 'local';
+  contextMaxInputTokens?: number;
+  contextCompactRatio?: number;
 }
 
 export function supportPolicy(settings: Record<string,string>) {
@@ -56,6 +59,9 @@ export function supportConfigFromSettings(settings: Record<string, string> = {})
     cachedInputUsdPerMillion: numberEnv("SUPPORT_LLM_CACHED_INPUT_USD_PER_MILLION", 0.01),
     cacheWriteUsdPerMillion: numberEnv("SUPPORT_LLM_CACHE_WRITE_USD_PER_MILLION", 0.125),
     outputUsdPerMillion: numberEnv("SUPPORT_LLM_OUTPUT_USD_PER_MILLION", 0.5),
+    contextMode: process.env.SUPPORT_CONTEXT_MODE === 'local' ? 'local' : 'native',
+    contextMaxInputTokens: Math.min(922_000, Math.max(8_000, numberEnv('SUPPORT_CONTEXT_MAX_INPUT_TOKENS', 922_000))),
+    contextCompactRatio: Math.min(0.8, Math.max(0.5, numberEnv('SUPPORT_CONTEXT_COMPACT_RATIO', 0.7))),
     ...supportPolicy(settings),
   };
 }

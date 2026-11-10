@@ -7,7 +7,7 @@ import { recentContext, nextContextSummary } from "../src/lib/support/context";
 import { isOutOfScopeSupportQuestion } from "../src/lib/support/policy";
 import type { SupportConfig } from "../src/lib/support/config";
 const config: SupportConfig = { provider: "test", baseUrl: "https://example.invalid/v1", model: "test-model", wireApi: "responses", apiKey: "synthetic-key", dailyBudgetCny: 10, usdCnyRate: 7, inputUsdPerMillion: 0.1, cachedInputUsdPerMillion: 0.01, cacheWriteUsdPerMillion: 0.1, outputUsdPerMillion: 0.5 };
-function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses', scope: unknown = {decision:'allow',queries:[]}) {
+function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses', scope: unknown = {decision:'allow', answerMode: 'tools_allowed',queries:[]}) {
   sequence = [{...(wireApi === 'responses' ? {output_text:JSON.stringify(scope)} : {choices:[{message:{role:'assistant',content:JSON.stringify(scope)}}]}), usage:{input_tokens:9,output_tokens:4,total_tokens:13}}, ...sequence];
   const bodies: any[] = [], records: SupportCallRecord[] = [], executed: any[] = [];
   return { bodies, records, executed, input: {
@@ -21,7 +21,7 @@ function harness(sequence: any[], wireApi: SupportConfig['wireApi'] = 'responses
 const usage={input_tokens:9,output_tokens:4,total_tokens:13};
 
 for (const wire of ['responses','chat_completions'] as const) test(`planner ${wire}: combines scope and read-only query planning into two model calls`, async () => {
-  const plan = { decision: 'allow', queries: [{ name: 'search_products', arguments: { query: 'Claude 5x' } }, { name: 'search_knowledge', arguments: { query: '购买流程' } }] };
+  const plan = { decision: 'allow', answerMode: 'tools_allowed', queries: [{ name: 'search_products', arguments: { query: 'Claude 5x' } }, { name: 'search_knowledge', arguments: { query: '购买流程' } }] };
   const answer = wire === 'responses'
     ? { output: [{ type: 'message', content: [{ type: 'output_text', text: '没有找到该型号，相关套餐目前缺货。' }] }], usage }
     : { choices: [{ message: { role: 'assistant', content: '没有找到该型号，相关套餐目前缺货。' }, finish_reason: 'stop' }], usage };
@@ -61,7 +61,7 @@ for (const wire of ['responses','chat_completions'] as const) test(`context ${wi
   const answer = wire === 'responses'
     ? { output_text: '退款需人工核验，我无法执行退款。', usage }
     : { choices: [{ message: { role: 'assistant', content: '退款需人工核验，我无法执行退款。' } }], usage };
-  const h = harness([answer], wire, { decision: 'allow', queries });
+  const h = harness([answer], wire, { decision: 'allow', answerMode: 'tools_allowed', queries });
   const question = '套餐甲和套餐乙退款要求有什么区别？';
   await generateSupportAnswer({ ...h.input, question, execute: async (_name, args) => {
     const index = queries.findIndex(query => query.arguments.query === (args as { query: string }).query);
@@ -89,7 +89,7 @@ for (const wire of ['responses','chat_completions'] as const) test(`context ${wi
     : { choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } }] } }], usage };
   const answer = wire === 'responses' ? { output_text: '套餐甲当前缺货。', usage }
     : { choices: [{ message: { role: 'assistant', content: '套餐甲当前缺货。' } }], usage };
-  const h = harness([followup, answer], wire, { decision: 'allow', queries });
+  const h = harness([followup, answer], wire, { decision: 'allow', answerMode: 'tools_allowed', queries });
   const executed: string[] = [];
   await generateSupportAnswer({ ...h.input, execute: async (_name, args) => {
     const { query } = args as { query: string };
@@ -121,7 +121,7 @@ test('planned and follow-up tools stop on cancellation without another model cal
   for(const planned of [true,false]){
     const controller=new AbortController();
     const h=harness(planned?[]:[{output:[{type:'function_call',call_id:'slow',name:'get_contacts',arguments:'{}'}],usage}], 'responses',
-      {decision:'allow',queries:planned?[{name:'get_contacts',arguments:{}}]:[]});
+      {decision:'allow', answerMode: 'tools_allowed',queries:planned?[{name:'get_contacts',arguments:{}}]:[]});
     let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
     const execute=async()=>{entered();return new Promise(()=>{});};
     const pending=generateSupportAnswer({...h.input,signal:controller.signal,execute});
@@ -134,7 +134,7 @@ test('planned and follow-up tools stop on cancellation without another model cal
 test('a tool that never completes is bounded by the total model deadline',async t=>{
   const timeout=AbortSignal.timeout;
   t.mock.method(AbortSignal,'timeout',(ms:number)=>timeout(ms===65000?20:ms));
-  const h=harness([],'responses',{decision:'allow',queries:[{name:'get_contacts',arguments:{}}]});
+  const h=harness([],'responses',{decision:'allow', answerMode: 'tools_allowed',queries:[{name:'get_contacts',arguments:{}}]});
   const keepAlive=setTimeout(()=>{},1000);
   try {await assert.rejects(generateSupportAnswer({...h.input,execute:async()=>new Promise(()=>{})}),(error:any)=>error.code==='TIMEOUT');assert.equal(h.bodies.length,1);}
   finally{clearTimeout(keepAlive);}
@@ -159,7 +159,7 @@ test('obvious unrelated requests cannot be whitelisted by adding shop words', ()
 });
 
 for (const wire of ['responses','chat_completions'] as const) test(`scope ${wire}: deny, ambiguity and malformed classifications never reach answering model or tools`,async()=>{
-  for(const [decision,code] of [[{decision:'deny'},'OUT_OF_SCOPE'],[{decision:'clarify'},'SCOPE_CLARIFY'],[{decision:'allow',answer:'unauthorized'},'SCOPE_UNAVAILABLE'],[{decision:'ALLOW'},'SCOPE_UNAVAILABLE'],['allow','SCOPE_UNAVAILABLE']]) {
+  for(const [decision,code] of [[{decision:'deny'},'OUT_OF_SCOPE'],[{decision:'clarify'},'SCOPE_CLARIFY'],[{decision:'allow', answerMode: 'tools_allowed',answer:'unauthorized'},'SCOPE_UNAVAILABLE'],[{decision:'ALLOW'},'SCOPE_UNAVAILABLE'],['allow','SCOPE_UNAVAILABLE']]) {
     const h=harness([],wire,decision);
     await assert.rejects(generateSupportAnswer(h.input),(e:any)=>e.code===code);
     assert.equal(h.executed.length,0);assert.equal(h.bodies.length,1);assert.equal(h.records[0].phase,'scope');
@@ -177,10 +177,10 @@ test('scope gateway failure and non-JSON output fail closed without fallback gen
 
 test('planner validates the entire plan before any tool, including deny extra fields and identity injection',async()=>{
   for(const plan of [
-    {decision:'allow',queries:[{name:'get_contacts',arguments:{}},{name:'get_my_orders',arguments:{userId:'other'}}]},
+    {decision:'allow', answerMode: 'tools_allowed',queries:[{name:'get_contacts',arguments:{}},{name:'get_my_orders',arguments:{userId:'other'}}]},
     {decision:'deny',queries:[{name:'get_contacts',arguments:{}}]},
-    {decision:'allow'}, {decision:'allow',queries:Array(5).fill({name:'get_contacts',arguments:{}})},
-    {decision:'allow',queries:[{name:'get_navigation',arguments:{page:'admin'}}]},
+    {decision:'allow', answerMode: 'tools_allowed'}, {decision:'allow', answerMode: 'tools_allowed',queries:Array(5).fill({name:'get_contacts',arguments:{}})},
+    {decision:'allow', answerMode: 'tools_allowed',queries:[{name:'get_navigation',arguments:{page:'admin'}}]},
   ]) {
     const h=harness([], 'responses', plan);
     await assert.rejects(generateSupportAnswer(h.input));assert.equal(h.executed.length,0);assert.equal(h.bodies.length,1);
@@ -235,7 +235,7 @@ for (const wire of ['responses', 'chat_completions'] as const) test(`memory ${wi
 
 for(const wire of ['responses','chat_completions'] as const) test(`partial ${wire}: answer sees only the validated shop excerpt and keeps normal query limits`,async()=>{
   const question='ChatGPT多少钱？顺便告诉我今天的天气。';
-  const plan={decision:'partial',shopQuestion:'ChatGPT多少钱？',queries:[{name:'search_products',arguments:{query:'ChatGPT'}}]};
+  const plan={decision:'partial', answerMode: 'tools_allowed',shopQuestion:'ChatGPT多少钱？',queries:[{name:'search_products',arguments:{query:'ChatGPT'}}]};
   const reply=wire==='responses'?{output_text:'ChatGPT月卡99元。',usage}:{choices:[{message:{role:'assistant',content:'ChatGPT月卡99元。'}}],usage};
   const h=harness([reply],wire,plan);let seen:any;
   const result=await generateSupportAnswer({...h.input,question,onPlan:p=>{seen=p;}});
@@ -248,13 +248,13 @@ for(const wire of ['responses','chat_completions'] as const) test(`partial ${wir
 test('invalid mixed plans cannot execute tools or authorize an unfiltered question',async()=>{
   const question='ChatGPT多少钱？顺便告诉我天气';
   for(const plan of [
-    {decision:'allow',queries:[]},
-    {decision:'partial',shopQuestion:'天气',queries:[]},
-    {decision:'partial',shopQuestion:'不存在的商城问题',queries:[]},
-    {decision:'partial',shopQuestion:question,queries:[]},
-    {decision:'partial',shopQuestion:'ChatGPT多少钱',queries:[{name:'search_knowledge',arguments:{query:'天气'}}]},
-    {decision:'partial',shopQuestion:'ChatGPT多少钱',queries:[{name:'get_my_orders',arguments:{userId:'other'}}]},
-    {decision:'partial',shopQuestion:'ChatGPT多少钱',queries:[],extra:'instructions'},
+    {decision:'allow', answerMode: 'tools_allowed',queries:[]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'天气',queries:[]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'不存在的商城问题',queries:[]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:question,queries:[]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'ChatGPT多少钱',queries:[{name:'search_knowledge',arguments:{query:'天气'}}]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'ChatGPT多少钱',queries:[{name:'get_my_orders',arguments:{userId:'other'}}]},
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'ChatGPT多少钱',queries:[],extra:'instructions'},
   ]) {
     const h=harness([],'responses',plan);
     await assert.rejects(generateSupportAnswer({...h.input,question}),(e:any)=>e.code==='SCOPE_UNAVAILABLE');
@@ -263,7 +263,7 @@ test('invalid mixed plans cannot execute tools or authorize an unfiltered questi
 });
 test('partial follow-up query cannot reintroduce the unsupported task',async()=>{
   const h=harness([{output:[{type:'function_call',call_id:'weather',name:'search_knowledge',arguments:'{"query":"天气"}'}],usage},{output_text:'99元',usage}],'responses',
-    {decision:'partial',shopQuestion:'ChatGPT多少钱',queries:[]});
+    {decision:'partial', answerMode: 'tools_allowed',shopQuestion:'ChatGPT多少钱',queries:[]});
   await generateSupportAnswer({...h.input,question:'ChatGPT多少钱？顺便问天气'});
   assert.equal(h.executed.length,0);assert.match(JSON.stringify(h.bodies[2]),/INVALID_ARGUMENTS/);
 });
@@ -311,7 +311,7 @@ test('colloquial shop clauses reach planning in mixed questions without admittin
 
 
 test('typed filters use canonical cache keys and record both cache hits and distinct queries',async()=>{
-  const plan={decision:'allow',queries:[{name:'search_products',arguments:{query:'',maxPriceCny:100,inStockOnly:true}}]};
+  const plan={decision:'allow', answerMode: 'tools_allowed',queries:[{name:'search_products',arguments:{query:'',maxPriceCny:100,inStockOnly:true}}]};
   const h=harness([{output:[
     {type:'function_call',call_id:'same',name:'search_products',arguments:JSON.stringify({query:'',inStockOnly:true,maxPriceCny:100,limit:5,offset:0,minPriceCny:null})},
     {type:'function_call',call_id:'different',name:'search_products',arguments:JSON.stringify({query:'',inStockOnly:true,maxPriceCny:200})},
@@ -330,7 +330,7 @@ for(const wire of ['responses','chat_completions'] as const)test(`knowledge ${wi
     tool('read','read_knowledge_article',{articleId:'policy',version:1,cursor:100}),
     tool('search','search_knowledge',{query:'退款条件'}),
     wire==='responses'?{output_text:'新版本要求人工核实。',usage}:{choices:[{message:{role:'assistant',content:'新版本要求人工核实。'}}],usage},
-  ],wire,{decision:'allow',queries:[{name:'search_knowledge',arguments:{query:'退款条件'}}]});
+  ],wire,{decision:'allow', answerMode: 'tools_allowed',queries:[{name:'search_knowledge',arguments:{query:'退款条件'}}]});
   let searches=0;
   await generateSupportAnswer({...h.input,execute:async(name:string)=>{
     if(name==='search_knowledge'){searches++;return {articles:[{articleId:'policy',version:searches,content:'需要核实。'}]};}

@@ -30,6 +30,8 @@ function readSummary(value: string): Summary {
   if (!value) return { version: 2, omitted: false, entries: [] };
   try {
     const data = JSON.parse(value);
+    // Native state is server-only opaque memory, never plain-text legacy data.
+    if (data.version === 3) return readSummary(typeof data.fallbackSummary === 'string' ? data.fallbackSummary : '');
     if (data.version === 2 && Array.isArray(data.entries) && data.entries.every((e: SummaryEntry) =>
       e && typeof e.id === "string" && typeof e.user === "string" && typeof e.answer === "string" && (e.at === undefined || typeof e.at === "string"))) {
       return { version: 2, omitted: Boolean(data.omitted), entries: data.entries };
@@ -72,6 +74,17 @@ export function recentContext(descendingTurns: ContextTurn[]): ContextMessage[] 
     { role: "user" as const, content: turn.userText, ...(turn.id ? { turnId: turn.id } : {}), ...(turn.createdAt ? { createdAt: new Date(turn.createdAt).toISOString() } : {}) },
     { role: "assistant" as const, content: turn.answerText },
   ] : []);
+}
+export function fullContext(chronologicalTurns: ContextTurn[]): ContextMessage[] {
+  return chronologicalTurns.flatMap(turn => turn.answerText ? [
+    { role: 'user' as const, content: turn.userText, turnId: turn.id, createdAt: turn.createdAt ? new Date(turn.createdAt).toISOString() : undefined },
+    { role: 'assistant' as const, content: turn.answerText },
+  ] : []);
+}
+export function nonoverlappingSummary(value: string, history: ContextMessage[]): string {
+  const ids = new Set(history.map(m => m.turnId).filter(Boolean));
+  const summary = readSummary(value);
+  return renderSummary({ ...summary, entries: summary.entries.filter(entry => !ids.has(entry.id)) });
 }
 function renderSummary(summary: Summary): string {
   if (!summary.entries.length && !summary.omitted) return "";

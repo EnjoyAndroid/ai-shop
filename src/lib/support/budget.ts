@@ -3,24 +3,37 @@ import prisma from '@/lib/db';
 import { dayStartShanghai, type SupportConfig } from './config';
 import { supportInputFits } from './tokens';
 import type { SupportCallRecord, SupportCallStart, SupportUsage } from './llm';
+import { nativePolicy } from './native-context';
 
 const decimal = (value: number | string) => new Prisma.Decimal(value);
 const rounded = (value: Prisma.Decimal) => value.toDecimalPlaces(8, Prisma.Decimal.ROUND_UP);
 export function supportRates(config: SupportConfig) {
   return { inputUsdPerMillion: config.inputUsdPerMillion, cachedInputUsdPerMillion: config.cachedInputUsdPerMillion,
-    cacheWriteUsdPerMillion: config.cacheWriteUsdPerMillion, outputUsdPerMillion: config.outputUsdPerMillion, usdCnyRate: config.usdCnyRate };
+    cacheWriteUsdPerMillion: config.cacheWriteUsdPerMillion, outputUsdPerMillion: config.outputUsdPerMillion, usdCnyRate: config.usdCnyRate,
+    ...(config.model === 'gpt-6-luna' ? { longContextThresholdTokens: 272_000, longInputMultiplier: 2, longOutputMultiplier: 1.5 } : {}) };
 }
 export function supportCost(usage: SupportUsage, rates: ReturnType<typeof supportRates>): Prisma.Decimal | null {
   if (usage.inputTokens === null || usage.outputTokens === null) return null;
   const read = usage.cachedTokens || 0, write = usage.cacheWriteTokens || 0;
   if (read + write > usage.inputTokens || (usage.reasoningTokens || 0) > usage.outputTokens) return null;
+  const long = Boolean(rates.longContextThresholdTokens && usage.inputTokens > rates.longContextThresholdTokens);
   return rounded(decimal(usage.inputTokens - read - write).mul(rates.inputUsdPerMillion)
     .add(decimal(read).mul(rates.cachedInputUsdPerMillion)).add(decimal(write).mul(rates.cacheWriteUsdPerMillion))
-    .add(decimal(usage.outputTokens).mul(rates.outputUsdPerMillion)).div(1_000_000));
+    .mul(long ? rates.longInputMultiplier ?? 1 : 1)
+    .add(decimal(usage.outputTokens).mul(rates.outputUsdPerMillion).mul(long ? rates.longOutputMultiplier ?? 1 : 1)).div(1_000_000));
 }
 export function reservationCost(start: SupportCallStart, config: SupportConfig) {
   // UTF-8 bytes + framing margin is a conservative local estimate, not reported usage.
   const bytes = Buffer.byteLength(JSON.stringify(start.body), 'utf8');
+  if (start.nativeContext) {
+    const policy = nativePolicy(config), estimate = start.nativeContext.inputTokens;
+    if (!policy.enabled || bytes > policy.inputMaxBytes || !Number.isSafeInteger(estimate) || estimate < 0 || estimate > policy.inputMaxTokens) throw new Error('SUPPORT_INPUT_LIMIT');
+    const rates = supportRates(config), long = estimate > (rates.longContextThresholdTokens ?? Infinity);
+    const output = start.maxOutputTokens + (estimate >= policy.compactThreshold * 0.8 ? 16_384 : 0);
+    return rounded(decimal(estimate).mul(Math.max(config.inputUsdPerMillion, config.cachedInputUsdPerMillion, config.cacheWriteUsdPerMillion))
+      .mul(long ? rates.longInputMultiplier ?? 1 : 1).add(decimal(output).mul(config.outputUsdPerMillion).mul(long ? rates.longOutputMultiplier ?? 1 : 1))
+      .div(1_000_000).mul(config.usdCnyRate));
+  }
   if (!supportInputFits(start.body)) throw new Error('SUPPORT_INPUT_LIMIT');
   const inputRate = Math.max(config.inputUsdPerMillion, config.cachedInputUsdPerMillion, config.cacheWriteUsdPerMillion);
   return rounded(decimal(bytes + 2048).mul(inputRate).add(decimal(start.maxOutputTokens).mul(config.outputUsdPerMillion)).div(1_000_000).mul(config.usdCnyRate));
